@@ -1,0 +1,10 @@
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+.git/
+logs/
+test_config.yaml
+test_models.py
+*.tar.gz

@@ -1,0 +1,19 @@
+[Unit]
+Description=SuperModel Router — multi-provider AI model router
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/projects/supermodel_router
+Environment=PATH=/root/projects/supermodel_router/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/root/projects/supermodel_router/venv/bin/python /root/projects/supermodel_router/run.py --config /root/projects/supermodel_router/config.yaml --log-level INFO
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
