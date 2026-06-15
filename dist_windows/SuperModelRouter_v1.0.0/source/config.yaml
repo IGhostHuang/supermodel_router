@@ -1,0 +1,66 @@
+# ============================================================
+# SuperModel Router Config v1.0 — 多 provider / 多 key / 智能路由
+# ============================================================
+server:
+  host: "0.0.0.0"
+  port: 1298
+  # 可选: 客户端请求需带 X-Api-Key 头 (留空=不鉴权)
+  api_key: ""
+
+routing:
+  # 策略: round-robin | random | failover (先主底后备)
+  strategy: "round-robin"
+  # provider 级: 连续失败 N 次后标记 degraded (等 recovery_interval 秒后恢复)
+  failover_threshold: 3
+  recovery_interval: 300
+  # 模型级: 单请求失败重试次数
+  max_retry: 2
+  first_token_timeout_ms: 10000
+  # retry backoff: [0, 500] = 首次 0ms, 二次 500ms
+  retry_backoff_ms: [0, 500]
+
+# ============================================================
+# Providers — 可配多个, 每个可多 key 轮询
+# ============================================================
+providers:
+  # ---- 示例 1: pattern 模式 (ID 含 "free") ----
+  openrouter:
+    enabled: true
+    base_url: "https://openrouter.ai/api/v1"
+    api_keys:
+      - ""  # 替换为真实 key
+    model_rules:
+      # mode: all | pattern | include | exclude
+      mode: "pattern"
+      pattern: ".*free.*"
+      # exclude: []  # 排除匹配的 model IDs
+    max_concurrent: 2
+    health_check_interval: 300
+
+  # ---- 示例 2: include 模式 (指定模型列表) ----
+  newapi:
+    enabled: true
+    base_url: "https://your-newapi-endpoint/v1"
+    api_keys:
+      - ""  # 多个 key 自动轮询
+    model_rules:
+      mode: "include"
+      include:
+        - "deepseek/deepseek-v4-flash"
+        - "deepseek/deepseek-v4-pro"
+        - "minimaxai/minimax-m3"
+      exclude: []
+    max_concurrent: 3
+    health_check_interval: 300
+
+  # ---- 示例 3: all 模式 (全部模型) ----
+  aihubmix:
+    enabled: false
+    base_url: "https://aihubmix.com/v1"
+    api_keys:
+      - ""
+    model_rules:
+      mode: "all"        # 所有模型
+      exclude: []        # 但可用 exclude 排除某些
+    max_concurrent: 3
+    health_check_interval: 600

@@ -1,0 +1,140 @@
+<#
+.SYNOPSIS
+    SuperModel Router Windows 构建脚本
+    自动: 检查 Python → 安装依赖 → PyInstaller 打包 → 输出 .exe
+#>
+
+param(
+    [switch]$NoInstall  # 跳过依赖安装
+)
+
+$ErrorActionPreference = "Stop"
+$SCRIPT_DIR = Split-Path -Parent $MyInvocation.MyCommand.Path
+$VERSION = "1.0.0"
+
+Write-Host @"
+═══════════════════════════════════════════════
+  SuperModel Router v$VERSION — Windows 构建
+═══════════════════════════════════════════════
+"@ -ForegroundColor Cyan
+
+# ── 1. 检查 Python ──────────────────────────────────────────
+$python = $null
+foreach ($cmd in @("python3", "python")) {
+    $p = Get-Command $cmd -ErrorAction SilentlyContinue
+    if ($p) {
+        $ver = & $cmd --version 2>&1
+        if ($ver -match "3\.[89]|3\.1[0-9]|3\.1[2-9]") {
+            $python = $cmd
+            break
+        } elseif ($ver -match "3\.([0-9]+)") {
+            $minor = [int]$Matches[1]
+            if ($minor -ge 8) {
+                $python = $cmd
+                break
+            }
+        }
+    }
+}
+
+if (!$python) {
+    Write-Host "❌ 需要 Python 3.8+" -ForegroundColor Red
+    Write-Host "📥 下载: https://www.python.org/downloads/" -ForegroundColor Yellow
+    Write-Host "   安装时务必勾选 'Add Python to PATH'" -ForegroundColor Yellow
+    exit 1
+}
+
+Write-Host "✅ Python: $(& $python --version)" -ForegroundColor Green
+
+# ── 2. 创建 venv ────────────────────────────────────────────
+$venvPath = "$SCRIPT_DIR\venv"
+if (!(Test-Path $venvPath)) {
+    Write-Host "🔧 创建虚拟环境..." -ForegroundColor Yellow
+    & $python -m venv $venvPath
+}
+
+# 激活
+$pip = "$venvPath\Scripts\pip.exe"
+$py = "$venvPath\Scripts\python.exe"
+
+# ── 3. 安装依赖 ─────────────────────────────────────────────
+if (!$NoInstall) {
+    Write-Host "📦 安装 Python 依赖..." -ForegroundColor Yellow
+    $reqs = "$SCRIPT_DIR\requirements.txt"
+    if (!(Test-Path $reqs)) {
+        $reqs = "$SCRIPT_DIR\source\requirements.txt"
+    }
+    if (Test-Path $reqs) {
+        & $pip install -r $reqs 2>&1 | Out-Null
+    }
+    & $pip install pyinstaller 2>&1 | Out-Null
+    Write-Host "✅ 依赖安装完成" -ForegroundColor Green
+}
+
+# ── 4. 构建 .exe ────────────────────────────────────────────
+Write-Host "🚀 编译 supermodel_router.exe ..." -ForegroundColor Yellow
+
+# 找源码目录
+$sourceDir = "$SCRIPT_DIR\source"
+$runPy = "$SCRIPT_DIR\source\run_pyinstaller.py"
+$configYaml = "$SCRIPT_DIR\source\config.yaml"
+
+if (!(Test-Path $runPy)) {
+    # 从 deploy 模式或根目录
+    $runPy = "$SCRIPT_DIR\run_pyinstaller.py"
+    $configYaml = "$SCRIPT_DIR\config.yaml"
+    $sourceDir = "$SCRIPT_DIR"
+}
+
+if (!(Test-Path $runPy)) {
+    Write-Host "❌ 未找到 run_pyinstaller.py" -ForegroundColor Red
+    Write-Host "   请将 build_package.ps1 放在 supermodel_router 项目根目录" -ForegroundColor Yellow
+    exit 1
+}
+
+# 确保 supermodel_router 在 Python path 上
+$env:PYTHONPATH = "$sourceDir;$env:PYTHONPATH"
+
+& $py -m PyInstaller `
+    --onefile `
+    --name "supermodel_router" `
+    --distpath "$SCRIPT_DIR" `
+    --workpath "$SCRIPT_DIR\build" `
+    --specpath "$SCRIPT_DIR\build" `
+    --add-data "$configYaml;." `
+    --hidden-import uvicorn.logging `
+    --hidden-import uvicorn.loops.auto `
+    --hidden-import uvicorn.protocols.http.auto `
+    --hidden-import fastapi `
+    --hidden-import pydantic `
+    --hidden-import httpx `
+    --hidden-import yaml `
+    --collect-all supermodel_router `
+    --console `
+    $runPy
+
+# ── 5. 验证 ────────────────────────────────────────────────
+$exePath = "$SCRIPT_DIR\supermodel_router.exe"
+if (Test-Path $exePath) {
+    $sizeMB = [math]::Round((Get-Item $exePath).Length / 1MB, 1)
+    Write-Host @"
+
+✅ 构建成功!
+
+📁 $exePath  ($sizeMB MB)
+
+用法:
+  前台运行:  .\run.bat
+  安装服务:  以管理员运行 .\install.ps1
+  API:       http://127.0.0.1:1298
+  管理面板:  http://127.0.0.1:1298/admin
+
+"@ -ForegroundColor Green
+} else {
+    Write-Host "❌ 构建失败, 检查上方错误信息" -ForegroundColor Red
+    exit 1
+}
+
+# 清理构建缓存
+Remove-Item "$SCRIPT_DIR\build" -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item "$SCRIPT_DIR\*.spec" -Force -ErrorAction SilentlyContinue
