@@ -1,0 +1,125 @@
+# ============================================================
+# SuperModel Router Config v1.0 — 配置模板 (完整注释版)
+# ============================================================
+# 所有配置项都可在运行时热重载: POST /v1/admin/config/reload
+# ============================================================
+
+server:
+  # 监听地址 (0.0.0.0 = 所有网卡)
+  host: "0.0.0.0"
+  # 监听端口
+  port: 1298
+  # API 鉴权 Key (留空=不鉴权, 填了则客户端需在 Header 带 X-Api-Key)
+  api_key: ""
+
+# ============================================================
+# 路由策略
+# ============================================================
+routing:
+  # 策略: round-robin | random | quality (质量优先)
+  #   round-robin: 轮询所有可用模型
+  #   random:      随机选
+  #   quality:     按质量分优先 (成功率/延迟/调用量)
+  strategy: "round-robin"
+
+  # Provider 级: 连续失败 N 次后标记 degraded (暂不分配请求)
+  failover_threshold: 3
+  # degraded 后等待多少秒自动恢复
+  recovery_interval: 300
+
+  # 模型级: 单请求失败后重试次数
+  max_retry: 2
+  # 首 token 超时毫秒 (超过则尝试下一个模型)
+  first_token_timeout_ms: 10000
+  # 重试退避: [0, 500] = 首次 0ms, 第二次 500ms
+  retry_backoff_ms: [0, 500]
+
+# ============================================================
+# Providers — 可配 N 个, 每个可配 N 个 Key 轮询
+# ============================================================
+providers:
+
+  # ─── 示例 1: pattern 模式 ────────────────────────────
+  # 自动从该 provider /v1/models 拉模型列表
+  # 只保留 ID 匹配 pattern (正则) 的模型
+  # ─────────────────────────────────────────────────────
+  openrouter:
+    enabled: true
+    base_url: "https://openrouter.ai/api/v1"
+    # 多个 Key 自动 round-robin 轮询
+    api_keys:
+      - "sk-or-v1-xxxxx"    # ← 填入你的 Key
+      # - "sk-or-v1-yyyyy"  # ← 可以加第二个 Key
+    model_rules:
+      # ── 模式说明 ──
+      # all:      使用所有模型 (可用 exclude 排除)
+      # pattern:  正则匹配 model ID (如 ".*free.*", ".*flash.*")
+      # include:  只使用 include 列表中指定的模型
+      # exclude:  排除 exclude 列表中的模型 (与其他模式叠加)
+      mode: "pattern"
+      pattern: ".*free.*"   # 只保留 ID 带 free 的模型
+      # exclude:
+      #   - "meta-llama/llama-3.1-70b-instruct"  # 排除指定模型
+    max_concurrent: 2         # 该 provider 最大并发请求数
+    health_check_interval: 300
+
+  # ─── 示例 2: include 模式 ────────────────────────────
+  # 只使用指定的模型列表
+  # ─────────────────────────────────────────────────────
+  deepseek:
+    enabled: false
+    base_url: "https://api.deepseek.com/v1"
+    api_keys:
+      - "sk-xxxxxxxxxxxxxxxx"  # ← 填入
+    model_rules:
+      mode: "include"
+      include:
+        - "deepseek-chat"
+      exclude: []
+    max_concurrent: 3
+    health_check_interval: 300
+
+  # ─── 示例 3: all + exclude 模式 ────────────────────
+  # 全部模型, 除排除列表中的
+  # ─────────────────────────────────────────────────────
+  # aihubmix:
+  #   enabled: false
+  #   base_url: "https://aihubmix.com/v1"
+  #   api_keys:
+  #     - ""
+  #   model_rules:
+  #     mode: "all"
+  #     exclude:
+  #       - "some-slow-model"
+  #   max_concurrent: 3
+  #   health_check_interval: 600
+
+  # ─── 示例 4: 新 API 聚合平台 ──────────────────────────
+  # newapi:
+  #   enabled: true
+  #   base_url: "http://192.168.x.x:3000/v1"
+  #   api_keys:
+  #     - "sk-xxxx"
+  #   model_rules:
+  #     mode: "include"
+  #     include:
+  #       - "deepseek/deepseek-v4-flash"
+  #       - "minimaxai/minimax-m3"
+  #   max_concurrent: 3
+  #   health_check_interval: 300
+
+# ============================================================
+# 更灵活的模型过滤规则参考:
+#
+# mode: "pattern" + pattern: ".*free.*"
+#   → 只保留 ID 包含 "free" 的模型 (免费模型自动发现)
+#
+# mode: "pattern" + pattern: ".*(free|flash|lite).*"
+#   → 免费 + flash + lite 模型
+#
+# mode: "include"
+#   → 只使用指定的几个模型 (适合新api等聚合平台)
+#
+# mode: "all" + exclude: ["model1", "model2"]
+#   → 全部模型去掉几个不想用的
+# ============================================================
