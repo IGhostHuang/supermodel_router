@@ -128,57 +128,7 @@ if (Test-Path $exePath) {
     exit 1
 }
 
-# ── 6. 打包 free-model-router (独立网关) ────────────────────
-Write-Host ""
-Write-Host "🚀 编译 free-model-router.exe ..." -ForegroundColor Yellow
-
-$fmrSpec = "$sourceDir\fmr.spec"
-$fmrRunPy = "$sourceDir\run_fmr_pyinstaller.py"
-$fmrConfigExample = "$sourceDir\free_model_router\config.yaml.example"
-
-if (!(Test-Path $fmrSpec)) {
-    $fmrSpec = "$SCRIPT_DIR\fmr.spec"
-    $fmrRunPy = "$SCRIPT_DIR\run_fmr_pyinstaller.py"
-    $fmrConfigExample = "$SCRIPT_DIR\free_model_router\config.yaml.example"
-}
-
-if (Test-Path $fmrSpec) {
-    # 用 spec 打包
-    & $py -m PyInstaller `
-        --clean `
-        --noconfirm `
-        --distpath "$SCRIPT_DIR" `
-        --workpath "$SCRIPT_DIR\build_fmr" `
-        --specpath "$SCRIPT_DIR\build_fmr" `
-        $fmrSpec
-} elseif (Test-Path $fmrRunPy) {
-    # 命令行直接打包
-    & $py -m PyInstaller `
-        --onefile `
-        --name "free-model-router" `
-        --distpath "$SCRIPT_DIR" `
-        --workpath "$SCRIPT_DIR\build_fmr" `
-        --specpath "$SCRIPT_DIR\build_fmr" `
-        --add-data "$fmrConfigExample;free_model_router" `
-        --hidden-import httpx `
-        --hidden-import yaml `
-        --collect-all free_model_router `
-        --console `
-        $fmrRunPy
-} else {
-    Write-Host "⚠️  未找到 fmr.spec 或 run_fmr_pyinstaller.py, 跳过 fmr 打包" -ForegroundColor Yellow
-}
-
-# ── 7. 验证 fmr .exe ─────────────────────────────────────────
-$fmrExe = "$SCRIPT_DIR\free-model-router.exe"
-if (Test-Path $fmrExe) {
-    $fmrSizeMB = [math]::Round((Get-Item $fmrExe).Length / 1MB, 1)
-    Write-Host "✅ free-model-router.exe 构建成功! ($fmrSizeMB MB)" -ForegroundColor Green
-} else {
-    Write-Host "⚠️  free-model-router.exe 未生成 (可选模块)" -ForegroundColor Yellow
-}
-
-# ── 8. 最终输出 ──────────────────────────────────────────────
+# ── 6. 最终输出 ──────────────────────────────────────────────
 Write-Host @"
 
 ═══════════════════════════════════════════════
@@ -186,25 +136,16 @@ Write-Host @"
 ═══════════════════════════════════════════════
 
 产物:
-  • supermodel_router.exe  (主路由)
-  • free-model-router.exe  (免费模型网关, 多 key 轮询)
+  • supermodel_router.exe  (主路由, 唯一产品)
 
-用法 (supermodel_router):
+用法:
   前台运行:  .\run.bat
   安装服务:  以管理员运行 .\install.ps1
   API:       http://127.0.0.1:1298
   管理面板:  http://127.0.0.1:1298/admin
 
-用法 (free-model-router):
-  前台运行:  .\free-model-router.exe --config config.yaml
-  配置文件:  copy free_model_router\config.yaml.example config.yaml
-  API:       http://127.0.0.1:5678
-  管理面板:  http://127.0.0.1:5678/admin
-
 "@ -ForegroundColor Green
 
 # 清理构建缓存
 Remove-Item "$SCRIPT_DIR\build" -Recurse -Force -ErrorAction SilentlyContinue
-Remove-Item "$SCRIPT_DIR\build_fmr" -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item "$SCRIPT_DIR\supermodel_router.spec" -Force -ErrorAction SilentlyContinue
-Remove-Item "$SCRIPT_DIR\fmr.spec" -Force -ErrorAction SilentlyContinue
