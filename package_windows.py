@@ -31,7 +31,7 @@ def collect_source_files():
                        ".bat", ".ps1", ".service", ".example",
                        ".dockerignore", ".gitignore"):
                 files.append(fpath)
-            elif name in ("Dockerfile", "docker-compose.yml", "requirements.txt", "run.py", "run_pyinstaller.py"):
+            elif name in ("Dockerfile", "docker-compose.yml", "requirements.txt", "run.py", "run_pyinstaller.py", "run_fmr_pyinstaller.py", "fmr.spec"):
                 files.append(fpath)
             elif name == "build_windows.py":
                 files.append(fpath)
