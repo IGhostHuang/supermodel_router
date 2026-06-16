@@ -1,237 +1,241 @@
-# SuperModel Router — 多 Provider / 多 Key / 智能路由
+# SMR (supermodel_router)
 
-OpenAI-兼容 API 代理，支持：
-- **多 Provider 聚合** — 一个端点背后聚合 N 个 provider
-- **每 Provider 多 API Key** — 自动轮询 (round-robin)
-- **灵活模型过滤** — pattern / include / exclude / all
-- **自动模型发现** — 定期拉 `/v1/models` 按规则过滤
-- **健康追踪 + 自动恢复** — failover + degraded + recovery
-- **可热重载配置** — 改 yaml 自动生效
-- **全 OpenAI-兼容** — 无缝接入任何 OpenAI SDK
+> **SMR (前 FMR / free-model-router)** — OpenAI 兼容的多 provider LLM 路由网关
+> v1.0.0 · 2026-06-16 · 独立运行模式（不集成到 Hermes）
 
 ---
 
-## 🪟 Windows 安装 (推荐)
+## 🎯 设计目标
 
-### 快速安装 (5 分钟)
+SMR 解决"多 provider 多 key 难管理"问题:
 
-```powershell
-# 1. 以管理员运行 PowerShell
-# 2. 解压 SuperModelRouter_v1.0.0.zip
-# 3. 运行构建
-.\build_package.ps1
-# 4. 安装服务（开机自启）
-.\install.ps1
-```
-
-### 手动构建
-
-```powershell
-# 1. 克隆项目
-git clone https://github.com/kuroko-love/supermodel_router.git
-cd supermodel_router
-
-# 2. 一键构建 (自动装依赖+PyInstaller打包)
-.\deploy\build_package.ps1
-
-# 3. 产物: supermodel_router.exe 在本目录
-# 4. 安装为 Windows 服务 (开机自启)
-.\deploy\install.ps1
-
-# 或用 run.bat 前台调试
-.\deploy\run.bat
-```
-
-### 管理命令
-
-```powershell
-.\deploy\install.ps1 -Interactive    # 前台运行 (调试用)
-.\deploy\install.ps1 -Start          # 启动 Windows 服务
-.\deploy\install.ps1 -Stop           # 停止服务
-.\deploy\install.ps1 -Uninstall      # 完整卸载
-.\deploy\run.bat                     # 前台启动
-```
-
-### 访问
-
-```
-🌐 API:   http://127.0.0.1:1298/v1
-📊 管理:  http://127.0.0.1:1298/admin
-```
+- **统一入口** — 多个 OpenAI 兼容 provider (OpenRouter / NewAPI / 自建 vLLM ...) 合并成 1 个 OpenAI 兼容 API
+- **智能路由** — 按 model 名称自动选 provider, 按 key 状态自动选 key
+- **错误隔离** — 一个 provider 401/429/5xx 不会影响其他 provider
+- **多 key 轮询** — 单 provider 多 key 负载均衡, 401/403 立即换 key
+- **4 模式过滤** — `pattern` (正则) / `include` (白名单) / `exclude` (黑名单) / `all`
 
 ---
 
-## 🐧 Linux 快速开始
+## 🚀 快速开始
 
-### 1. 安装
+### 安装
 
 ```bash
-cd ~/projects/supermodel_router
-python3 -m venv venv
-source venv/bin/activate
+git clone https://github.com/IGhostHuang/supermodel_router.git
+cd supermodel_router
 pip install -r requirements.txt
 ```
 
-### 2. 配置
-
-编辑 `config.yaml`:
+### 配置 (config.yaml)
 
 ```yaml
 server:
-  host: "0.0.0.0"
-  port: 1298
-  api_key: ""   # 可选, 留空不鉴权
-
-routing:
-  strategy: "round-robin"      # round-robin | random | quality
-  failover_threshold: 3        # 连续 N 次失败标记 degraded
-  recovery_interval: 300       # 5min 后自动恢复
-  max_retry: 2
-  first_token_timeout_ms: 10000
-  retry_backoff_ms: [0, 500]
+  host: 127.0.0.1
+  port: 19876
+  api_key: "your-secret-key"  # 可选, Bearer 鉴权
 
 providers:
   openrouter:
-    enabled: true
-    base_url: "https://openrouter.ai/api/v1"
-    api_keys:
-      - "sk-or-v1-xxx"
-      - "sk-or-v1-yyy"        # 多个 key 自动轮询
+    name: openrouter/free
+    base_url: https://openrouter.ai/api/v1
+    api_keys: ["sk-or-..."]
     model_rules:
-      mode: "pattern"
-      pattern: ".*free.*"
-      exclude: []
-    max_concurrent: 3
-    health_check_interval: 300
-
+      mode: pattern
+      pattern: ".*:free$"        # 只用 :free 后缀的模型
+  
   newapi:
-    enabled: true
-    base_url: "https://your-newapi/v1"
-    api_keys:
-      - "sk-xxx"
+    name: mainrouter
+    base_url: https://your-newapi.com/v1
+    api_keys: ["sk-...", "sk-..."]  # 2 个 key 轮询
     model_rules:
-      mode: "include"
-      include:
-        - "gpt-4"
-        - "claude-3.5"
-      exclude: []
-    max_concurrent: 3
-    health_check_interval: 600
+      mode: all
 ```
 
-### 模型过滤规则
-
-| mode | 说明 | 配合字段 |
-|------|------|----------|
-| `all` | 该 provider 所有模型 | `exclude` 可选排除 |
-| `pattern` | 正则匹配模型 ID | `pattern` (必需) + `exclude` |
-| `include` | 白名单列表 | `include` (必需) + `exclude` |
-| `exclude` | 黑名单模式 (其余全收) | `exclude` (必需, 正则) |
-
-```yaml
-# 只收 ID 包含 "free" 且不含 "paid" 的
-mode: "pattern"
-pattern: ".*free.*"
-exclude: [".*paid.*"]
-
-# 只要特定几个
-mode: "include"
-include: ["claude-3-opus", "gpt-4-turbo"]
-
-# 全要，但不要某些
-mode: "all"
-exclude: ["experimental-.*"]
-```
-
-### 3. 启动
+### 启动
 
 ```bash
-cd ~/projects/supermodel_router
-source venv/bin/activate
-python run.py
-# → http://0.0.0.0:1298
+# 直接运行
+python3 -m free_model_router --config config.yaml --port 19876
+
+# systemd 部署
+sudo cp deploy/smr.service /etc/systemd/system/
+sudo systemctl enable --now smr
 ```
 
-### 4. systemd 服务 (Linux)
+### 调用 (OpenAI 兼容)
 
 ```bash
-sudo cp deploy/supermodel_router.service /etc/systemd/system/
+# 非流式
+curl -X POST http://127.0.0.1:19876/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "auto",
+    "messages": [{"role":"user","content":"ping"}]
+  }'
+
+# 流式
+curl -N -X POST http://127.0.0.1:19876/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "auto",
+    "stream": true,
+    "messages": [{"role":"user","content":"ping"}]
+  }'
+```
+
+---
+
+## 🔧 架构
+
+```
+Client (OpenAI 兼容)
+  ↓ HTTP/SSE
+┌─────────────────────────────────────────┐
+│  SMR Gateway (Python http.server)       │
+│  ├─ /v1/chat/completions  (流式 + 非流式) │
+│  ├─ /v1/models             (合并模型列表) │
+│  ├─ /v1/providers          (provider 状态)│
+│  ├─ /admin                 (管理面板)     │
+│  └─ /health                (健康检查)     │
+├─────────────────────────────────────────┤
+│  Router                                  │
+│  ├─ Select target (按 model + 过滤)      │
+│  ├─ Forward (httpx async)                │
+│  ├─ Classify error (401/429/5xx)        │
+│  ├─ Key rotate (同 provider 换 key)      │
+│  └─ Provider rotate (跨 provider 切换)   │
+├─────────────────────────────────────────┤
+│  Provider Manager                        │
+│  ├─ 4 模式过滤 (pattern/include/exclude/all)│
+│  ├─ Health tracking (degraded 5min 恢复) │
+│  └─ Rate limit (Retry-After)             │
+└─────────────────────────────────────────┘
+  ↓ HTTPS
+Upstream providers (OpenRouter / NewAPI / ...)
+```
+
+---
+
+## 📊 路由策略
+
+### Model 解析
+
+1. **精确匹配**: `provider/model_id` 直接路由
+2. **模糊匹配**: `gpt-4` → 在所有 provider 中找 `gpt-4*` 模型, 按质量分排序
+3. **auto 模式**: 不指定 model → 按质量分自动选最优
+
+### 错误处理
+
+| HTTP | 行为 |
+|------|------|
+| 200 | 成功, 记录 latency + tokens |
+| 401/403 | **同 provider 换 key** (不换 model) |
+| 404/410 | **永久 disable model** (此 provider 跳过) |
+| 429 | Retry-After 后冷却, 不重试 |
+| 5xx | 换 provider 重试, 直到耗尽 |
+
+### Key 轮询
+
+- **多 key**: `api_keys: ["key1", "key2", "key3"]` round-robin
+- **健康隔离**: 401 触发的 key 进 cooldown 5min, 5min 后恢复
+- **不互相污染**: key1 401 不影响 key2/key3
+
+---
+
+## 🧪 测试
+
+```bash
+# 单元测试 (不依赖 mock upstream)
+python3 -m pytest tests_free_model_router/test_filter.py -v   # 13 tests
+python3 -m pytest tests_free_model_router/test_config.py -v   # 11 tests
+python3 -m pytest tests_free_model_router/test_provider.py -v # 13 tests
+
+# 沙盒 e2e 测试 (需要 mock_upstream.py)
+cd /tmp/sandbox-fmr
+python3 mock_upstream.py 18765 &
+python3 -m free_model_router --config config.yaml --port 19876 &
+python3 tests_free_model_router/test_e2e.py
+python3 tests_free_model_router/test_stream.py   # 流式 (SMR 阶段 2 修复后)
+```
+
+---
+
+## 📦 部署
+
+### Docker
+
+```bash
+docker build -t smr:1.0.0 .
+docker run -d -p 19876:19876 \
+  -v $(pwd)/config.yaml:/app/config.yaml:ro \
+  --name smr \
+  smr:1.0.0
+```
+
+### Windows 服务 (PyInstaller)
+
+```bash
+python build_windows.py  # 打包 smr.exe
+python package_windows.py  # 创建 smr-windows.zip
+# 部署: 拷贝到 Windows + nssm install smr smr.exe
+```
+
+### systemd
+
+```bash
+sudo cp deploy/smr.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable --now supermodel_router
+sudo systemctl enable --now smr
+sudo systemctl status smr
 ```
 
 ---
 
-## API 端点
-
-| 端点 | 方法 | 说明 |
-|------|------|------|
-| `/v1/chat/completions` | POST | OpenAI-兼容聊天 |
-| `/v1/models` | GET | 列出模型 |
-| `/v1/health` | GET | 健康状况 |
-| `/v1/admin/routes` | GET | 所有路由 (provider/model) |
-| `/v1/admin/stats` | GET | 路由统计 |
-| `/v1/admin/refresh` | POST | 刷新模型列表 |
-| `/v1/admin/config/reload` | POST | 重载 config.yaml |
-
----
-
-## 客户端调用
-
-```python
-from openai import OpenAI
-
-client = OpenAI(
-    base_url="http://localhost:1298/v1",
-    api_key="your-secret-key",
-)
-
-# 自动路由
-resp = client.chat.completions.create(
-    model="auto",
-    messages=[{"role": "user", "content": "Hello"}]
-)
-print(resp.choices[0].message.content)
-
-# 指定 provider/model
-resp = client.chat.completions.create(
-    model="openrouter/anthropic/claude-3.5-sonnet:free",
-    messages=[{"role": "user", "content": "Hello"}]
-)
-```
-
-## CLI 管理工具
-
-```bash
-source venv/bin/activate
-
-# 健康检查
-python -m supermodel_router.cli health
-
-# 列出模型
-python -m supermodel_router.cli models
-python -m supermodel_router.cli models --provider openrouter
-
-# 列出路由
-python -m supermodel_router.cli routes
-
-# 刷新模型
-python -m supermodel_router.cli refresh
-
-# 自定义地址
-python -m supermodel_router.cli --base-url http://other-host:5679 health
-```
-
----
-
-## 集成到 Hermes
+## 🔑 配置参考
 
 ```yaml
-custom_providers:
-  supermodel_router:
-    base_url: "http://localhost:1298/v1"
-    api_key: "your-secret-key"
+server:
+  host: 127.0.0.1
+  port: 19876
+  api_key: "your-secret"  # 留空 = 无鉴权
 
-models:
-  default: supermodel_router
+routing:
+  max_retry: 2               # 最大重试次数
+  retry_backoff_ms: [0, 500] # 重试 backoff
+  failover_threshold: 3      # 连续 N 次失败 → degraded
+  recovery_interval: 300     # 5min 自动恢复
+
+providers:
+  <name>:
+    name: <model_id>            # OpenAI 兼容的 model id
+    base_url: <url>              # 兼容 OpenAI /v1 接口
+    api_keys: [<key1>, <key2>]   # 1+ key
+    model_rules:
+      mode: all                  # all | pattern | include | exclude
+      pattern: ""                # 正则 (pattern 模式)
+      include: []                # 白名单 (include 模式)
+      exclude: []                # 黑名单 (exclude 模式)
+    max_concurrent: 3            # 并发槽位
 ```
+
+---
+
+## 🐛 已知问题
+
+- **流式实时性破坏**: `_forward_stream` 在 async with 内 cache 整段 stream 后 return chunks, 必须等上游发完所有 chunk 才开始写 client. 优化方向: 改 async generator 保持 stream 跨 async with 边界.
+- **WSL 推送限制**: git push 走 HTTPS 偶发 GnuTLS recv error, 推荐 Windows 侧 push.
+
+---
+
+## 📜 版本历史
+
+- **v1.0.0 (SMR 阶段 1)** — OpenAI 兼容网关, 4 模式过滤, 多 key 轮询, 401 换 key
+- **v1.0.0 (SMR 阶段 2)** — 修复流式 chat 500 bug (560eb61)
+- **v0.x (FMR 阶段)** — 内部代号 free-model-router, 已废弃
+
+---
+
+## 📄 许可证
+
+MIT
