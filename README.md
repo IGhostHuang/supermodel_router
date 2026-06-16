@@ -56,7 +56,7 @@ providers:
 
 ```bash
 # 直接运行
-python3 -m free_model_router --config config.yaml --port 19876
+python3 -m supermodel_router --config config.yaml --port 19876
 
 # systemd 部署
 sudo cp deploy/smr.service /etc/systemd/system/
@@ -157,6 +157,90 @@ python3 mock_upstream.py 18765 &
 python3 -m free_model_router --config config.yaml --port 19876 &
 python3 tests_free_model_router/test_e2e.py
 python3 tests_free_model_router/test_stream.py   # 流式 (SMR 阶段 2 修复后)
+```
+
+---
+
+## 🆕 v3.1 — 自定义 Provider + 自定义 Tier Bonus
+
+SMR v3.1 加 5 个管理 API + dashboard UI:
+
+### API 端点
+
+| Method | Path | 作用 |
+|---|---|---|
+| `POST` | `/v1/admin/providers` | 添加自定义 provider (OpenAI / Azure / 自建 / 中转 / newapi 等任意 OpenAI 兼容 API) |
+| `DELETE` | `/v1/admin/providers/{name}` | 删除 provider |
+| `PUT` | `/v1/admin/providers/{name}` | 更新 provider (增量覆盖) |
+| `GET` | `/v1/admin/classifier` | 读 classifier 配置 (含兜底内置默认) |
+| `PUT` | `/v1/admin/classifier` | 改 tier_bonus / custom_keywords / modality_base_score |
+
+### Dashboard UI
+
+打开 `/admin`, 新增 2 个按钮:
+
+- **➕ 添加 Provider** — 表单弹窗, 填 name / base_url / api_keys / model filter mode
+- **⚙️ Tier Bonus** — 3 个 KV 编辑器: tier_bonus (覆盖内置) / custom_keywords (累加) / modality_base_score
+
+每个 provider 卡片右侧有 **🗑️ 删除** 按钮 (config 同步移除).
+
+### 自定义 Classifier — `config.yaml`
+
+```yaml
+classifier:
+  # 覆盖内置 tier 加成 (内置默认: turbo=25, pro=20, lite=-10 ...)
+  tier_bonus:
+    pro: 30        # 把 pro 从 20 改成 30
+    turbo: 50      # 把 turbo 从 25 改成 50
+    custom_tier: 15 # 添加新 tier
+
+  # 自定义关键词加分 (叠加, 不 break, 多关键词命中累加)
+  custom_keywords:
+    reasoning: 30  # 含 "reasoning" 的模型 +30 分
+    coder: 25      # 含 "coder" 的模型 +25 分
+    r1: 20         # DeepSeek R1 系列 +20
+
+  # 覆盖模态基类分 (内置: text-only=50, multimodal=85, image-gen=70 ...)
+  modality_base_score:
+    text-only: 60
+    multimodal: 90
+```
+
+**优先级**: 内置默认 < config.yaml classifier < PUT /v1/admin/classifier (运行时)
+
+### 能力分公式
+
+```
+capability_score = modality_base_score[modality]
+                 + tier_bonus[kw] (内置或用户覆盖, 第一个匹配 break)
+                 + Σ custom_keywords[kw] (用户自定义, 累加)
+                 + context_length_bonus (200K+20, 128K+15, 32K+10, 16K+5)
+                 clip(0, 100)
+```
+
+### 端到端验证 (已通过)
+
+```bash
+# 1. 添加自定义 provider (任何 OpenAI 兼容 API)
+curl -X POST http://127.0.0.1:19876/v1/admin/providers \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "myopenai",
+    "config": {
+      "base_url": "https://api.openai.com",
+      "api_keys": ["sk-xxx"],
+      "model_rules": {"mode": "pattern", "pattern": "gpt-4.*"},
+      "max_concurrent": 3
+    }
+  }'
+
+# 2. 调整 tier 加成 (把 pro 从 20 改 30)
+curl -X PUT http://127.0.0.1:19876/v1/admin/classifier \
+  -H "Content-Type: application/json" \
+  -d '{"tier_bonus": {"pro": 30}, "custom_keywords": {"reasoning": 30}}'
+
+# 3. 立即生效 — registry 自动 rebuild + 模型 cap_score 重算
+curl http://127.0.0.1:19876/v1/models | jq '.data[0].capability_score'
 ```
 
 ---

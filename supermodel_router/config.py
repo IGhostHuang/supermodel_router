@@ -102,6 +102,81 @@ class Config:
     def get_provider_names(self) -> list[str]:
         return [k for k, v in self.providers.items() if v.get("enabled", True)]
 
+    # ---- 自定义 Provider CRUD (持久化到 config.yaml) ----
+
+    def add_provider(self, name: str, pcfg: dict, persist: bool = True) -> bool:
+        """添加自定义 provider, 立即生效 + 写盘"""
+        with self._lock:
+            if "providers" not in self._data or self._data["providers"] is None:
+                self._data["providers"] = {}
+            if name in self._data["providers"]:
+                LOG.warning("add_provider: '%s' already exists, use update", name)
+                return False
+            self._data["providers"][name] = pcfg
+            if persist:
+                self._save_yaml()
+            self._notify_change()
+            LOG.info("Provider added: %s", name)
+            return True
+
+    def remove_provider(self, name: str, persist: bool = True) -> bool:
+        """删除 provider"""
+        with self._lock:
+            providers = self._data.get("providers", {})
+            if name not in providers:
+                return False
+            del providers[name]
+            if persist:
+                self._save_yaml()
+            self._notify_change()
+            LOG.info("Provider removed: %s", name)
+            return True
+
+    def update_provider(self, name: str, pcfg: dict, persist: bool = True) -> bool:
+        """更新 provider (增量覆盖字段)"""
+        with self._lock:
+            providers = self._data.get("providers", {})
+            if name not in providers:
+                return False
+            providers[name].update(pcfg)
+            if persist:
+                self._save_yaml()
+            self._notify_change()
+            LOG.info("Provider updated: %s", name)
+            return True
+
+    def update_classifier(self, cfg: dict, persist: bool = True) -> bool:
+        """更新 classifier 配置段 (tier_bonus / custom_keywords / modality_base_score)"""
+        with self._lock:
+            section = self._data.setdefault("classifier", None)
+            if section is None:
+                self._data["classifier"] = {}
+                section = self._data["classifier"]
+            section.update(cfg)
+            if persist:
+                self._save_yaml()
+            self._notify_change()
+            LOG.info("Classifier config updated: %s", list(cfg.keys()))
+            return True
+
+    def _save_yaml(self):
+        """写回 yaml 文件"""
+        try:
+            with open(self._path, "w", encoding="utf-8") as f:
+                yaml.safe_dump(self._data, f, allow_unicode=True, sort_keys=False, default_flow_style=False)
+            self._last_mtime = self._path.stat().st_mtime
+            LOG.debug("Config persisted to %s", self._path)
+        except Exception:
+            LOG.exception("_save_yaml failed")
+
+    def _notify_change(self):
+        """触发热重载回调"""
+        for cb in self._watchers:
+            try:
+                cb(self._data)
+            except Exception:
+                LOG.exception("config watcher callback error")
+
     # ---- 热重载 ----
 
     def start_watcher(self, interval: float = 5.0):

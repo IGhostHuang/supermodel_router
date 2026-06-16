@@ -60,16 +60,6 @@ routing:
     success_rate: 0.6
     latency: 0.4
 
-# ============================================================
-# Providers
-# 每个 provider 支持:
-#   model_rules.mode: pattern | include | exclude | all
-#   model_rules.pattern: 正则匹配免费模型 (如 ".*free.*")
-#   model_rules.include: 白名单模型 ID 列表
-#   model_rules.exclude: 黑名单模型 ID 列表 (所有 mode 都生效)
-#   model_rules.free_regex: 附加免费模型正则 (与 mode 叠加)
-#   多 api_keys 自动轮询, 失败切换
-# ============================================================
 providers:
   # 按 pattern 匹配免费模型
   openrouter:
@@ -112,3 +102,25 @@ providers:
         - ".*-legacy.*"
     max_concurrent: 3
     health_check_interval: 600
+
+# ============================================================
+# Classifier 自定义配置 (v3.1)
+# 不写则用内置默认. tier_bonus 是"覆盖", custom_keywords 是"追加"
+# ============================================================
+classifier:
+  # 覆盖内置 tier 加成 (内置默认: turbo=25, pro=20, lite=-10 ...)
+  # tier_bonus:
+  #   pro: 30        # 把 pro 从 20 改成 30
+  #   turbo: 50      # 把 turbo 从 25 改成 50
+  #   custom_tier: 15 # 添加新 tier
+
+  # 自定义关键词加分 (叠加, 不 break, 多关键词命中累加)
+  # custom_keywords:
+  #   reasoning: 30   # 含 "reasoning" 的模型 +30 分
+  #   coder: 25       # 含 "coder" 的模型 +25 分
+  #   r1: 20          # DeepSeek R1 系列 +20
+
+  # 覆盖模态基类分 (内置: text-only=50, multimodal=85, image-gen=70 ...)
+  # modality_base_score:
+  #   text-only: 60
+  #   multimodal: 90

@@ -127,7 +127,7 @@ class ModelRegistry:
         for m in filtered:
             mid = m["id"]
             modality = classify_model(mid, ps.name, m)
-            cap_score = compute_capability_score(mid, modality, m)
+            cap_score = compute_capability_score(mid, modality, m, config_obj=self.cfg)
             ps.models.append(ModelInfo(
                 id=mid,
                 provider=ps.name,
