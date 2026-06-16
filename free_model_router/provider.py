@@ -21,7 +21,7 @@ from typing import Any
 
 import httpx
 
-LOG = logging.getLogger("fmr.provider")
+LOG = logging.getLogger("smr.provider")
 
 
 # ── 状态枚举 (用字符串而非 Enum, 方便 JSON 序列化) ──
