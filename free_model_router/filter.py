@@ -12,7 +12,7 @@ import logging
 import fnmatch
 from typing import Iterable
 
-LOG = logging.getLogger("fmr.filter")
+LOG = logging.getLogger("smr.filter")
 
 
 def filter_models(

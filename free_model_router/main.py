@@ -33,7 +33,7 @@ from .provider import ProviderManager
 from .router import Router
 from .server import FreeModelRouterServer
 
-LOG = logging.getLogger("fmr.main")
+LOG = logging.getLogger("smr.main")
 
 
 # ── 默认配置模板 (打印用) ──

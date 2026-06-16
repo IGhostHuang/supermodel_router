@@ -31,7 +31,7 @@ import httpx
 
 from .filter import filter_models
 
-LOG = logging.getLogger("fmr.discovery")
+LOG = logging.getLogger("smr.discovery")
 
 
 @dataclass

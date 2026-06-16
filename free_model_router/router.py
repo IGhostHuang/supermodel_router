@@ -28,7 +28,7 @@ from .provider import (
     Provider, ProviderManager, STATUS_HEALTHY, STATUS_DEGRADED, STATUS_UNAVAILABLE,
 )
 
-LOG = logging.getLogger("fmr.router")
+LOG = logging.getLogger("smr.router")
 
 REQUEST_TIMEOUT = 60.0
 FIRST_TOKEN_TIMEOUT = 10.0

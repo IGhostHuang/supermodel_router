@@ -28,7 +28,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import urlparse
 
-LOG = logging.getLogger("fmr.server")
+LOG = logging.getLogger("smr.server")
 
 
 def _format_sse(data: Any) -> bytes:
@@ -516,7 +516,7 @@ class FreeModelRouterServer:
             LOG.info("free-model-router listening on http://%s:%d",
                      self.host, self.port)
             http_thread = threading.Thread(target=self._httpd.serve_forever,
-                                           daemon=True, name="fmr-httpserve")
+                                           daemon=True, name="smr-httpserve")
             http_thread.start()
             # 保持 loop 运行
             self._stop_event = asyncio.Event()
@@ -535,7 +535,7 @@ class FreeModelRouterServer:
     def start(self) -> None:
         import threading
         self._thread = threading.Thread(target=self._serve, daemon=True,
-                                        name="fmr-http")
+                                        name="smr-http")
         self._thread.start()
         # 等待服务起来
         for _ in range(50):

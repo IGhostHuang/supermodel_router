@@ -32,7 +32,7 @@ import yaml
 from pathlib import Path
 from typing import Any
 
-LOG = logging.getLogger("fmr.config")
+LOG = logging.getLogger("smr.config")
 
 
 def _default_config() -> dict[str, Any]:
