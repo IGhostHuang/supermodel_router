@@ -8,3 +8,6 @@ logs/
 test_config.yaml
 test_models.py
 *.tar.gz
+build/
+dist/
+*.spec
