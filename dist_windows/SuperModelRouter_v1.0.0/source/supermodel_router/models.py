@@ -1,5 +1,5 @@
 """
-supermodel_router/models.py — 模型发现 + 过滤
+supermodel_router/models.py — 模型发现 + 过滤 + 分类
 """
 import logging
 import time
@@ -9,6 +9,10 @@ from dataclasses import dataclass, field
 import httpx
 
 from .config import Config
+from .classifier import (
+    classify_model, compute_capability_score,
+    get_modality_display, TEXT_ONLY,
+)
 
 LOG = logging.getLogger("models")
 
@@ -23,6 +27,10 @@ class ModelInfo:
     owned_by: str = ""
     # /v1/models 返回的额外字段透传
     extra: dict = field(default_factory=dict)
+    # ── v2 能力分类 ──
+    modality: str = TEXT_ONLY             # 模态类型
+    capability_score: float = 50.0         # 能力分 (0-100)
+    modality_display: str = "📝 纯文本"    # 前端展示
 
 
 @dataclass
@@ -115,9 +123,13 @@ class ModelRegistry:
                 if mid in include_set:
                     filtered.append(m)
 
-        ps.models = [
-            ModelInfo(
-                id=m["id"],
+        ps.models = []
+        for m in filtered:
+            mid = m["id"]
+            modality = classify_model(mid, ps.name, m)
+            cap_score = compute_capability_score(mid, modality, m)
+            ps.models.append(ModelInfo(
+                id=mid,
                 provider=ps.name,
                 base_url=ps.base_url,
                 object=m.get("object", "model"),
@@ -125,9 +137,10 @@ class ModelRegistry:
                 owned_by=m.get("owned_by", ""),
                 extra={k: v for k, v in m.items()
                        if k not in ("id", "object", "created", "owned_by")},
-            )
-            for m in filtered
-        ]
+                modality=modality,
+                capability_score=round(cap_score, 1),
+                modality_display=get_modality_display(modality),
+            ))
         ps.model_ids = [m.id for m in ps.models]
         ps.last_model_refresh = time.time()
         LOG.info(
@@ -279,3 +292,23 @@ class ModelRegistry:
                 }
                 for name, ps in self._providers.items()
             }
+
+    # ── v2 模态分组 ────────────────────────────────────
+
+    def get_models_by_modality(self, modality: str) -> list[ModelInfo]:
+        """按模态类型获取模型列表"""
+        with self._lock:
+            return [
+                m for ps in self._providers.values()
+                for m in ps.models
+                if m.modality == modality
+            ]
+
+    def get_modality_counts(self) -> dict[str, int]:
+        """统计各模态的模型数量"""
+        counts = {}
+        with self._lock:
+            for ps in self._providers.values():
+                for m in ps.models:
+                    counts[m.modality] = counts.get(m.modality, 0) + 1
+        return counts
