@@ -32,7 +32,7 @@ pip install -r requirements.txt
 ```yaml
 server:
   host: 127.0.0.1
-  port: 19876
+  port: 6473
   api_key: "your-secret-key"  # 可选, Bearer 鉴权
 
 providers:
@@ -55,19 +55,38 @@ providers:
 ### 启动
 
 ```bash
-# 直接运行
-python3 -m supermodel_router --config config.yaml --port 19876
+# 默认端口 6473
+python3 -m supermodel_router --config config.yaml
+
+# 自定义端口 (CLI 参数优先)
+python3 -m supermodel_router --config config.yaml --port 8080
 
 # systemd 部署
 sudo cp deploy/smr.service /etc/systemd/system/
 sudo systemctl enable --now smr
 ```
 
+### 修改默认端口 (3 种方式, 优先级从高到低)
+
+| # | 方式 | 示例 | 生效时机 |
+|---|---|---|---|
+| 1 | CLI 参数 | `python3 -m supermodel_router --port 8080` | 立即 |
+| 2 | 环境变量 | `PORT=8080 python3 -m supermodel_router` | 立即 |
+| 3 | config.yaml | 编辑 `server.port: 8080` + 重启服务 | 重启后 |
+
+**Docker / docker-compose**:
+- Docker: `-e PORT=8080` 或 `-p 8080:8080`
+- docker-compose.yml: 改 `services.supermodel_router.environment.PORT` + `ports` 两处
+
+**Windows (install.ps1)**:
+- 默认配置 `server.port: 6473` (在 `C:\ProgramData\SuperModelRouter\config.yaml`)
+- 编辑该文件改 `port: 8080`, 重启服务 `.\install.ps1 -Start`
+
 ### 调用 (OpenAI 兼容)
 
 ```bash
 # 非流式
-curl -X POST http://127.0.0.1:19876/v1/chat/completions \
+curl -X POST http://127.0.0.1:6473/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "auto",
@@ -75,7 +94,7 @@ curl -X POST http://127.0.0.1:19876/v1/chat/completions \
   }'
 
 # 流式
-curl -N -X POST http://127.0.0.1:19876/v1/chat/completions \
+curl -N -X POST http://127.0.0.1:6473/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "auto",
@@ -154,7 +173,7 @@ python3 -m pytest tests_free_model_router/test_provider.py -v # 13 tests
 # 沙盒 e2e 测试 (需要 mock_upstream.py)
 cd /tmp/sandbox-fmr
 python3 mock_upstream.py 18765 &
-python3 -m free_model_router --config config.yaml --port 19876 &
+python3 -m free_model_router --config config.yaml --port 6473 &
 python3 tests_free_model_router/test_e2e.py
 python3 tests_free_model_router/test_stream.py   # 流式 (SMR 阶段 2 修复后)
 ```
@@ -222,7 +241,7 @@ capability_score = modality_base_score[modality]
 
 ```bash
 # 1. 添加自定义 provider (任何 OpenAI 兼容 API)
-curl -X POST http://127.0.0.1:19876/v1/admin/providers \
+curl -X POST http://127.0.0.1:6473/v1/admin/providers \
   -H "Content-Type: application/json" \
   -d '{
     "name": "myopenai",
@@ -235,12 +254,12 @@ curl -X POST http://127.0.0.1:19876/v1/admin/providers \
   }'
 
 # 2. 调整 tier 加成 (把 pro 从 20 改 30)
-curl -X PUT http://127.0.0.1:19876/v1/admin/classifier \
+curl -X PUT http://127.0.0.1:6473/v1/admin/classifier \
   -H "Content-Type: application/json" \
   -d '{"tier_bonus": {"pro": 30}, "custom_keywords": {"reasoning": 30}}'
 
 # 3. 立即生效 — registry 自动 rebuild + 模型 cap_score 重算
-curl http://127.0.0.1:19876/v1/models | jq '.data[0].capability_score'
+curl http://127.0.0.1:6473/v1/models | jq '.data[0].capability_score'
 ```
 
 ---
@@ -251,7 +270,7 @@ curl http://127.0.0.1:19876/v1/models | jq '.data[0].capability_score'
 
 ```bash
 docker build -t smr:1.0.0 .
-docker run -d -p 19876:19876 \
+docker run -d -p 6473:6473 \
   -v $(pwd)/config.yaml:/app/config.yaml:ro \
   --name smr \
   smr:1.0.0
@@ -281,7 +300,7 @@ sudo systemctl status smr
 ```yaml
 server:
   host: 127.0.0.1
-  port: 19876
+  port: 6473
   api_key: "your-secret"  # 留空 = 无鉴权
 
 routing:

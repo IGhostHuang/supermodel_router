@@ -40,7 +40,7 @@ if __name__ == "__main__":
 
     # 从 config 读 host/port
     host = "0.0.0.0"
-    port = 1298
+    port = 6473
     if config_path:
         try:
             import yaml

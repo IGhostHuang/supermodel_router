@@ -4,7 +4,7 @@
 # 构建:
 #   docker build -t supermodel_router .
 # 运行:
-#   docker run -d -p 1298:1298 -v /path/to/config.yaml:/app/config.yaml supermodel_router
+#   docker run -d -p 6473:6473 -v /path/to/config.yaml:/app/config.yaml supermodel_router
 # ============================================================
 FROM python:3.12-slim
 
@@ -25,16 +25,16 @@ COPY run.py .
 COPY config.yaml .
 
 # 默认端口
-EXPOSE 1298
+EXPOSE 6473
 
 # 健康检查
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
-  CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:1298/v1/health', timeout=3)" || exit 1
+  CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:6473/v1/health', timeout=3)" || exit 1
 
 # 启动 (支持 -e LOG_LEVEL=DEBUG 控制日志级别)
 ENV LOG_LEVEL=INFO
 ENV HOST=0.0.0.0
-ENV PORT=1298
+ENV PORT=6473
 
 CMD python run.py \
   --config /app/config.yaml \

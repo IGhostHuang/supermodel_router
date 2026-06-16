@@ -9,7 +9,7 @@ import re, yaml, tempfile
 
 def make_config(providers: dict) -> str:
     data = {
-        "server": {"host": "0.0.0.0", "port": 5678},
+        "server": {"host": "0.0.0.0", "port": 6473},
         "routing": {"strategy": "round-robin"},
         "providers": providers,
     }

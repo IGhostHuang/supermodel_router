@@ -26,7 +26,7 @@ def main():
 
     cfg = default_config
     host = args.host or cfg.server.get("host", "0.0.0.0")
-    port = args.port or cfg.server.get("port", 5678)
+    port = args.port or cfg.server.get("port", 6473)
 
     print(f"🚀 supermodel_router starting on {host}:{port}")
     print(f"   config: {cfg._path}")

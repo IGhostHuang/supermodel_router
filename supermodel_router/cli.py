@@ -9,7 +9,7 @@ import argparse
 import urllib.request
 import urllib.error
 
-BASE_URL = "http://localhost:5678"
+BASE_URL = "http://localhost:6473"
 
 
 def api_get(path):
@@ -88,7 +88,7 @@ def cmd_refresh(args):
 
 def main():
     parser = argparse.ArgumentParser(prog="model-router")
-    parser.add_argument("--base-url", default="http://localhost:5678")
+    parser.add_argument("--base-url", default="http://localhost:6473")
     sub = parser.add_subparsers(dest="command")
 
     sub.add_parser("health", help="服务健康检查")
