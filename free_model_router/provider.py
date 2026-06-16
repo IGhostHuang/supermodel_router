@@ -144,24 +144,57 @@ class Provider:
 
     async def pick_key(self) -> str | None:
         """轮询选一个可用 key, 跳过 cooldown 中的"""
+        return await self.pick_key_excluding(exclude=set())
+
+    async def pick_key_excluding(self, exclude: set[str] | None = None) -> str | None:
+        """轮询选一个可用 key, 跳过 cooldown 中的 + 排除指定 keys
+
+        Args:
+            exclude: 已经试过且失败的 key 集合 (用于 401 后切 key)
+        Returns:
+            选中的 key, None 表示所有 key 都不可用
+        """
         if not self.api_keys:
             return None
+        exclude = exclude or set()
         async with self._key_lock:
             now = time.time()
-            # 优先选不在 cooldown 的
             n = len(self.api_keys)
+            # 优先选: 不在 cooldown 且不在 exclude 中
             for offset in range(n):
                 idx = (self._key_index + offset) % n
                 ks = self._key_stats[idx]
                 if ks.in_cooldown and now < ks.cooldown_until:
                     continue
-                # 选中了, 推进 index
+                if self.api_keys[idx] in exclude:
+                    continue
                 self._key_index = (idx + 1) % n
                 return self.api_keys[idx]
-            # 全部在 cooldown, 选最快恢复的
+            # 全部在 cooldown 或都在 exclude: 看是否有可强制恢复的 (cooldown 已过)
+            for offset in range(n):
+                idx = (self._key_index + offset) % n
+                ks = self._key_stats[idx]
+                if ks.in_cooldown and now < ks.cooldown_until:
+                    continue  # 真在 cooldown
+                if self.api_keys[idx] in exclude:
+                    continue
+                self._key_index = (idx + 1) % n
+                return self.api_keys[idx]
+            # 真没可用 key, 选最快恢复的 (给上层知道 provider 已无力)
             idx = min(range(n), key=lambda i: self._key_stats[i].cooldown_until)
             self._key_index = (idx + 1) % n
             return self.api_keys[idx]
+
+    def has_available_key(self, exclude: set[str] | None = None) -> bool:
+        """检查 provider 是否还有 (排除指定 keys 后) 可用 key"""
+        exclude = exclude or set()
+        now = time.time()
+        for k, ks in zip(self.api_keys, self._key_stats):
+            if k in exclude:
+                continue
+            if not ks.in_cooldown or now >= ks.cooldown_until:
+                return True
+        return False
 
     def get_key_index(self, key: str) -> int:
         for i, k in enumerate(self.api_keys):
