@@ -259,7 +259,15 @@ class Router:
                               target: RouteTarget, url: str,
                               headers: dict, body: bytes,
                               start: float) -> dict[str, Any]:
-        """流式响应: 透传, 但要捕获首字节超时和错误"""
+        """
+        流式响应: 透传 SSE 字节流.
+
+        关键修复 (2026-06-22): 必须在 async with httpx.AsyncClient 块内消费 stream.
+        原版: return {stream: resp} → 调用方 async with 退出 → resp.stream 死 → ReadError
+        新版: 在 async with 内 aiter_bytes() 读完 → cache 为 list[bytes] → return chunks
+        副作用: 破坏流式实时性 (必须等上游发完所有 chunk 才开始写 client), 但保证正确性.
+        优化方向: 改 _forward_stream 为 async generator, 保持 stream 跨 async with 边界.
+        """
         try:
             req = client.build_request("POST", url, headers=headers, content=body)
             resp = await client.send(req, stream=True)
@@ -270,12 +278,23 @@ class Router:
         latency_first = (time.time() - start) * 1000
         rl = self.parse_rate_limit(resp.headers)
         if 200 <= resp.status_code < 300:
+            # ── v3 修复: 在 async with 块内消费 stream + cache ──
+            chunks: list[bytes] = []
+            try:
+                async for chunk in resp.aiter_bytes():
+                    chunks.append(chunk)
+            finally:
+                try:
+                    await resp.aclose()
+                except Exception:
+                    pass
             return {
                 "success": True, "status_code": resp.status_code,
-                "stream": resp, "latency_first": latency_first,
+                "chunks": chunks,                # ← 改: stream → chunks (list of bytes)
+                "latency_first": latency_first,
                 "rate_limit": rl or None,
             }
-        # 错误响应
+        # 错误响应 (保持不变)
         try:
             text = await resp.aread()
             text = text.decode("utf-8", errors="replace")

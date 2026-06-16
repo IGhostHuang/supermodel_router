@@ -238,7 +238,25 @@ class FreeModelRouterHandler(BaseHTTPRequestHandler):
                 "Body must be JSON object", "invalid_request_error", 400))
             return
         is_stream = bool(body.get("stream"))
-        # 调度到异步循环
+
+        # ── v3 流式: 立即发 SSE headers + 调度后台 task 异步消费 upstream ──
+        # 关键修复 (2026-06-22): upstream 是 httpx async stream, 必须 async for + aiter_bytes()
+        # sync iter_bytes() 在 async stream 上 → 500 "sync iterator on async stream"
+        # 同步线程 (BaseHTTPRequestHandler) 不能直接 async for, 通过 run_coroutine_threadsafe
+        # 把消费任务交给 event loop, 在 loop 里 aiter_bytes() + 用 run_in_executor 写 wfile
+        if is_stream:
+            try:
+                self._send_sse_headers(200)
+            except Exception as e:
+                LOG.exception("send sse headers failed: %s", e)
+                return
+            # 调度后台 task, 立即 return (handle_one_request 退出)
+            asyncio.run_coroutine_threadsafe(
+                self._stream_loop(body), self.app._loop
+            )
+            return
+
+        # 非流式: 原 future.result 模式
         future = asyncio.run_coroutine_threadsafe(
             self.app.router.handle_chat(body), self.app._loop
         )
@@ -250,10 +268,7 @@ class FreeModelRouterHandler(BaseHTTPRequestHandler):
                 f"Internal error: {e}", "api_error", 500))
             return
         if result.get("success"):
-            if is_stream:
-                self._stream_response(result)
-            else:
-                self._send_json(200, result["data"])
+            self._send_json(200, result["data"])
         else:
             code = result.get("status_code") or 502
             err = result.get("error") or "Unknown error"
@@ -263,31 +278,84 @@ class FreeModelRouterHandler(BaseHTTPRequestHandler):
                 extra["Retry-After"] = str(int(result["rate_limit"]["retry_after"]))
             self._send_json(code, _openai_error(err, err_type, code), extra)
 
+    async def _stream_loop(self, body: dict) -> None:
+        """
+        在 event loop 中消费 chunks list (router 已 cache) + 同步写入 wfile.
+
+        关键 (2026-06-22 v3 修复):
+        1. router._forward_stream 在 async with httpx.AsyncClient 内已 aiter_bytes + cache
+        2. result["chunks"] 是 list[bytes], 不是 httpx async stream (跨 async with 边界问题已规避)
+        3. 同步线程 (BaseHTTPRequestHandler) 调 loop.run_in_executor 写 wfile
+        4. 完成后 wfile.flush + close + close_connection=True
+        """
+        loop = asyncio.get_event_loop()
+        try:
+            result = await self.app.router.handle_chat(body)
+            if not result.get("success"):
+                err = result.get("error", "stream failed")
+                code = result.get("status_code", 500)
+                err_data = f"data: {json.dumps({'error': {'message': err, 'type': 'api_error', 'code': code}})}\n\n".encode()
+                await loop.run_in_executor(None, self.wfile.write, err_data)
+                await loop.run_in_executor(None, self.wfile.write, b"data: [DONE]\n\n")
+                return
+
+            chunks = result.get("chunks", [])
+            for chunk in chunks:
+                await loop.run_in_executor(None, self.wfile.write, chunk)
+            # 上游通常会发 [DONE], 兜底再发
+            try:
+                await loop.run_in_executor(None, self.wfile.write, b"data: [DONE]\n\n")
+            except Exception:
+                pass
+        except (BrokenPipeError, ConnectionResetError):
+            LOG.debug("client disconnected during stream")
+        except Exception as e:
+            LOG.exception("stream loop error: %s", e)
+            try:
+                err_data = f"data: {json.dumps({'error': {'message': str(e), 'type': 'api_error', 'code': 500}})}\n\n".encode()
+                await loop.run_in_executor(None, self.wfile.write, err_data)
+            except Exception:
+                pass
+        finally:
+            try:
+                await loop.run_in_executor(None, self._finalize_stream)
+            except Exception:
+                pass
+
+    def _finalize_stream(self) -> None:
+        """同步 flush + close wfile, 强制关 connection"""
+        try:
+            self.wfile.flush()
+        except Exception:
+            pass
+        try:
+            self.wfile.close()
+        except Exception:
+            pass
+        # 强制关 keep-alive, 避免下个请求用已关的 stream
+        self.close_connection = True
+
     def _stream_response(self, result: dict) -> None:
-        """透传 SSE 流"""
+        """
+        透传 SSE 流 (同步版, 已废弃, 保留仅为兼容旧调用)
+        真实流式走 _stream_loop
+        """
         upstream = result.get("stream")
         if not upstream:
-            # 失败
             err = result.get("error") or "stream failed"
             self._send_json(result.get("status_code") or 502,
                             _openai_error(err, "api_error",
                                           result.get("status_code") or 502))
             return
-        # 透传
+        # 旧版仅作 fallback, 不应被调用
+        LOG.warning("_stream_response called (deprecated), use _stream_loop instead")
         try:
             self._send_sse_headers(200)
-            first_token = True
             for chunk in upstream.iter_bytes():
-                if first_token:
-                    first_token = False
                 self.wfile.write(chunk)
                 self.wfile.flush()
-            # 关闭标记 (上游通常会发 [DONE], 但兜底)
-            try:
-                self.wfile.write(_format_sse_done())
-                self.wfile.flush()
-            except Exception:
-                pass
+            self.wfile.write(_format_sse_done())
+            self.wfile.flush()
         except (BrokenPipeError, ConnectionResetError):
             LOG.debug("Client disconnected during stream")
         finally:
