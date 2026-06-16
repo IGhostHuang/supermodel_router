@@ -38,7 +38,7 @@ def build():
         "--collect-all", "supermodel_router",
         # 控制台窗口（运行时可看到日志，也可以用 --noconsole 隐藏）
         "--console",
-        "run_pyinstaller.py",
+        "run_smr_pyinstaller.py",
     ]
 
     # Windows 平台额外参数
