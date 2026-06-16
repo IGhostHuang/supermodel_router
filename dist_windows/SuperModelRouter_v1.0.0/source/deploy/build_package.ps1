@@ -76,18 +76,18 @@ Write-Host "🚀 编译 supermodel_router.exe ..." -ForegroundColor Yellow
 
 # 找源码目录
 $sourceDir = "$SCRIPT_DIR\source"
-$runPy = "$SCRIPT_DIR\source\run_pyinstaller.py"
+$runPy = "$SCRIPT_DIR\source\run_smr_pyinstaller.py"
 $configYaml = "$SCRIPT_DIR\source\config.yaml"
 
 if (!(Test-Path $runPy)) {
     # 从 deploy 模式或根目录
-    $runPy = "$SCRIPT_DIR\run_pyinstaller.py"
+    $runPy = "$SCRIPT_DIR\run_smr_pyinstaller.py"
     $configYaml = "$SCRIPT_DIR\config.yaml"
     $sourceDir = "$SCRIPT_DIR"
 }
 
 if (!(Test-Path $runPy)) {
-    Write-Host "❌ 未找到 run_pyinstaller.py" -ForegroundColor Red
+    Write-Host "❌ 未找到 run_smr_pyinstaller.py" -ForegroundColor Red
     Write-Host "   请将 build_package.ps1 放在 supermodel_router 项目根目录" -ForegroundColor Yellow
     exit 1
 }
