@@ -141,8 +141,9 @@ Write-Host @"
 用法:
   前台运行:  .\run.bat
   安装服务:  以管理员运行 .\install.ps1
-  API:       http://127.0.0.1:1298
-  管理面板:  http://127.0.0.1:1298/admin
+  API:       http://127.0.0.1:6473
+  管理面板:  http://127.0.0.1:6473/admin
+  (端口可改 config.yaml 里的 server.port)
 
 "@ -ForegroundColor Green
 

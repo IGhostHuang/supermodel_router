@@ -66,11 +66,12 @@ function Write-DefaultConfig {
 
     $config = @"
 # ============================================================
-# SuperModel Router Config v1.0 — 多 Provider / 多 Key / 智能路由
+# SuperModel Router Config v3.1 — 多 Provider / 多 Key / 智能路由
+# 默认端口 6473, 可手动修改下方 server.port 后重启服务生效
 # ============================================================
 server:
   host: "0.0.0.0"
-  port: 1298
+  port: 6473
   api_key: ""
 
 routing:
@@ -106,7 +107,7 @@ providers:
 "@
     Set-Content -Path $CONFIG_PATH -Value $config -Encoding UTF8
     Write-Host "📝 已创建默认配置: $CONFIG_PATH" -ForegroundColor Green
-    Write-Host "⚠️  请编辑该文件填入你的 API Keys" -ForegroundColor Yellow
+    Write-Host "⚠️  请编辑该文件填入你的 API Keys (端口默认 6473, 可改 server.port)" -ForegroundColor Yellow
 }
 
 # ── 检查 NSSM ──────────────────────────────────────────────
@@ -179,9 +180,22 @@ function Install-Service {
     return $true
 }
 
+# ── 从 config.yaml 读取端口 (用户可改) ──────────────────────
+function Get-ConfigPort {
+    if (!(Test-Path $CONFIG_PATH)) { return 6473 }
+    try {
+        $content = Get-Content $CONFIG_PATH -Raw
+        # 匹配 server: 段下的 port 字段
+        if ($content -match '(?ms)^\s*server:\s*\n(?:\s+[^\n]+\n)*?\s+port:\s*(\d+)') {
+            return [int]$Matches[1]
+        }
+    } catch {}
+    return 6473
+}
+
 # ── 防火墙 ──────────────────────────────────────────────────
 function Configure-Firewall {
-    $port = 1298
+    $port = Get-ConfigPort
     try {
         $rule = Get-NetFirewallRule -DisplayName "SuperModel Router" -ErrorAction SilentlyContinue
         if (!$rule) {
@@ -209,9 +223,10 @@ function Start-Service {
 
     $status = & $nssm status $SERVICE_NAME
     if ($status -eq "SERVICE_RUNNING") {
+        $displayPort = Get-ConfigPort
         Write-Host "✅ SuperModel Router 服务已启动" -ForegroundColor Green
-        Write-Host "🌐 http://127.0.0.1:1298" -ForegroundColor Cyan
-        Write-Host "📊 http://127.0.0.1:1298/admin" -ForegroundColor Cyan
+        Write-Host "🌐 http://127.0.0.1:$displayPort" -ForegroundColor Cyan
+        Write-Host "📊 http://127.0.0.1:$displayPort/admin" -ForegroundColor Cyan
     } else {
         Write-Host "❌ 服务启动失败, 查看日志: $DATA_DIR\logs\" -ForegroundColor Red
     }
@@ -334,6 +349,9 @@ if ($choice -ne "n" -and $choice -ne "N") {
     }
 }
 
+# 准备显示用端口 (最终横幅用)
+$displayPort = Get-ConfigPort
+
 Write-Host @"
 
 ═══════════════════════════════════════════════
@@ -350,9 +368,9 @@ Write-Host @"
   .\install.ps1 -Uninstall     卸载
   .\run.bat                    前台启动
 
-访问:
-  🌐  API:  http://127.0.0.1:1298
-  📊 管理:  http://127.0.0.1:1298/admin
+访问 (端口可手动改 $CONFIG_PATH 里的 server.port 后重启):
+  🌐  API:  http://127.0.0.1:$displayPort
+  📊 管理:  http://127.0.0.1:$displayPort/admin
 ═══════════════════════════════════════════════
 
 "@ -ForegroundColor Green

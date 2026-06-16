@@ -386,6 +386,7 @@ tr:hover td{background:#1a1a24}
   <button class="btn-sm" onclick="loadModels()">获取模型</button>
   <button class="btn" onclick="openAddProvider()">➕ 添加 Provider</button>
   <button class="btn-sm" onclick="openClassifier()">⚙️ Tier Bonus</button>
+  <button class="btn-sm" onclick="openServer()">🔧 修改配置</button>
 </div>
 
 <!-- 状态栏 -->
@@ -670,6 +671,73 @@ async function saveClassifier(){
   closeClassifier();
   refresh();
 }
+
+// ============================================================
+// Server / Routing 手动修改
+// ============================================================
+
+async function openServer(){
+  const [srv, rt] = await Promise.all([
+    api('/v1/admin/server'),
+    api('/v1/admin/routing'),
+  ]);
+  document.getElementById('srvHost').value = srv.host || '0.0.0.0';
+  document.getElementById('srvPort').value = srv.port || 6473;
+  document.getElementById('srvApiKey').value = '';  // 不回显, 显式输入
+  document.getElementById('srvApiKey').placeholder = srv.api_key ? '已设置 (留空不改)' : '可选, Bearer 鉴权';
+  document.getElementById('rtStrategy').value = rt.strategy || 'quality_weighted';
+  document.getElementById('rtFailover').value = rt.failover_threshold || 3;
+  document.getElementById('rtRecovery').value = rt.recovery_interval || 300;
+  document.getElementById('rtMaxRetry').value = rt.max_retry || 2;
+  document.getElementById('rtFirstToken').value = rt.first_token_timeout_ms || 10000;
+  document.getElementById('serverModal').classList.add('show');
+}
+function closeServer(){
+  document.getElementById('serverModal').classList.remove('show');
+}
+async function saveServer(){
+  const srvPayload = {};
+  const host = document.getElementById('srvHost').value.trim();
+  const port = parseInt(document.getElementById('srvPort').value);
+  const apiKey = document.getElementById('srvApiKey').value;
+  if (host) srvPayload.host = host;
+  if (!isNaN(port) && port > 0) srvPayload.port = port;
+  if (apiKey) srvPayload.api_key = apiKey;
+
+  const rtPayload = {};
+  const strategy = document.getElementById('rtStrategy').value;
+  const failover = parseInt(document.getElementById('rtFailover').value);
+  const recovery = parseInt(document.getElementById('rtRecovery').value);
+  const maxRetry = parseInt(document.getElementById('rtMaxRetry').value);
+  const firstToken = parseInt(document.getElementById('rtFirstToken').value);
+  rtPayload.strategy = strategy;
+  if (!isNaN(failover)) rtPayload.failover_threshold = failover;
+  if (!isNaN(recovery)) rtPayload.recovery_interval = recovery;
+  if (!isNaN(maxRetry)) rtPayload.max_retry = maxRetry;
+  if (!isNaN(firstToken)) rtPayload.first_token_timeout_ms = firstToken;
+
+  const r1 = await api('/v1/admin/server', {
+    method: 'PUT',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(srvPayload),
+  });
+  if (r1.error) { toast('Server: ' + r1.error, false); return; }
+
+  const r2 = await api('/v1/admin/routing', {
+    method: 'PUT',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(rtPayload),
+  });
+  if (r2.error) { toast('Routing: ' + r2.error, false); return; }
+
+  let msg = `Server: ${(r1.updated||[]).join(',') || '(no change)'} | Routing: ${(r2.updated||[]).join(',')}`;
+  if (r1.restart_required) {
+    msg += ' ⚠️ 需重启服务';
+  }
+  toast(msg, !r1.restart_required);
+  closeServer();
+  refresh();
+}
 </script>
 
 <!-- Add Provider Modal -->
@@ -727,6 +795,43 @@ async function saveClassifier(){
     <div class="row">
       <button class="btn" onclick="saveClassifier()">保存</button>
       <button class="btn-sm" onclick="closeClassifier()">取消</button>
+    </div>
+  </div>
+</div>
+
+<!-- Server / Routing Modal -->
+<div class="modal-bg" id="serverModal">
+  <div class="modal" style="max-width:600px">
+    <h3>🔧 修改服务配置</h3>
+    <div class="text-muted">server 段: host / port (改 port 需重启) / api_key. routing 段: 路由策略参数.</div>
+
+    <h4 style="margin-top:14px;font-size:14px;color:#94a3b8">Server</h4>
+    <label>Host (监听地址)</label>
+    <input id="srvHost" placeholder="0.0.0.0">
+    <label>Port (监听端口, 默认 6473) <span class="text-muted">⚠️ 改完需重启</span></label>
+    <input id="srvPort" type="number" min="1" max="65535" value="6473">
+    <label>API Key <span class="text-muted">(Bearer 鉴权, 留空不改)</span></label>
+    <input id="srvApiKey" type="password" placeholder="可选, Bearer 鉴权">
+
+    <h4 style="margin-top:14px;font-size:14px;color:#94a3b8">Routing</h4>
+    <label>Strategy (路由策略)</label>
+    <select id="rtStrategy">
+      <option value="quality_weighted">quality_weighted (按质量评分)</option>
+      <option value="round-robin">round-robin (轮询)</option>
+      <option value="failover">failover (故障切换)</option>
+    </select>
+    <label>Failover Threshold (连续失败次数触发 degraded)</label>
+    <input id="rtFailover" type="number" min="1" value="3">
+    <label>Recovery Interval (degraded 自动恢复间隔, 秒)</label>
+    <input id="rtRecovery" type="number" min="10" value="300">
+    <label>Max Retry (单请求最大重试)</label>
+    <input id="rtMaxRetry" type="number" min="0" max="10" value="2">
+    <label>First Token Timeout (首个 token 超时, ms)</label>
+    <input id="rtFirstToken" type="number" min="1000" value="10000">
+
+    <div class="row">
+      <button class="btn" onclick="saveServer()">保存</button>
+      <button class="btn-sm" onclick="closeServer()">取消</button>
     </div>
   </div>
 </div>
@@ -905,3 +1010,74 @@ async def admin_classifier_update(payload: dict):
     # 重算所有模型 capability_score
     registry.refresh_all()
     return JSONResponse({"ok": True, "updated": list(cfg.keys())})
+
+
+# ============================================================
+# Server / Routing 段手动修改 API
+# ============================================================
+
+@app.get("/v1/admin/server")
+async def admin_server_get():
+    """读取 server 段配置 (api_key 自动 REDACT)"""
+    import copy
+    data = copy.deepcopy(config.data.get("server") or {})
+    if data.get("api_key"):
+        data["api_key"] = "***"
+    return JSONResponse(data)
+
+
+@app.put("/v1/admin/server")
+async def admin_server_update(payload: dict):
+    """更新 server 段配置 (host / port / api_key). 注意: port 改动需重启服务."""
+    allowed = {"host", "port", "api_key"}
+    srv = {k: v for k, v in payload.items() if k in allowed}
+    if not srv:
+        return JSONResponse(
+            {"error": f"no valid keys. allowed: {sorted(allowed)}"},
+            status_code=400,
+        )
+    # 类型校验
+    if "port" in srv:
+        try:
+            srv["port"] = int(srv["port"])
+            if not (1 <= srv["port"] <= 65535):
+                raise ValueError
+        except (ValueError, TypeError):
+            return JSONResponse(
+                {"error": "port must be integer 1-65535"},
+                status_code=400,
+            )
+    old_port = config.server.get("port")
+    config.update_server(srv)
+    new_port = config.server.get("port")
+    needs_restart = ("port" in srv and old_port != new_port)
+    return JSONResponse({
+        "ok": True,
+        "updated": list(srv.keys()),
+        "restart_required": needs_restart,
+        "note": "port 改动需重启 SMR 服务生效 (其它字段实时生效)" if needs_restart else None,
+    })
+
+
+@app.get("/v1/admin/routing")
+async def admin_routing_get():
+    """读取 routing 段配置"""
+    return JSONResponse(config.data.get("routing") or {})
+
+
+@app.put("/v1/admin/routing")
+async def admin_routing_update(payload: dict):
+    """更新 routing 段配置 (strategy / failover_threshold / recovery_interval / max_retry / first_token_timeout_ms / retry_backoff_ms / quality_weights)"""
+    allowed = {
+        "strategy", "failover_threshold", "recovery_interval",
+        "max_retry", "first_token_timeout_ms", "retry_backoff_ms",
+        "quality_weights",
+    }
+    rt = {k: v for k, v in payload.items() if k in allowed}
+    if not rt:
+        return JSONResponse(
+            {"error": f"no valid keys. allowed: {sorted(allowed)}"},
+            status_code=400,
+        )
+    config.update_routing(rt)
+    return JSONResponse({"ok": True, "updated": list(rt.keys())})

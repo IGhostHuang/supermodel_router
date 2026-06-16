@@ -9,7 +9,7 @@ services:
     container_name: supermodel_router
     restart: unless-stopped
     ports:
-      - "1298:1298"
+      - "6473:6473"
     volumes:
       # 映射外部 config.yaml (改文件热重载生效, 无需重启容器)
       - ./config.yaml:/app/config.yaml:ro
@@ -18,9 +18,9 @@ services:
     environment:
       - LOG_LEVEL=INFO
       - HOST=0.0.0.0
-      - PORT=1298
+      - PORT=6473
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:1298/v1/health', timeout=3) or exit(1)"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:6473/v1/health', timeout=3) or exit(1)"]
       interval: 30s
       timeout: 5s
       retries: 3

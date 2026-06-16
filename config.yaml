@@ -1,126 +1,92 @@
-# ============================================================
-# SuperModel Router Config v3.0 — 模态感知 / 多 provider / 多 key 轮询
-# ============================================================
 server:
-  host: "0.0.0.0"
-  port: 1298
-  api_key: ""
-
-# (new) 模态感知自动路由
+  host: 0.0.0.0
+  port: 6473
+  api_key: ''
 modality_auto_routing:
   enabled: true
-  # 每个模态分组轮询 top K 个评分最高的模型
   top_k: 5
-  # 优先级队列: 输入类型 → 输出类型 → [目标模态列表] (降序)
   routing_table:
     text:
       text:
-        - "text-only"
-        - "multimodal"
+      - text-only
+      - multimodal
       image:
-        - "image-gen"
+      - image-gen
       audio:
-        - "audio-gen"
+      - audio-gen
       video:
-        - "video-gen"
+      - video-gen
     image:
       text:
-        - "multimodal"
+      - multimodal
       image:
-        - "image-gen"
+      - image-gen
       audio: []
       video: []
     audio:
       text:
-        - "audio-gen"
-        - "multimodal"
+      - audio-gen
+      - multimodal
       audio:
-        - "audio-gen"
+      - audio-gen
     video:
       text:
-        - "video-gen"
-        - "multimodal"
+      - video-gen
+      - multimodal
       video:
-        - "video-gen"
-  # 降级策略: 目标模态无可用模型时, 尝试这些
+      - video-gen
   fallback_order:
-    - "multimodal"
-    - "text-only"
-
+  - multimodal
+  - text-only
 routing:
-  # 模型选择策略: round-robin | quality_weighted | failover
-  strategy: "quality_weighted"
+  strategy: quality_weighted
   failover_threshold: 3
   recovery_interval: 300
   max_retry: 2
   first_token_timeout_ms: 10000
-  retry_backoff_ms: [0, 500]
-  # 质量评分: 成功率权重 (0-1) vs 延迟权重 (0-1)
+  retry_backoff_ms:
+  - 0
+  - 500
   quality_weights:
     success_rate: 0.6
     latency: 0.4
-
 providers:
-  # 按 pattern 匹配免费模型
   openrouter:
     enabled: true
-    base_url: "https://openrouter.ai/api/v1"
+    base_url: https://openrouter.ai/api/v1
     api_keys:
-      - ""  # 多个 key 自动轮询
+    - ''
     model_rules:
-      mode: "pattern"
-      pattern: ".*-free$|.*free.*"
+      mode: pattern
+      pattern: .*-free$|.*free.*
       exclude: []
     max_concurrent: 2
     health_check_interval: 300
-
-  # 按 include 白名单
   newapi:
     enabled: true
-    base_url: "https://your-newapi-endpoint/v1"
+    base_url: https://your-newapi-endpoint/v1
     api_keys:
-      - ""
+    - ''
     model_rules:
-      mode: "include"
+      mode: include
       include:
-        - "deepseek/deepseek-v4-flash"
-        - "deepseek/deepseek-v4-pro"
-        - "minimaxai/minimax-m3"
+      - deepseek/deepseek-v4-flash
+      - deepseek/deepseek-v4-pro
+      - minimaxai/minimax-m3
       exclude: []
     max_concurrent: 3
     health_check_interval: 300
-
-  # 所有模型, 按 exclude 黑名单
   aihubmix:
     enabled: false
-    base_url: "https://aihubmix.com/v1"
+    base_url: https://aihubmix.com/v1
     api_keys:
-      - ""
+    - ''
     model_rules:
-      mode: "all"
+      mode: all
       exclude:
-        - ".*-legacy.*"
+      - .*-legacy.*
     max_concurrent: 3
     health_check_interval: 600
-
-# ============================================================
-# Classifier 自定义配置 (v3.1)
-# 不写则用内置默认. tier_bonus 是"覆盖", custom_keywords 是"追加"
-# ============================================================
 classifier:
-  # 覆盖内置 tier 加成 (内置默认: turbo=25, pro=20, lite=-10 ...)
-  # tier_bonus:
-  #   pro: 30        # 把 pro 从 20 改成 30
-  #   turbo: 50      # 把 turbo 从 25 改成 50
-  #   custom_tier: 15 # 添加新 tier
-
-  # 自定义关键词加分 (叠加, 不 break, 多关键词命中累加)
-  # custom_keywords:
-  #   reasoning: 30   # 含 "reasoning" 的模型 +30 分
-  #   coder: 25       # 含 "coder" 的模型 +25 分
-  #   r1: 20          # DeepSeek R1 系列 +20
-
-  # 覆盖模态基类分 (内置: text-only=50, multimodal=85, image-gen=70 ...)
-  # modality_base_score:
-  #   text-only: 60
-  #   multimodal: 90
+  tier_bonus:
+    pro: 35

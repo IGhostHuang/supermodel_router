@@ -2,7 +2,7 @@
 """
 supermodel_router — OpenAI-compatible 多 provider / 多 key / 智能路由
 用法:
-  python run.py                   # 默认 0.0.0.0:5678
+  python run.py                   # 默认 0.0.0.0:6473
   python run.py --port 8080       # 指定端口
   python run.py --config my.yaml  # 指定配置
 """
@@ -44,7 +44,7 @@ def main():
 
     # 确定 host/port: 环境变量 > CLI 参数 > config > 默认
     host = args.host or os.environ.get("HOST") or cfg.server.get("host", "0.0.0.0")
-    port = args.port or int(os.environ.get("PORT", 0)) or cfg.server.get("port", 5678)
+    port = args.port or int(os.environ.get("PORT", 0)) or cfg.server.get("port", 6473)
 
     # 启动 uvicorn
     import uvicorn

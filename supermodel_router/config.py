@@ -159,6 +159,34 @@ class Config:
             LOG.info("Classifier config updated: %s", list(cfg.keys()))
             return True
 
+    def update_server(self, srv: dict, persist: bool = True) -> bool:
+        """更新 server 段 (host / port / api_key). 注意: port 改动需重启服务."""
+        with self._lock:
+            section = self._data.setdefault("server", None)
+            if section is None:
+                self._data["server"] = {}
+                section = self._data["server"]
+            section.update(srv)
+            if persist:
+                self._save_yaml()
+            self._notify_change()
+            LOG.info("Server config updated: %s", list(srv.keys()))
+            return True
+
+    def update_routing(self, rt: dict, persist: bool = True) -> bool:
+        """更新 routing 段 (strategy / failover_threshold / recovery_interval / max_retry / first_token_timeout_ms / retry_backoff_ms / quality_weights)"""
+        with self._lock:
+            section = self._data.setdefault("routing", None)
+            if section is None:
+                self._data["routing"] = {}
+                section = self._data["routing"]
+            section.update(rt)
+            if persist:
+                self._save_yaml()
+            self._notify_change()
+            LOG.info("Routing config updated: %s", list(rt.keys()))
+            return True
+
     def _save_yaml(self):
         """写回 yaml 文件"""
         try:
