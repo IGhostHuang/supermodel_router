@@ -136,16 +136,27 @@ class Router:
 
     @staticmethod
     def classify_http_error(status_code: int, body: str = "") -> dict[str, bool]:
-        """判断 HTTP 错误是否可重试 / 是否需要禁用模型"""
+        """判断 HTTP 错误是否可重试 / 是否需要禁用模型
+
+        关键修正:
+        - 401/403: 鉴权失败, 是 key 问题不是 model 问题 → 切 key 重试, 不动 model
+        - 404/410: 模型不存在 → 是 model 问题, 禁用 model
+        - 429: 限流 → 仅标记, 切 key 试下一个
+        - 5xx: 服务端问题, 切 key 试下一个; 真正多次失败才考虑 disable model
+        """
         body_low = (body or "").lower()
         if status_code == 400:
             return {"retryable": True, "disable_model": False}
-        if status_code in (401, 404, 410):
-            return {"retryable": False, "disable_model": True}
-        if status_code == 403:
+        # 鉴权类: 切 key 重试, 不 disable model
+        if status_code in (401, 403):
             return {"retryable": True, "disable_model": False}
+        # 模型不存在: 是 model 问题
+        if status_code in (404, 410):
+            return {"retryable": False, "disable_model": True}
+        # 限流 / 超时 / 不可处理: 切 key 重试
         if status_code in (408, 422, 429):
             return {"retryable": True, "disable_model": False}
+        # 5xx: 服务端问题, 切 key 重试 (不要立刻 disable model, 由 router 综合判断)
         if status_code >= 500:
             return {"retryable": True, "disable_model": False}
         return {"retryable": False, "disable_model": False}
@@ -299,10 +310,139 @@ class Router:
 
     # ── 顶层处理入口 ──
 
+    # ── 错误状态码分类常量 ──
+
+    # 鉴权/限流类错误: 是 key 问题, 应在同 provider 内切下一个 key
+    KEY_RETRY_STATUSES = (401, 403, 429)
+    # 模型不存在类: 是 model 问题, 应当 disable model
+    MODEL_ERROR_STATUSES = (404, 410)
+
+    async def _try_provider_with_keys(
+        self, target: RouteTarget, body: dict, is_stream: bool,
+        attempts: list[dict], tried_keys: set[str] | None = None,
+    ) -> dict[str, Any]:
+        """
+        在一个 provider 内, 用多个 key 依次尝试同一个 (provider, model) 组合.
+
+        行为:
+        - 401/403/429 → mark key cooldown + 立即换下一个 key
+        - 404/410 → mark model disabled (是 model 问题)
+        - 5xx → 换下一个 key; 全部 key 都 5xx 才返回
+        - 400/422 → 直接返回 (不可重试)
+        - 成功 → 返回
+
+        槽位约定: 调用方 (select_target) 已 acquire_slot, 整个方法内只占 1 个槽,
+        切 key 时不重新 acquire, 退出时统一 release.
+        """
+        provider = target.provider
+        model = target.model
+        tried_keys = set(tried_keys or set())
+        current_key = target.api_key
+        current_target = target
+        last_result: dict | None = None
+        slot_released = False
+
+        # 最多试 provider.key_count + 1 次 (给 cooldown 恢复的 key 一次机会)
+        max_attempts = provider.key_count + 1
+        try:
+            for _ in range(max_attempts):
+                tried_keys.add(current_key)
+                attempts.append({
+                    "provider_id": provider.id,
+                    "model": model,
+                    "key": current_key[:8] + "...",
+                    "status_code": None,
+                    "error": None,
+                })
+                try:
+                    result = await self.forward_chat(current_target, body, stream=is_stream)
+                except Exception as e:
+                    LOG.exception("Forward unexpected error")
+                    result = {"success": False, "status_code": 502,
+                              "error": str(e), "retryable": True}
+                attempts[-1]["status_code"] = result.get("status_code")
+                attempts[-1]["error"] = (result.get("error") or "")[:200]
+                last_result = result
+
+                if result.get("success"):
+                    provider.record_key_success(current_key)
+                    provider.report_success(
+                        model,
+                        latency_ms=result.get("latency") or result.get("latency_first") or 0,
+                    )
+                    result["provider_id"] = provider.id
+                    result["model_id"] = model
+                    return result
+
+                # ── 失败处理 ──
+                status = result.get("status_code", 0) or 0
+                provider.record_key_failure(
+                    current_key,
+                    http_code=status,
+                    retry_after=(result.get("rate_limit") or {}).get("retry_after", 0.0),
+                )
+                provider.report_failure(model, error=result.get("error", ""),
+                                        http_code=status)
+
+                # 429 限流: 标记 (只影响 model 选择, 不一定切 provider)
+                if status == 429 and (result.get("rate_limit") or {}).get("retry_after"):
+                    retry_after = (result["rate_limit"] or {}).get("retry_after", 60)
+                    provider.mark_rate_limited(model, retry_after)
+
+                # 404/410: 模型确实不存在 → disable model
+                if status in self.MODEL_ERROR_STATUSES:
+                    provider.disable_model(model, reason=result.get("error", ""))
+                    # model 已 disable, 本 provider 内换 key 也无意义
+                    return result
+
+                # 不可重试: 直接返回
+                if not result.get("retryable"):
+                    return result
+
+                # 鉴权/限流/5xx: 切下一个 key
+                if status in self.KEY_RETRY_STATUSES or status >= 500:
+                    next_key = await provider.pick_key_excluding(exclude=tried_keys)
+                    if not next_key or next_key == current_key:
+                        # 没有别的 key 可试
+                        return result
+                    LOG.info("Provider %s key %s → trying next key %s (HTTP %d)",
+                             provider.id, current_key[:8] + "...", next_key[:8] + "...",
+                             status)
+                    current_key = next_key
+                    current_target = RouteTarget(
+                        provider=provider,
+                        model=model,
+                        api_key=next_key,
+                        base_url=provider.base_url,
+                        headers={**provider.extra_headers,
+                                 "Authorization": f"Bearer {next_key}"},
+                    )
+                    continue
+
+                # 其它情况: 直接返回
+                return result
+        finally:
+            # 统一释放槽位 (select_target 给的)
+            await provider.release_slot()
+            slot_released = True
+
+        # 超 max_attempts: 用最后一次结果
+        return last_result or {
+            "success": False, "status_code": 502,
+            "error": "exhausted key retries", "retryable": True,
+        }
+
     async def handle_chat(self, body: dict) -> dict[str, Any]:
         """
         处理 /v1/chat/completions 请求: 选择 → 转发 → 失败重试.
-        Returns: {"success": bool, "data": ..., "provider_id": ..., "model": ...}
+
+        重试策略 (修正后):
+        1. 选一个 provider + model + key
+        2. 在同一 provider 内, 鉴权/限流/5xx → 立即切下一个 key 重试
+        3. 同 provider 所有 key 都失败后, 才切下一个 provider
+        4. 404/410 → disable model, 不再在同 provider 重试
+
+        Returns: {"success": bool, "data": ..., "provider_id": ..., "model_id": ...}
         """
         self._request_count += 1
         is_stream = bool(body.get("stream"))
@@ -328,50 +468,23 @@ class Router:
                     "status_code": 503,
                     "attempts": attempts,
                 }
-            try:
-                result = await self.forward_chat(target, body, stream=is_stream)
-            finally:
-                await target.provider.release_slot()
-            attempts.append({
-                "provider_id": target.provider.id,
-                "model": target.model,
-                "status_code": result.get("status_code"),
-                "error": result.get("error"),
-            })
+
+            # 释放 select_target 里 acquire 的槽位, 由 _try_provider_with_keys 内部 acquire
+            # 注: select_target 已 acquire, 这里我们让它带着, _try_provider_with_keys 会用第一个 target
+            result = await self._try_provider_with_keys(
+                target, body, is_stream, attempts,
+            )
             last_result = result
+
             if result.get("success"):
-                # 记录成功
-                target.provider.record_key_success(target.api_key)
-                target.provider.report_success(
-                    target.model,
-                    latency_ms=result.get("latency") or result.get("latency_first") or 0,
-                )
                 self._success_count += 1
-                result["provider_id"] = target.provider.id
-                result["model_id"] = target.model
                 return result
-            # 失败处理
-            target.provider.record_key_failure(
-                target.api_key,
-                http_code=result.get("status_code", 0),
-                retry_after=(result.get("rate_limit") or {}).get("retry_after", 0.0),
-            )
-            target.provider.report_failure(
-                target.model,
-                error=result.get("error", ""),
-                http_code=result.get("status_code", 0),
-            )
-            # 限流 → 标记 + 跳过该 provider
-            if result.get("status_code") == 429 and (result.get("rate_limit") or {}).get("retry_after"):
-                retry_after = (result["rate_limit"] or {}).get("retry_after", 60)
-                target.provider.mark_rate_limited(target.model, retry_after)
-            # 禁用模型
-            if result.get("disable_model"):
-                target.provider.disable_model(target.model, reason=result.get("error", ""))
+
             # 不可重试 → 直接返回
             if not result.get("retryable"):
                 self._failure_count += 1
                 return result
+
             # 跳过这个 provider
             skip.add(target.provider.id)
             if attempt < self.max_retry:
