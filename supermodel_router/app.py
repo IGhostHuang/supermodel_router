@@ -361,6 +361,21 @@ tr:hover td{background:#1a1a24}
 .modality-filter{display:flex;gap:4px;margin-bottom:8px;flex-wrap:wrap}
 .modality-filter button{padding:4px 10px;border-radius:12px;border:1px solid #333;background:transparent;color:#888;cursor:pointer;font-size:12px}
 .modality-filter button.active{background:#2563eb;color:#fff;border-color:#2563eb}
+.modal-bg{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);display:none;align-items:center;justify-content:center;z-index:100}
+.modal-bg.show{display:flex}
+.modal{background:#1a1a24;border-radius:10px;padding:20px;max-width:600px;width:90%;max-height:80vh;overflow:auto}
+.modal h3{margin-bottom:12px;font-size:16px}
+.modal label{display:block;font-size:12px;color:#888;margin-top:10px;margin-bottom:4px}
+.modal input,.modal select,.modal textarea{width:100%;background:#0f0f13;border:1px solid #333;color:#e0e0e0;padding:8px 10px;border-radius:4px;font-size:13px;font-family:inherit}
+.modal textarea{min-height:80px;font-family:ui-monospace,monospace;font-size:12px}
+.modal .row{display:flex;gap:10px;margin-top:14px}
+.modal .btn{flex:1}
+.danger{background:#dc2626}
+.danger:hover{background:#b91c1c}
+.text-muted{color:#666;font-size:11px}
+.kv-edit{display:flex;gap:6px;margin-bottom:6px;align-items:center}
+.kv-edit input{flex:1}
+.kv-edit button{padding:4px 8px}
 </style>
 </head>
 <body>
@@ -369,6 +384,8 @@ tr:hover td{background:#1a1a24}
   <button class="btn" onclick="refresh()">🔄 刷新</button>
   <button class="btn-sm" onclick="reloadConfig()">重载配置</button>
   <button class="btn-sm" onclick="loadModels()">获取模型</button>
+  <button class="btn" onclick="openAddProvider()">➕ 添加 Provider</button>
+  <button class="btn-sm" onclick="openClassifier()">⚙️ Tier Bonus</button>
 </div>
 
 <!-- 状态栏 -->
@@ -455,13 +472,14 @@ function renderProviders(h){
     let cls='badge-ok',label='OK';
     if(p.degraded){cls='badge-degraded';label='Degraded';}
     return `<div class="provider-card">
-      <div>
+      <div style="flex:1">
         <div class="provider-name">${name}</div>
         <div style="font-size:11px;color:#666;margin-top:4px">${p.base_url}</div>
       </div>
-      <div style="text-align:right">
-        <div><span class="provider-badge ${cls}">${label}</span></div>
-        <div style="font-size:11px;color:#666;margin-top:4px">${p.models} models · fail ${p.fail_count}</div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <span class="provider-badge ${cls}">${label}</span>
+        <span style="font-size:11px;color:#666">${p.models} models · fail ${p.fail_count}</span>
+        <button class="btn-sm danger" onclick="deleteProvider('${name}')">删除</button>
       </div>
     </div>`;
   }).join('');
@@ -512,7 +530,207 @@ function renderModels(data){
   }).join('');
 }
 refresh();
+
+// ============================================================
+// 自定义 Provider 管理
+// ============================================================
+
+let currentClassifier = null;
+
+async function openAddProvider(){
+  document.getElementById('addProvModal').classList.add('show');
+}
+function closeAddProvider(){
+  document.getElementById('addProvModal').classList.remove('show');
+}
+async function submitAddProvider(){
+  const name = document.getElementById('provName').value.trim();
+  const base_url = document.getElementById('provUrl').value.trim();
+  const api_keys_raw = document.getElementById('provKeys').value.trim();
+  const mode = document.getElementById('provMode').value;
+  const pattern = document.getElementById('provPattern').value.trim();
+  const include_raw = document.getElementById('provInclude').value.trim();
+  const max_concurrent = parseInt(document.getElementById('provMax').value) || 3;
+
+  if (!name || !base_url || !api_keys_raw) {
+    toast('请填写 name / base_url / api_keys', false);
+    return;
+  }
+  const api_keys = api_keys_raw.split('\n').map(s=>s.trim()).filter(Boolean);
+  const include = include_raw ? include_raw.split('\n').map(s=>s.trim()).filter(Boolean) : [];
+  const model_rules = {mode};
+  if (mode === 'pattern' && pattern) model_rules.pattern = pattern;
+  if (mode === 'include' && include.length) model_rules.include = include;
+
+  const r = await api('/v1/admin/providers', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      name,
+      config: { base_url, api_keys, model_rules, max_concurrent, enabled: true },
+    }),
+  });
+  if (r.error) { toast(r.error, false); return; }
+  toast(`Provider '${name}' added (${r.config?.model_rules?.mode || 'all'})`);
+  closeAddProvider();
+  document.getElementById('provName').value = '';
+  document.getElementById('provUrl').value = '';
+  document.getElementById('provKeys').value = '';
+  document.getElementById('provPattern').value = '';
+  document.getElementById('provInclude').value = '';
+  refresh();
+}
+
+async function deleteProvider(name){
+  if (!confirm(`确定删除 provider '${name}' 吗?\n(配置会从 config.yaml 移除)`)) return;
+  const r = await api('/v1/admin/providers/' + encodeURIComponent(name), {method: 'DELETE'});
+  if (r.error) { toast(r.error, false); return; }
+  toast(`Provider '${name}' removed`);
+  refresh();
+}
+
+// ============================================================
+// Tier Bonus / Classifier 管理
+// ============================================================
+
+async function openClassifier(){
+  const r = await api('/v1/admin/classifier');
+  currentClassifier = r;
+  renderClassifier(r);
+  document.getElementById('classifierModal').classList.add('show');
+}
+function closeClassifier(){
+  document.getElementById('classifierModal').classList.remove('show');
+}
+function renderClassifier(data){
+  const {configured, defaults} = data;
+  // tier_bonus
+  const tierMerged = {...defaults.tier_bonus, ...(configured.tier_bonus || {})};
+  const tierDiv = document.getElementById('tierBonusEditor');
+  tierDiv.innerHTML = '';
+  for (const [k, v] of Object.entries(tierMerged)) {
+    tierDiv.appendChild(makeKVEditor(k, v, 'tier_bonus'));
+  }
+  // custom_keywords
+  const kwDiv = document.getElementById('customKwEditor');
+  kwDiv.innerHTML = '';
+  for (const [k, v] of Object.entries((configured.custom_keywords || {}))) {
+    kwDiv.appendChild(makeKVEditor(k, v, 'custom_keywords'));
+  }
+  // modality_base_score
+  const modMerged = {...defaults.modality_base_score, ...(configured.modality_base_score || {})};
+  const modDiv = document.getElementById('modScoreEditor');
+  modDiv.innerHTML = '';
+  for (const [k, v] of Object.entries(modMerged)) {
+    modDiv.appendChild(makeKVEditor(k, v, 'modality_base_score'));
+  }
+}
+function makeKVEditor(key, value, group){
+  const wrap = document.createElement('div');
+  wrap.className = 'kv-edit';
+  wrap.innerHTML = `
+    <input type="text" value="${key.replace(/"/g,'&quot;')}" placeholder="keyword" style="flex:1">
+    <input type="number" value="${value}" placeholder="score" style="width:100px">
+    <button class="btn-sm danger" onclick="this.parentElement.remove()">×</button>
+  `;
+  wrap.dataset.group = group;
+  return wrap;
+}
+function addKVEditor(group){
+  const map = {
+    'tier_bonus': 'tierBonusEditor',
+    'custom_keywords': 'customKwEditor',
+    'modality_base_score': 'modScoreEditor',
+  };
+  document.getElementById(map[group]).appendChild(makeKVEditor('', 0, group));
+}
+async function saveClassifier(){
+  const collect = (divId) => {
+    const out = {};
+    document.querySelectorAll('#'+divId+' .kv-edit').forEach(row => {
+      const [kInput, vInput] = row.querySelectorAll('input');
+      const k = kInput.value.trim();
+      const v = parseInt(vInput.value);
+      if (k && !isNaN(v)) out[k] = v;
+    });
+    return out;
+  };
+  const payload = {
+    tier_bonus: collect('tierBonusEditor'),
+    custom_keywords: collect('customKwEditor'),
+    modality_base_score: collect('modScoreEditor'),
+  };
+  const r = await api('/v1/admin/classifier', {
+    method: 'PUT',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(payload),
+  });
+  if (r.error) { toast(r.error, false); return; }
+  toast(`已更新: ${(r.updated||[]).join(', ')}`);
+  closeClassifier();
+  refresh();
+}
 </script>
+
+<!-- Add Provider Modal -->
+<div class="modal-bg" id="addProvModal">
+  <div class="modal">
+    <h3>➕ 添加自定义 Provider</h3>
+    <div class="text-muted">支持任何 OpenAI 兼容 API (OpenAI / Azure / 自建 / 中转 / newapi 等)</div>
+    <label>Provider 名称 *</label>
+    <input id="provName" placeholder="myopenai">
+    <label>Base URL * <span class="text-muted">(去掉 /v1 后缀, e.g. https://api.openai.com)</span></label>
+    <input id="provUrl" placeholder="https://api.openai.com">
+    <label>API Keys * <span class="text-muted">(一行一个, 自动轮询)</span></label>
+    <textarea id="provKeys" placeholder="sk-xxx&#10;sk-yyy"></textarea>
+    <label>Model Filter Mode</label>
+    <select id="provMode" onchange="document.getElementById('patternField').style.display=this.value==='pattern'?'block':'none';document.getElementById('includeField').style.display=this.value==='include'?'block':'none'">
+      <option value="all">all (全部模型)</option>
+      <option value="pattern">pattern (正则匹配)</option>
+      <option value="include">include (白名单)</option>
+    </select>
+    <div id="patternField" style="display:none">
+      <label>Pattern (正则)</label>
+      <input id="provPattern" placeholder=".*-free$|.*free.*">
+    </div>
+    <div id="includeField" style="display:none">
+      <label>Include (白名单, 一行一个)</label>
+      <textarea id="provInclude" placeholder="gpt-4o&#10;gpt-4-turbo"></textarea>
+    </div>
+    <label>Max Concurrent Slots</label>
+    <input id="provMax" type="number" value="3" min="1" max="20">
+    <div class="row">
+      <button class="btn" onclick="submitAddProvider()">添加</button>
+      <button class="btn-sm" onclick="closeAddProvider()">取消</button>
+    </div>
+  </div>
+</div>
+
+<!-- Classifier Modal -->
+<div class="modal-bg" id="classifierModal">
+  <div class="modal" style="max-width:700px">
+    <h3>⚙️ Tier Bonus & 自定义关键词</h3>
+    <div class="text-muted">模型 ID 包含关键词时, 能力分 += 该值. tier_bonus 内置默认 + 用户覆盖, custom_keywords 全部用户自定义.</div>
+
+    <h4 style="margin-top:14px;font-size:14px;color:#94a3b8">Tier Bonus (内置 + 用户覆盖)</h4>
+    <div id="tierBonusEditor"></div>
+    <button class="btn-sm" onclick="addKVEditor('tier_bonus')">+ 添加 tier</button>
+
+    <h4 style="margin-top:14px;font-size:14px;color:#94a3b8">Custom Keywords (用户自定义, 累加)</h4>
+    <div id="customKwEditor"></div>
+    <button class="btn-sm" onclick="addKVEditor('custom_keywords')">+ 添加关键词</button>
+
+    <h4 style="margin-top:14px;font-size:14px;color:#94a3b8">Modality Base Score (模态基类分)</h4>
+    <div id="modScoreEditor"></div>
+    <button class="btn-sm" onclick="addKVEditor('modality_base_score')">+ 添加模态</button>
+
+    <div class="row">
+      <button class="btn" onclick="saveClassifier()">保存</button>
+      <button class="btn-sm" onclick="closeClassifier()">取消</button>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>"""
 
@@ -583,3 +801,107 @@ async def admin_config_get():
     if data.get("server", {}).get("api_key"):
         data["server"]["api_key"] = "***"
     return JSONResponse(data)
+
+
+# ============================================================
+# 自定义 Provider 管理 API
+# ============================================================
+
+@app.post("/v1/admin/providers")
+async def admin_providers_add(payload: dict):
+    """添加自定义 provider
+    payload = {"name": "myopenai", "config": {"base_url": "...", "api_keys": [...], ...}}
+    """
+    name = payload.get("name")
+    pcfg = payload.get("config", {})
+    if not name or not pcfg.get("base_url"):
+        return JSONResponse(
+            {"error": "name and config.base_url required"},
+            status_code=400,
+        )
+    if not pcfg.get("api_keys"):
+        return JSONResponse(
+            {"error": "config.api_keys (list) required"},
+            status_code=400,
+        )
+    # 默认值补全
+    pcfg.setdefault("enabled", True)
+    pcfg.setdefault("max_concurrent", 3)
+    pcfg.setdefault("model_rules", {"mode": "all"})
+    pcfg["base_url"] = pcfg["base_url"].rstrip("/")
+
+    ok = config.add_provider(name, pcfg)
+    if not ok:
+        return JSONResponse(
+            {"error": f"provider '{name}' already exists"},
+            status_code=409,
+        )
+    # 立即注册 + 拉模型
+    registry.build()
+    registry.refresh_all()
+    return JSONResponse({"ok": True, "name": name, "config": pcfg})
+
+
+@app.delete("/v1/admin/providers/{name}")
+async def admin_providers_delete(name: str):
+    """删除自定义 provider"""
+    ok = config.remove_provider(name)
+    if not ok:
+        return JSONResponse(
+            {"error": f"provider '{name}' not found"},
+            status_code=404,
+        )
+    registry.build()
+    registry.refresh_all()
+    return JSONResponse({"ok": True, "name": name})
+
+
+@app.put("/v1/admin/providers/{name}")
+async def admin_providers_update(name: str, payload: dict):
+    """更新 provider (增量覆盖字段)"""
+    pcfg = payload.get("config", {})
+    if not pcfg:
+        return JSONResponse({"error": "config required"}, status_code=400)
+    ok = config.update_provider(name, pcfg)
+    if not ok:
+        return JSONResponse(
+            {"error": f"provider '{name}' not found"},
+            status_code=404,
+        )
+    registry.build()
+    registry.refresh_all()
+    return JSONResponse({"ok": True, "name": name})
+
+
+# ============================================================
+# 自定义 Classifier (tier_bonus / custom_keywords / modality_base_score) API
+# ============================================================
+
+@app.get("/v1/admin/classifier")
+async def admin_classifier_get():
+    """读取当前 classifier 配置 (含兜底内置默认)"""
+    from .classifier import TIER_BONUS, MODALITY_BASE_SCORE, CUSTOM_KEYWORDS_DEFAULT
+    return JSONResponse({
+        "configured": config.data.get("classifier") or {},
+        "defaults": {
+            "tier_bonus": TIER_BONUS,
+            "modality_base_score": MODALITY_BASE_SCORE,
+            "custom_keywords": CUSTOM_KEYWORDS_DEFAULT,
+        },
+    })
+
+
+@app.put("/v1/admin/classifier")
+async def admin_classifier_update(payload: dict):
+    """更新 classifier 配置 (tier_bonus / custom_keywords / modality_base_score)"""
+    allowed = {"tier_bonus", "custom_keywords", "modality_base_score"}
+    cfg = {k: v for k, v in payload.items() if k in allowed}
+    if not cfg:
+        return JSONResponse(
+            {"error": f"no valid keys. allowed: {sorted(allowed)}"},
+            status_code=400,
+        )
+    config.update_classifier(cfg)
+    # 重算所有模型 capability_score
+    registry.refresh_all()
+    return JSONResponse({"ok": True, "updated": list(cfg.keys())})

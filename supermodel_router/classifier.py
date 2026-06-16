@@ -36,7 +36,7 @@ MODALITY_BASE_SCORE = {
     EMBEDDING: 30,
 }
 
-# tier 加成
+# tier 加成 (从 config.classifier.tier_bonus 读, 兜底用内置默认)
 TIER_BONUS = {
     "turbo": 25,
     "ultra": 25,
@@ -53,6 +53,47 @@ TIER_BONUS = {
     "legacy": -25,
     "old": -25,
 }
+
+# 用户自定义关键词加分 (config.classifier.custom_keywords)
+CUSTOM_KEYWORDS_DEFAULT: dict[str, int] = {}
+
+
+def get_tier_bonus(config_obj=None) -> dict[str, int]:
+    """
+    从 config.classifier.tier_bonus 读, 兜底用内置 TIER_BONUS.
+    config_obj = Config 实例 (config 全局单例).
+    """
+    if config_obj is None:
+        return dict(TIER_BONUS)
+    cfg_section = config_obj.data.get("classifier") or {}
+    user_bonus = cfg_section.get("tier_bonus") or {}
+    if not user_bonus:
+        return dict(TIER_BONUS)
+    # 合并: 用户值覆盖内置, 用户没写的保留内置
+    merged = dict(TIER_BONUS)
+    merged.update(user_bonus)
+    return merged
+
+
+def get_custom_keywords(config_obj=None) -> dict[str, int]:
+    """用户自定义关键词加分"""
+    if config_obj is None:
+        return dict(CUSTOM_KEYWORDS_DEFAULT)
+    cfg_section = config_obj.data.get("classifier") or {}
+    return dict(cfg_section.get("custom_keywords") or CUSTOM_KEYWORDS_DEFAULT)
+
+
+def get_modality_base_score(config_obj=None) -> dict[str, int]:
+    """模态基类分"""
+    if config_obj is None:
+        return dict(MODALITY_BASE_SCORE)
+    cfg_section = config_obj.data.get("classifier") or {}
+    user_score = cfg_section.get("modality_base_score") or {}
+    if not user_score:
+        return dict(MODALITY_BASE_SCORE)
+    merged = dict(MODALITY_BASE_SCORE)
+    merged.update(user_score)
+    return merged
 
 # ── 分类规则: (pattern, modality) ──────────────────────────
 
@@ -242,23 +283,35 @@ def classify_model(model_id: str, provider: str = "",
 # ── 能力评分 ──────────────────────────────────────────────
 
 def compute_capability_score(model_id: str, modality: str,
-                             extra: dict | None = None) -> float:
+                             extra: dict | None = None,
+                             config_obj=None) -> float:
     """
     0-100 分, 基于:
-      - 基类分 (modal 越强越高)
-      - tier 加成 (turbo/pro/lite 等)
+      - 基类分 (modal 越强越高, 从 config 读, 兜底内置)
+      - tier 加成 (turbo/pro/lite 等, 从 config 读, 兜底内置)
+      - 自定义关键词加成 (用户 config 自定义)
       - 上下文窗口 (越大越高)
+    config_obj = Config 实例, 传 None 用内置默认.
     """
     mid_lower = model_id.lower()
 
-    # 基类分
-    score = MODALITY_BASE_SCORE.get(modality, 50)
+    # 基类分 (从 config 读, 兜底内置)
+    base_scores = get_modality_base_score(config_obj)
+    score = base_scores.get(modality, 50)
 
-    # tier 加成
-    for keyword, bonus in TIER_BONUS.items():
+    # tier 加成 (内置 + 用户)
+    tier_bonus = get_tier_bonus(config_obj)
+    for keyword, bonus in tier_bonus.items():
         if keyword in mid_lower:
             score += bonus
             break  # 只取第一个匹配
+
+    # 用户自定义关键词加成 (叠加, 不 break, 允许多关键词命中累加)
+    custom_kw = get_custom_keywords(config_obj)
+    if custom_kw:
+        for keyword, bonus in custom_kw.items():
+            if keyword in mid_lower:
+                score += bonus
 
     # OpenRouter 上下文长度
     if extra:
