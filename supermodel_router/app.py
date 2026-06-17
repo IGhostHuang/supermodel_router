@@ -127,6 +127,10 @@ async def lifespan(app: FastAPI):
     # v3.4.0: 同时注入 context_bridge
     openai_init(registry, engine, context_bridge)
     admin_api_init(registry, engine, model_manager, _start_time, context_bridge)
+    # v3.7.0: 对外 API 多 key 管理 (per-tenant)
+    from .public_api import init_public_key_manager
+    state_dir = config.data.get("model_management", {}).get("state_dir", ".")
+    init_public_key_manager(state_dir=state_dir)
 
     yield
     config.stop_watcher()

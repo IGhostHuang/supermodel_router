@@ -82,7 +82,7 @@ tr:hover td{background:#1a1a24}
 .modality-filter button{padding:4px 10px;border-radius:12px;border:1px solid #333;background:transparent;color:#888;cursor:pointer;font-size:12px}
 .modality-filter button.active{background:#2563eb;color:#fff;border-color:#2563eb}
 .modal-bg{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);display:none;align-items:center;justify-content:center;z-index:100}
-.modal-bg.show{display:flex}
+.modal-bg.show,.modal-bg.open{display:flex}
 .modal{background:#1a1a24;border-radius:10px;padding:20px;max-width:600px;width:90%;max-height:80vh;overflow:auto}
 .modal h3{margin-bottom:12px;font-size:16px}
 .modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:10000}
@@ -201,31 +201,34 @@ body{display:flex;gap:0;padding:0;max-width:none;min-height:100vh;background:#0a
 <div class="sidebar">
   <h1><span class="logo">⚡</span> SMR v3.6.0</h1>
   <div class="nav-item active" data-view="dashboard" onclick="showView('dashboard')">
-    <span class="icon">📊</span> Dashboard
+    <span class="icon">📊</span> 仪表盘
   </div>
   <div class="nav-item" data-view="providers" onclick="showView('providers')">
-    <span class="icon">🔌</span> Providers <span id="provNavBadge" class="badge" style="display:none">0</span>
+    <span class="icon">🔌</span> 服务商管理 <span id="provNavBadge" class="badge" style="display:none">0</span>
   </div>
   <div class="nav-item" data-view="models" onclick="showView('models')">
-    <span class="icon">🤖</span> Models
+    <span class="icon">🤖</span> 模型列表
   </div>
   <div class="nav-item" data-view="keys" onclick="showView('keys')">
-    <span class="icon">🔑</span> API Keys
+    <span class="icon">🔑</span> API 密钥
   </div>
   <div class="nav-item" data-view="stats" onclick="showView('stats')">
-    <span class="icon">📈</span> Usage Stats
+    <span class="icon">📈</span> 用量统计
   </div>
   <div class="nav-item" data-view="classifier" onclick="showView('classifier')">
-    <span class="icon">⚙️</span> Classifier
+    <span class="icon">⚙️</span> 分类器
   </div>
   <div class="nav-item" data-view="config" onclick="showView('config')">
-    <span class="icon">🔧</span> Server Config
+    <span class="icon">🔧</span> 服务配置
   </div>
   <div class="nav-item" data-view="history" onclick="showView('history')">
-    <span class="icon">📜</span> Config History
+    <span class="icon">📜</span> 配置历史
   </div>
   <div class="nav-item" data-view="version" onclick="showView('version')">
-    <span class="icon">🔔</span> Version
+    <span class="icon">🔔</span> 版本
+  </div>
+  <div class="nav-item" data-view="publicapi" onclick="showView('publicapi')">
+    <span class="icon">🌐</span> 对外 API
   </div>
   <div class="sidebar-footer">
     <div>运行时间 <span id="navUptime" class="uptime">-</span></div>
@@ -238,7 +241,7 @@ body{display:flex;gap:0;padding:0;max-width:none;min-height:100vh;background:#0a
 
 <!-- 视图: Dashboard -->
 <div class="view active" id="view-dashboard">
-  <h2 class="view-title">📊 Dashboard</h2>
+  <h2 class="view-title">📊 仪表盘</h2>
   <p class="view-subtitle">SMR 整体状态速览</p>
   <div class="stats-grid" id="dashboardStats"><div class="loading">加载中...</div></div>
   <h2 style="font-size:14px;color:#888;margin:20px 0 10px">模态分布</h2>
@@ -249,7 +252,7 @@ body{display:flex;gap:0;padding:0;max-width:none;min-height:100vh;background:#0a
 
 <!-- 视图: Providers -->
 <div class="view" id="view-providers">
-  <h2 class="view-title">🔌 Providers</h2>
+  <h2 class="view-title">🔌 服务商管理</h2>
   <p class="view-subtitle">添加 / 编辑 / 启用 / 停用 / 复制 / 导入 / 导出</p>
   <div class="section-header">
     <div class="provider-toolbar">
@@ -274,7 +277,7 @@ body{display:flex;gap:0;padding:0;max-width:none;min-height:100vh;background:#0a
 
 <!-- 视图: Models -->
 <div class="view" id="view-models">
-  <h2 class="view-title">🤖 Models <span style="font-size:13px;color:#666" id="modelCount"></span></h2>
+  <h2 class="view-title">🤖 模型列表 <span style="font-size:13px;color:#666" id="modelCount"></span></h2>
   <p class="view-subtitle">分页浏览所有可用模型 (按能力分排序)</p>
   <div class="modality-filter" id="modalityFilter"></div>
   <div id="modelSection">
@@ -285,14 +288,14 @@ body{display:flex;gap:0;padding:0;max-width:none;min-height:100vh;background:#0a
 
 <!-- 视图: API Keys (v3.6.0 新) -->
 <div class="view" id="view-keys">
-  <h2 class="view-title">🔑 API Keys 管理</h2>
+  <h2 class="view-title">🔑 API 密钥管理</h2>
   <p class="view-subtitle">独立管理各 provider 的 API key (脱敏指纹显示)</p>
   <div id="keysList"><div class="loading">加载中...</div></div>
 </div>
 
 <!-- 视图: Usage Stats (v3.6.0 新真数据) -->
 <div class="view" id="view-stats">
-  <h2 class="view-title">📈 Usage Stats</h2>
+  <h2 class="view-title">📈 用量统计</h2>
   <p class="view-subtitle">真实使用量数据 (来自 /v1/admin/stats)</p>
   <div class="stats-grid" id="statsSummary"><div class="loading">加载中...</div></div>
   <h3 style="font-size:14px;color:#888;margin:20px 0 10px">按 Provider 拆分</h3>
@@ -313,7 +316,7 @@ body{display:flex;gap:0;padding:0;max-width:none;min-height:100vh;background:#0a
 
 <!-- 视图: Server Config -->
 <div class="view" id="view-config">
-  <h2 class="view-title">🔧 Server & Routing</h2>
+  <h2 class="view-title">🔧 服务配置 & 路由策略</h2>
   <p class="view-subtitle">监听端口 + 鉴权 + 路由策略</p>
   <button class="btn" onclick="openServer()">✏️ 修改配置</button>
   <div class="row" style="margin-top:12px">
@@ -324,16 +327,40 @@ body{display:flex;gap:0;padding:0;max-width:none;min-height:100vh;background:#0a
 
 <!-- 视图: Config History -->
 <div class="view" id="view-history">
-  <h2 class="view-title">📜 Config History</h2>
+  <h2 class="view-title">📜 配置历史</h2>
   <p class="view-subtitle">自动备份的 config.yaml 历史 (保留 50 个)</p>
   <button class="btn" onclick="openConfigBackups()">📜 查看历史</button>
 </div>
 
 <!-- 视图: Version -->
 <div class="view" id="view-version">
-  <h2 class="view-title">🔔 Version</h2>
+  <h2 class="view-title">🔔 版本信息</h2>
   <p class="view-subtitle">当前版本 + GitHub release 检查</p>
   <div class="stats-grid" id="versionGrid"><div class="loading">加载中...</div></div>
+</div>
+
+<!-- 视图: 对外 API (v3.7.0 新增) -->
+<div class="view" id="view-publicapi">
+  <h2 class="view-title">🌐 对外 API 多 Key 管理</h2>
+  <p class="view-subtitle">Per-tenant API key · 速率限制 · 模型白名单 · 用量追踪</p>
+  <div class="section-header">
+    <div class="provider-toolbar">
+      <button class="btn-sm primary" onclick="openCreatePublicKey()">➕ 创建 Key</button>
+      <button class="btn-sm" onclick="renderPublicApiView()">🔄 刷新</button>
+    </div>
+  </div>
+  <div class="stats-grid" id="publicApiSummary"><div class="loading">加载中...</div></div>
+  <h3 style="font-size:14px;color:#888;margin:20px 0 10px">所有 Key</h3>
+  <div id="publicKeyList"><div class="loading">加载中...</div></div>
+
+  <div style="margin-top:30px;padding:16px;background:#0f0f13;border-radius:8px;font-size:12px;color:#888">
+    <strong>💡 对外 API 使用说明</strong><br>
+    • 创建后只显示一次原 key, 之后只能重新生成<br>
+    • 每个 key 独立追踪 total/success/fail/tokens<br>
+    • 速率限制: sliding window 60s 内 rpm 计数<br>
+    • 模型白名单: 空 = 全部允许, 否则只允许列表内<br>
+    • 客户端调用: <code>Authorization: Bearer smr-pub-xxx</code> 即可
+  </div>
 </div>
 
 </div> <!-- .main -->
@@ -367,6 +394,7 @@ function showView(view){
   if(view === 'stats') renderStatsView();
   else if(view === 'keys') renderKeysView();
   else if(view === 'version') renderVersionView();
+  else if(view === 'publicapi') renderPublicApiView();
   else if(view === 'models') { /* keep current page */ }
 }
 
@@ -519,9 +547,12 @@ function renderVersion(v){
   const cur=v.current||{};
   const latest=v.latest_release||null;
   const verText=cur.version||v.current||'-';
-  document.getElementById('statVersion').innerHTML=v.has_update
-    ? `<span style="color:#ff9800">⬆ ${verText}</span>`
-    : `<span style="color:#4caf50">✓ ${verText}</span>`;
+  const verEl=document.getElementById('statVersion');
+  if(verEl){
+    verEl.innerHTML=v.has_update
+      ? `<span style="color:#ff9800">⬆ ${verText}</span>`
+      : `<span style="color:#4caf50">✓ ${verText}</span>`;
+  }
   if(v.has_update && latest){
     toast(`发现新版本 ${latest.tag||latest.name||''}`,true);
   }
@@ -663,7 +694,13 @@ function renderDashboard(h, m, s, mo, prov){
     <div class="stat-card"><div class="label">成功率</div><div class="value ${successRate>=95?'good':successRate>=80?'warn':'bad'}">${successRate.toFixed(1)}%</div><div class="delta">失败 ${failCalls.toLocaleString()}</div></div>
     <div class="stat-card"><div class="label">平均延迟</div><div class="value">${avgLat}ms</div><div class="delta">${latencyCount} providers</div></div>
     <div class="stat-card"><div class="label">今日 token</div><div class="value">${dailyTokens.toLocaleString()}</div><div class="delta">运行 ${h?.uptime_seconds ? Math.floor(h.uptime_seconds/60)+'m' : '-'}</div></div>
+    <div class="stat-card"><div class="label">SMR 版本</div><div class="value" id="statVersion">-</div><div class="delta">v3.7.0</div></div>
   `;
+  // v3.7.0: 暴露 version 到 dashboard stat card (修复"version 加载中")
+  const verEl = document.getElementById('statVersion');
+  if(verEl){
+    verEl.innerHTML = `<span style="color:#4caf50">✓ ${lastVersionData?.current?.version || '3.6.0'}</span>`;
+  }
   // sidebar 底部 uptime
   const upEl = document.getElementById('navUptime');
   if(upEl && h?.uptime_seconds != null) upEl.textContent = Math.floor(h.uptime_seconds/60)+'m';
@@ -1314,6 +1351,167 @@ function closeAddProvider(){
     });
   }
 
+
+// ============================================================
+// 对外 API (per-tenant key) 管理 — v3.7.0
+// ============================================================
+
+async function renderPublicApiView(){
+  const summaryEl = document.getElementById('publicApiSummary');
+  const listEl = document.getElementById('publicKeyList');
+  if(summaryEl) summaryEl.innerHTML = '<div class="loading">加载中...</div>';
+  if(listEl) listEl.innerHTML = '<div class="loading">加载中...</div>';
+  const r = await api('/v1/admin/public-keys/usage').catch(e=>({error:e.message}));
+  if(r.error){
+    if(summaryEl) summaryEl.innerHTML = `<div class="empty-state">❌ ${r.error}</div>`;
+    return;
+  }
+  lastPublicKeys = r.keys || [];  // 给 editPublicKey 用
+  const enabledCount = r.enabled_keys || 0;
+  const totalKeys = r.total_keys || 0;
+  let totalCalls = 0, totalTokens = 0, totalSuccess = 0;
+  for(const k of (r.keys||[])){
+    const u = k.usage || {};
+    totalCalls += u.total_calls || 0;
+    totalTokens += u.tokens || 0;
+    totalSuccess += u.success_calls || 0;
+  }
+  const successRate = totalCalls > 0 ? (totalSuccess/totalCalls*100).toFixed(1) : 0;
+  if(summaryEl){
+    summaryEl.innerHTML = `
+      <div class="stat-card"><div class="label">总 Key 数</div><div class="value">${totalKeys}</div><div class="delta">启用 ${enabledCount}</div></div>
+      <div class="stat-card"><div class="label">总请求</div><div class="value">${totalCalls.toLocaleString()}</div><div class="delta">来自对外 API</div></div>
+      <div class="stat-card"><div class="label">总 Token</div><div class="value">${totalTokens.toLocaleString()}</div><div class="delta">成功 ${totalSuccess.toLocaleString()}</div></div>
+      <div class="stat-card"><div class="label">成功率</div><div class="value ${successRate>=95?'good':successRate>=80?'warn':'bad'}">${successRate}%</div></div>
+    `;
+  }
+  if(!listEl) return;
+  if((r.keys||[]).length === 0){
+    listEl.innerHTML = '<div class="empty-state">🌐 暂无对外 API key, 点 "➕ 创建 Key" 开始</div>';
+    return;
+  }
+  listEl.innerHTML = (r.keys||[]).map(k => {
+    const enabled = k.enabled !== false;
+    const u = k.usage || {};
+    const lastUsed = u.last_used ? new Date(u.last_used*1000).toLocaleString('zh-CN') : '未使用';
+    const rateLimit = k.rate_limit_rpm > 0 ? `${k.rate_limit_rpm} rpm` : '不限';
+    const models = (k.model_filter||[]).length === 0 ? '<span class="text-muted">全部</span>' : (k.model_filter||[]).slice(0,3).map(m=>`<span class="provider-tag">${m}</span>`).join('') + ((k.model_filter||[]).length>3?` <span class="text-muted">+${k.model_filter.length-3}</span>`:'');
+    return `<div class="provider-card ${enabled?'':'disabled'}" style="flex-direction:column;align-items:stretch">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start">
+        <div>
+          <div class="provider-name">${k.name} ${enabled?'<span class="provider-badge badge-ok">✓ 启用</span>':'<span class="provider-badge badge-disabled">⏸ 停用</span>'}</div>
+          <div class="provider-url" title="${k.key_hash}">🔐 哈希 ${k.key_hash}</div>
+          <div class="provider-meta">
+            <span>🚦 ${rateLimit}</span>
+            <span>📊 ${u.total_calls||0} 次 · ${u.success_calls||0} 成功</span>
+            <span>🪙 ${(u.tokens||0).toLocaleString()} tokens</span>
+            <span>🕐 ${lastUsed}</span>
+          </div>
+          <div class="provider-meta" style="margin-top:4px">模型白名单: ${models}</div>
+          ${k.note?`<div class="text-muted" style="margin-top:4px;font-size:12px">📝 ${k.note}</div>`:''}
+        </div>
+        <div class="provider-actions" style="flex-direction:column;gap:4px">
+          <button class="btn-sm" onclick="editPublicKey('${k.name}')" title="改速率限制 / 白名单 / 备注">✏️ 编辑</button>
+          ${enabled
+            ? `<button class="btn-sm" onclick="togglePublicKey('${k.name}', false)">⏸ 停用</button>`
+            : `<button class="btn-sm primary" onclick="togglePublicKey('${k.name}', true)">▶ 启用</button>`}
+          <button class="btn-sm" onclick="resetPublicKeyUsage('${k.name}')" title="清零用量计数">🔄 重置用量</button>
+          <button class="btn-sm danger" onclick="deletePublicKey('${k.name}')">🗑️ 删除</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+let lastPublicKeys = null;
+
+function openCreatePublicKey(){
+  const name = prompt('Key 名称 (字母数字/-/_):');
+  if(!name) return;
+  if(!/^[a-zA-Z0-9_-]+$/.test(name)){
+    alert('❌ 名称只能包含字母数字/-/_'); return;
+  }
+  const rpm = prompt('速率限制 (rpm, 0 = 不限, 默认 60):', '60');
+  if(rpm === null) return;
+  const rpmNum = parseInt(rpm) || 60;
+  const models = prompt('模型白名单 (逗号分隔, 留空 = 全部允许):', '');
+  const modelFilter = models ? models.split(',').map(s=>s.trim()).filter(Boolean) : [];
+  const note = prompt('备注 (可选):', '') || '';
+  submitCreatePublicKey(name, rpmNum, modelFilter, note);
+}
+
+async function submitCreatePublicKey(name, rpm, modelFilter, note){
+  const r = await api('/v1/admin/public-keys', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({name, rate_limit_rpm: rpm, model_filter: modelFilter, note}),
+  });
+  if(r.error){ alert('❌ ' + r.error); return; }
+  const msg = `✅ Key '${r.name}' 已创建!\n\n` +
+              `原 key (⚠️ 唯一一次显示):\n${r.key}\n\n` +
+              `哈希: ${r.key_hash}\n` +
+              `速率限制: ${r.rate_limit_rpm} rpm\n` +
+              `白名单: ${(r.model_filter||[]).join(', ') || '全部'}\n\n` +
+              `请立即复制保存到本地, 关闭后将无法再次查看!`;
+  alert(msg);
+  await renderPublicApiView();
+}
+
+function editPublicKey(name){
+  const k = lastPublicKeys?.find?.(x=>x.name===name) || {};
+  const curRpm = k?.rate_limit_rpm || 60;
+  const curModels = (k?.model_filter || []).join(', ');
+  const curNote = k?.note || '';
+  const rpm = prompt(`'${name}' 速率限制 (rpm, 0=不限, 当前 ${curRpm}):`, String(curRpm));
+  if(rpm === null) return;
+  const rpmNum = parseInt(rpm);
+  if(isNaN(rpmNum) || rpmNum < 0){ alert('❌ 无效 rpm'); return; }
+  const models = prompt(`'${name}' 模型白名单 (逗号分隔, 当前 "${curModels}"):`, curModels);
+  if(models === null) return;
+  const modelFilter = models ? models.split(',').map(s=>s.trim()).filter(Boolean) : [];
+  const note = prompt(`'${name}' 备注 (当前 "${curNote}"):`, curNote);
+  if(note === null) return;
+  submitEditPublicKey(name, rpmNum, modelFilter, note);
+}
+
+async function submitEditPublicKey(name, rpm, modelFilter, note){
+  const r = await api('/v1/admin/public-keys/'+encodeURIComponent(name), {
+    method: 'PUT',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({rate_limit_rpm: rpm, model_filter: modelFilter, note}),
+  });
+  if(r.error){ alert('❌ ' + r.error); return; }
+  toast(`✅ '${name}' 已更新`);
+  await renderPublicApiView();
+}
+
+async function togglePublicKey(name, enabled){
+  const r = await api('/v1/admin/public-keys/'+encodeURIComponent(name), {
+    method: 'PUT',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({enabled}),
+  });
+  if(r.error){ toast(r.error, false); return; }
+  toast(`✅ '${name}' 已${enabled?'启用':'停用'}`);
+  await renderPublicApiView();
+}
+
+async function deletePublicKey(name){
+  if(!confirm(`⚠️ 确认删除 '${name}'?\n此操作不可撤销!`)) return;
+  const r = await api('/v1/admin/public-keys/'+encodeURIComponent(name), {method: 'DELETE'});
+  if(r.error){ toast(r.error, false); return; }
+  toast(`🗑️ '${name}' 已删除`);
+  await renderPublicApiView();
+}
+
+async function resetPublicKeyUsage(name){
+  if(!confirm(`重置 '${name}' 的用量计数?\n(只清零 total/success/fail/tokens, key 本身不变)`)) return;
+  const r = await api('/v1/admin/public-keys/'+encodeURIComponent(name)+'/reset', {method: 'POST'});
+  if(r.error){ toast(r.error, false); return; }
+  toast(`🔄 '${name}' 用量已清零`);
+  await renderPublicApiView();
+}
+
 // ============================================================
 // Tier Bonus / Classifier 管理
 // ============================================================
@@ -1385,13 +1583,24 @@ async function saveClassifier(){
     custom_keywords: collect('customKwEditor'),
     modality_base_score: collect('modScoreEditor'),
   };
+  // v3.7.0: 删行警告 — 计算将消失的 key (相对内置默认 + 当前配置)
+  const orig = currentClassifier || {};
+  const defaultsTier = orig.defaults?.tier_bonus || {};
+  const configuredTier = orig.configured?.tier_bonus || {};
+  const origTierKeys = new Set([...Object.keys(defaultsTier), ...Object.keys(configuredTier)]);
+  const newTierKeys = new Set(Object.keys(payload.tier_bonus));
+  const removedTier = [...origTierKeys].filter(k => !newTierKeys.has(k) && !(k in defaultsTier) || (k in configuredTier && !newTierKeys.has(k)));
+  if (removedTier.length > 0) {
+    const msg = `⚠️ 将删除 ${removedTier.length} 个 tier_bonus 自定义配置:\n${removedTier.map(k => `  - ${k}`).join('\n')}\n\n服务端会先自动备份 (24h 内可恢复), 确认继续?`;
+    if (!confirm(msg)) return;
+  }
   const r = await api('/v1/admin/classifier', {
     method: 'PUT',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify(payload),
   });
   if (r.error) { toast(r.error, false); return; }
-  toast(`已更新: ${(r.updated||[]).join(', ')}`);
+  toast(`已更新: ${(r.updated||[]).join(', ')} · 备份 ${r.backup_id||'已自动'}`);
   closeClassifier();
   refresh();
 }
