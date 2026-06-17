@@ -66,6 +66,35 @@ def init(app_registry, app_engine, app_bridge: ContextBridge | None = None):
 # OpenAI 兼容 API — 任意模态自动路由
 # ============================================================
 
+@router.post("/v1/public/chat/completions")
+async def public_chat_completions(request: Request):
+    """对外公开 API 端点 — 强制使用 PublicKeyManager 多 key 鉴权
+
+    v3.7.0 落地: 老大拍"中转 router 不对外就丧失核心功能"
+    v3.7.1: 简化实现 — 直接复用 chat_completions, 仅在鉴权阶段拒绝非 public key
+
+    与 /v1/chat/completions 区别:
+    - 只接受 public key (smr-pub-*), config.server.api_key 单 key 模式不允许
+    - 所有请求都进 PublicKeyManager 用量统计
+    """
+    from .public_api import public_key_manager, PublicKeyManager
+    from typing import cast as _cast
+    pkm = _cast(PublicKeyManager, public_key_manager)
+    auth_header = request.headers.get("Authorization", "")
+    bearer = auth_header[7:] if auth_header.startswith("Bearer ") else ""
+    public_meta = pkm.authenticate(bearer) if pkm is not None else None
+
+    if public_meta is None:
+        return JSONResponse(
+            {"error": {"message": "Invalid or missing public API key",
+                      "type": "auth_error",
+                      "hint": "Get a key from /v1/admin/public-keys (admin only)"}},
+            status_code=401,
+        )
+
+    # 复用 chat_completions 完整逻辑
+    return await chat_completions(request)
+
 @router.post("/v1/chat/completions")
 async def chat_completions(request: Request):
     """OpenAI-compatible chat completions — 自动检测输入/输出类型, 按模态路由
