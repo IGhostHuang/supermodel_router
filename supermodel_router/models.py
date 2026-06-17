@@ -3,6 +3,7 @@ supermodel_router/models.py — 模型发现 + 过滤 + 分类
 """
 import logging
 import time
+import re
 import threading
 from dataclasses import dataclass, field
 
@@ -107,12 +108,15 @@ class ModelRegistry:
         mode = ps.model_rules.get("mode", "all")
         pattern = ps.model_rules.get("pattern", "")
         include_set = set(ps.model_rules.get("include", []))
-        exclude_set = set(ps.model_rules.get("exclude", []))
+        exclude_patterns = ps.model_rules.get("exclude", [])  # v4 修复: 当正则处理
 
         filtered = []
         for m in models:
             mid = m["id"]
-            if mid in exclude_set:
+            # exclude 走正则 (跟 pattern 模式一致)
+            if exclude_patterns and any(
+                re.search(p, mid, re.IGNORECASE) for p in exclude_patterns
+            ):
                 continue
             if mode == "all":
                 filtered.append(m)
@@ -149,23 +153,61 @@ class ModelRegistry:
         )
 
     def _fetch_models(self, ps: ProviderState, timeout: float) -> list[dict]:
-        """从 /v1/models 拉模型列表, 尝试所有 key"""
-        key = self._pick_key(ps)
-        if not key:
+        """从 /v1/models 拉模型列表, 尝试所有 key (v4: 401/403 → 自动换 key)
+
+        v4 修复: 之前第 1 个 key 401 → raise_for_status 直接抛, 0 models。
+        现在: 401/403 → 跳到下一个 key, 全部 key 失败才返回空。
+        """
+        if not ps.api_keys:
             LOG.warning("%s: no api_key configured", ps.name)
             return []
 
-        url = f"{ps.base_url}/models"
-        headers = {"Authorization": f"Bearer {key}"}
+        last_err = None
+        tried = 0
+        # round-robin 起点 (保证下一次不会总从 sk-bad 开始)
+        start_idx = ps.key_index % len(ps.api_keys) if ps.api_keys else 0
+        keys = ps.api_keys[start_idx:] + ps.api_keys[:start_idx]
 
-        try:
-            resp = httpx.get(url, headers=headers, timeout=timeout)
-            resp.raise_for_status()
-            data = resp.json()
-            return data.get("data", [])
-        except Exception:
-            LOG.exception("%s: fetch models failed", ps.name)
-            return []
+        for key in keys:
+            tried += 1
+            url = f"{ps.base_url}/models"
+            headers = {"Authorization": f"Bearer {key}"}
+            try:
+                resp = httpx.get(url, headers=headers, timeout=timeout)
+                if resp.status_code in (200,):
+                    ps.key_index = (start_idx + tried) % len(ps.api_keys)
+                    data = resp.json()
+                    LOG.info("%s: %d models fetched via key_idx=%d",
+                             ps.name, len(data.get("data", [])),
+                             (start_idx + tried - 1) % len(ps.api_keys))
+                    return data.get("data", [])
+                elif resp.status_code in (401, 403):
+                    LOG.warning("%s: key_idx=%d returned %d, trying next",
+                                ps.name, (start_idx + tried - 1) % len(ps.api_keys),
+                                resp.status_code)
+                    last_err = f"HTTP {resp.status_code}"
+                    continue
+                else:
+                    LOG.warning("%s: key_idx=%d returned %d (not retryable)",
+                                ps.name, (start_idx + tried - 1) % len(ps.api_keys),
+                                resp.status_code)
+                    last_err = f"HTTP {resp.status_code}"
+                    # 4xx (非 401/403) 不重试 — 同一 provider 同样问题
+                    break
+            except httpx.TimeoutException:
+                LOG.warning("%s: key_idx=%d timeout, trying next",
+                            ps.name, (start_idx + tried - 1) % len(ps.api_keys))
+                last_err = "timeout"
+                continue
+            except Exception as e:
+                LOG.warning("%s: key_idx=%d error: %s, trying next",
+                            ps.name, (start_idx + tried - 1) % len(ps.api_keys), e)
+                last_err = str(e)
+                continue
+
+        LOG.error("%s: all %d keys failed (last_err=%s)",
+                  ps.name, len(ps.api_keys), last_err)
+        return []
 
     # ---- 路由 ----
 

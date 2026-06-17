@@ -87,6 +87,33 @@ providers:
       - .*-legacy.*
     max_concurrent: 3
     health_check_interval: 600
+  volc_ark:
+    # 火山引擎 ARK — coding plan + agent plan (OpenAI 兼容)
+    # 端点: https://ark.cn-beijing.volces.com/api/v3
+    # Key 获取: 火山引擎控制台 → 在线推理 → API Key 管理
+    # 模型说明:
+    #   - doubao-seed-code / doubao-seed-coder = coding plan 主力 (编程任务)
+    #   - doubao-1-5-pro-32k/256k = agent plan 主力 (智能体通用)
+    #   - doubao-pro-32k/256k = 老款 pro (便宜)
+    #   - doubao-lite-32k = 最便宜 (简单任务)
+    # 完整指南: hot-cache/2026-06-17-1410-volc-ark-coding-plan-接入方案+使用说明.md
+    enabled: false                                  # 填完 api_keys 后改成 true
+    base_url: https://ark.cn-beijing.volces.com/api/v3
+    api_keys:
+    - ''                                            # ← 在这里填 ARK_API_KEY
+    model_rules:
+      mode: include
+      include:
+      - doubao-seed-code                            # coding plan
+      - doubao-seed-coder
+      - doubao-1-5-pro-32k                          # agent plan
+      - doubao-1-5-pro-256k
+      - doubao-pro-32k
+      - doubao-pro-256k
+      - doubao-lite-32k
+      exclude: []
+    max_concurrent: 5
+    health_check_interval: 300
 classifier:
   tier_bonus:
     pro: 35

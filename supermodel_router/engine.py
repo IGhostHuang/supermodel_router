@@ -60,6 +60,44 @@ class RouteResult:
     modality: str = TEXT_ONLY
 
 
+@dataclass
+class CandidateResult:
+    """候选路由 (v4): (provider, model_id, key_index, score, modality)
+
+    pick_chain 返回有序候选链, 同 model 全部 key 在前, 然后下一 model。
+    app.py 在 5xx/timeout 时 traverse 链自动切下一个。
+    """
+    provider: str
+    model_id: str
+    key_index: int  # 0..len(api_keys)-1
+    score: float  # 综合分 (含 penalty 折扣)
+    capability_score: float
+    modality: str = TEXT_ONLY
+    penalty: float = 0.0
+
+    @property
+    def full_path(self) -> str:
+        return f"{self.provider}/{self.model_id}"
+
+    def materialize(self, registry) -> RouteResult | None:
+        """用 registry 当前 base_url + api_key 实例化"""
+        ps = registry._providers.get(self.provider)
+        if not ps:
+            return None
+        if self.key_index >= len(ps.api_keys):
+            return None
+        api_key = ps.api_keys[self.key_index]
+        return RouteResult(
+            provider_name=self.provider,
+            base_url=ps.base_url,
+            api_key=api_key,
+            model_id=self.model_id,
+            full_model_path=self.full_path,
+            score=self.score,
+            modality=self.modality,
+        )
+
+
 # ── 错误分类 ──────────────────────────────────────────────
 
 def classify_error(http_code: int, body_text: str = "") -> dict:
@@ -142,6 +180,11 @@ class RouteEngine:
         # 模态轮询指针: modality → index
         self._modality_rr: dict[str, int] = {}
 
+        # v4: 模型失败惩罚 (model_id 路径 → 0..0.9 penalty)
+        # 失败时累加, 成功时清零, 定期 decay 恢复
+        self._model_penalty: dict[str, float] = {}
+        self._model_last_failure: dict[str, float] = {}
+
         self._stats_dir = os.path.join(
             os.path.dirname(os.path.abspath(__file__)), ".."
         )
@@ -178,144 +221,110 @@ class RouteEngine:
     def _get_quality_weights(self) -> dict:
         return self.cfg.routing.get("quality_weights", {"success_rate": 0.6, "latency": 0.4})
 
-    # ── 核心路由 ────────────────────────────────────────
+    # ── 核心路由 (v4: pick_chain) ─────────────────────
 
     def pick(self, requested_model: str, preferred_modalities: list[str] | None = None) -> RouteResult | None:
         """
-        v3: 支持按模态路由
-        - requested_model = "auto" / "" → 按 preferred_modalities 路由 (自动)
-        - requested_model = "provider/model" → 精确匹配
-        - requested_model 模糊 → 模糊匹配
+        v4: pick() = pick_chain()[0].materialize()
+        兼容旧 API, 但实际走候选链逻辑。
+        """
+        self.registry.check_recovery()
+        chain = self.pick_chain(requested_model, preferred_modalities, max_candidates=1)
+        if not chain:
+            return None
+        return chain[0].materialize(self.registry)
+
+    def pick_chain(self, requested_model: str, preferred_modalities: list[str] | None = None,
+                   max_candidates: int = 20) -> list[CandidateResult]:
+        """
+        v4 新轮询机制 (老大 09:48 拍):
+        - 高分模型第一个 key 不通 → 换下一个 key
+        - 同 provider 全部 key 该模型不通 → 换下一个 model
+        - 同时降低该模型分数 (penalty), 避免下一次又从头轮询
+        - 定期复测更新分数 (decay)
+
+        返回候选链: [(m1, key0), (m1, key1), (m2, key0), ...]
+        按综合分 (capability + quality + modality match - penalty) 降序。
         """
         self.registry.check_recovery()
 
+        candidates_models = self._collect_candidate_models(
+            requested_model, preferred_modalities
+        )
+        if not candidates_models:
+            LOG.warning("No candidate models for request: %s", requested_model)
+            return []
+
+        scored = []
+        for m in candidates_models:
+            base_capability = m.capability_score or 0.0
+            base_quality = self._score_for(m)  # 0-100, 含历史成功率
+            path = f"{m.provider}/{m.id}"
+            penalty = self._model_penalty.get(path, 0.0)
+
+            modality_boost = 0.0
+            if preferred_modalities and m.modality in preferred_modalities:
+                modality_boost = 15.0
+
+            combined = (base_capability * 0.5 + base_quality * 0.5) * (1.0 - penalty)
+            combined += modality_boost
+            scored.append((combined, m, penalty, path))
+
+        scored.sort(key=lambda x: -x[0])
+
+        chain: list[CandidateResult] = []
+        seen_keys: set[tuple[str, str, int]] = set()
+        for score, m, penalty, path in scored:
+            ps = self.registry._providers.get(m.provider)
+            if not ps or not ps.api_keys:
+                continue
+            for ki in range(len(ps.api_keys)):
+                key = (m.provider, m.id, ki)
+                if key in seen_keys:
+                    continue
+                seen_keys.add(key)
+                chain.append(CandidateResult(
+                    provider=m.provider,
+                    model_id=m.id,
+                    key_index=ki,
+                    score=score,
+                    capability_score=m.capability_score or 0.0,
+                    modality=m.modality,
+                    penalty=penalty,
+                ))
+                if len(chain) >= max_candidates:
+                    return chain
+
+        return chain
+
+    def _collect_candidate_models(self, requested_model: str,
+                                   preferred_modalities: list[str] | None) -> list:
+        """收集候选 model: auto / provider/model / 模糊匹配 / 全部"""
         if not requested_model or requested_model.strip() in ("auto", ""):
             if preferred_modalities and self._get_modality_auto_routing():
-                return self._pick_by_modality(preferred_modalities)
-            return self._pick_quality()
+                return self.registry.get_models_by_modality(preferred_modalities[0])
+            return self.registry.get_models()
 
-        resolved = self.registry.resolve(requested_model)
-        if resolved:
-            pname, base_url, key = resolved
-            actual_model = self._strip_provider_prefix(requested_model)
-            return self._build_result(pname, base_url, key, actual_model, requested_model)
+        # 精确匹配 (provider/model)
+        if "/" in requested_model:
+            resolved = self.registry.resolve(requested_model)
+            if resolved:
+                pname, _, _ = resolved
+                mid = self._strip_provider_prefix(requested_model)
+                for m in self.registry.get_models():
+                    if m.provider == pname and m.id == mid:
+                        return [m]
 
         # 模糊匹配
         models = self.registry.get_models()
-        candidates = [m for m in models if requested_model.lower() in m.id.lower()]
-        if candidates:
-            scored = [(self._score_for(m), m) for m in candidates]
-            scored.sort(key=lambda x: -x[0])
-            for score, m in scored:
-                key = self.registry.pick_key_for(m.provider)
-                if key and self._acquire_slot(m.provider):
-                    return self._build_result(
-                        m.provider, m.base_url, key, m.id,
-                        f"{m.provider}/{m.id}", score=score,
-                        modality=m.modality,
-                    )
+        matches = [m for m in models if requested_model.lower() in m.id.lower()]
+        if matches:
+            return matches
 
-        LOG.warning("Model '%s' not found, modality/quality routing", requested_model)
+        # fallback: 按 modality
         if preferred_modalities and self._get_modality_auto_routing():
-            return self._pick_by_modality(preferred_modalities)
-        return self._pick_quality()
-
-    def _pick_by_modality(self, preferred_modalities: list[str]) -> RouteResult | None:
-        """
-        按模态分组自动路由:
-          1. 从 preferred_modalities 中依次匹配有模型的模态
-          2. 在每个模态组内, 按综合评分排序取 top K
-          3. 在 top K 内轮询 (round-robin)
-          4. 没找到再 fallback 到全部质量路由
-        """
-        for modality in preferred_modalities:
-            models = self.registry.get_models_by_modality(modality)
-            if not models:
-                continue
-
-            # 按综合评分 = 健康*0.6 + 能力*0.4 + 模态匹配加分排序
-            scored = []
-            for m in models:
-                q = self._score_for(m)
-                c = m.capability_score
-                # 所属模态正好是目标 → 加分
-                is_match = (m.modality == modality)
-                combined = compute_combined_score(q, c, modality_match=is_match, modality_boost=5.0)
-                key = self.registry.pick_key_for(m.provider)
-                if key and self._acquire_slot(m.provider):
-                    route_key = f"{m.provider}/{m.id}"
-                    if route_key not in self._disabled_models:
-                        scored.append((combined, m, key))
-
-            if scored:
-                # 按综合分降序
-                scored.sort(key=lambda x: -x[0])
-
-                # 取 top K
-                top_k = self._get_modality_top_k()
-                top = scored[:min(top_k, len(scored))]
-
-                # 在 top K 内轮询
-                with self._lock:
-                    idx = self._modality_rr.get(modality, 0)
-                    self._modality_rr[modality] = (idx + 1) % len(top)
-                    _, m, key = top[idx % len(top)]
-
-                return self._build_result(
-                    m.provider, m.base_url, key, m.id,
-                    f"{m.provider}/{m.id}",
-                    score=_,
-                    modality=m.modality,
-                )
-
-        # fallback: quality routing
-        LOG.info("No models found in modalities %s, fallback to quality routing", preferred_modalities)
-        return self._pick_quality()
-
-    def _pick_quality(self) -> RouteResult | None:
-        """按质量评分 + 并发槽位可用性选最优模型"""
-        routes = self.registry.all_routes()
-        if not routes:
-            LOG.error("No available models!")
-            return None
-
-        scored = []
-        for route in routes:
-            parts = route.split("/", 1)
-            if len(parts) != 2:
-                continue
-            pname, mid = parts
-            ps_obj = self.registry._providers.get(pname)
-            if not ps_obj or ps_obj.degraded:
-                continue
-            if route in self._disabled_models:
-                continue
-            if not self._acquire_slot(pname):
-                continue
-            key = self.registry.pick_key_for(pname)
-            if not key:
-                continue
-            score = self._score_for_model_obj(pname, mid)
-            scored.append((score, pname, mid, key, ps_obj.base_url))
-
-        if scored:
-            scored.sort(key=lambda x: -x[0])
-            score, pname, mid, key, base_url = scored[0]
-            return self._build_result(pname, base_url, key, mid, f"{pname}/{mid}", score=score)
-
-        # 全部没槽位或被禁, 硬选第一个
-        LOG.warning("All routes busy/disabled, forcing first available")
-        with self._lock:
-            for route in routes:
-                parts = route.split("/", 1)
-                pname = parts[0]
-                mid = parts[1] if len(parts) > 1 else route
-                ps_obj = self.registry._providers.get(pname)
-                if ps_obj:
-                    key = self.registry.pick_key_for(pname)
-                    if key:
-                        return self._build_result(pname, ps_obj.base_url, key, mid, route)
-        return None
+            return self.registry.get_models_by_modality(preferred_modalities[0])
+        return models
 
     def _build_result(self, pname, base_url, key, model_id, full_path,
                       score=0.0, modality=TEXT_ONLY):
@@ -411,6 +420,14 @@ class RouteEngine:
                     + (1 - EWMA_ALPHA) * stats.ewma_first_token
                 )
 
+        # v4: 清零该 provider 上所有 model penalty (成功了 → 模型恢复)
+        prefix = provider + "/"
+        cleared = [k for k in self._model_penalty if k.startswith(prefix)]
+        for k in cleared:
+            old = self._model_penalty.pop(k)
+            if old > 0.01:
+                LOG.info("model penalty cleared (success): %s (was %.2f)", k, old)
+
         self._persist_stats()
 
     def record_failure(self, provider: str, model_id: str = "", http_code: int = 0, body_text: str = ""):
@@ -428,7 +445,85 @@ class RouteEngine:
                 route_key = f"{provider}/{model_id}"
                 self.disable_model(route_key)
 
+        # v4: model penalty 累加 (避免下次又从头轮询高分模型)
+        if model_id:
+            path = f"{provider}/{model_id}"
+            old_penalty = self._model_penalty.get(path, 0.0)
+            if http_code in (401, 403):
+                inc = 0.3  # 鉴权失败 — 严重
+            elif http_code == 429:
+                inc = 0.2  # 限流 — 中等
+            elif http_code >= 500:
+                inc = 0.15  # 服务端错误 — 较轻
+            elif http_code > 0:
+                inc = 0.1  # 其他 4xx — 轻
+            else:
+                inc = 0.1  # 网络/超时
+            self._model_penalty[path] = min(0.9, old_penalty + inc)
+            self._model_last_failure[path] = time.time()
+            LOG.warning("model penalty +%.2f → %.2f: %s (http=%d)",
+                        inc, self._model_penalty[path], path, http_code)
+
         self._persist_stats()
+
+    # ── v4: penalty 状态 + 周期复测 ─────────────────────
+
+    def get_model_penalty(self) -> dict:
+        """返回所有 model penalty 状态 (admin 用)"""
+        return {
+            "penalties": dict(self._model_penalty),
+            "last_failures": dict(self._model_last_failure),
+            "recovery_interval_seconds": self.cfg.routing.get("recovery_interval", 300),
+            "decay_step": self.cfg.routing.get("penalty_decay_step", 0.1),
+        }
+
+    def reset_model_penalty(self, model_path: str | None = None) -> dict:
+        """清零 penalty (admin 手动复测 / 强制恢复)
+        model_path=None → 清空所有
+        """
+        if model_path is None:
+            cleared = len(self._model_penalty)
+            self._model_penalty.clear()
+            self._model_last_failure.clear()
+            LOG.info("all model penalties cleared (count=%d)", cleared)
+            return {"ok": True, "cleared": cleared}
+        if model_path in self._model_penalty:
+            old = self._model_penalty.pop(model_path)
+            self._model_last_failure.pop(model_path, None)
+            LOG.info("model penalty reset: %s (was %.2f)", model_path, old)
+            return {"ok": True, "cleared": 1, "previous": old}
+        return {"ok": True, "cleared": 0}
+
+    def decay_model_penalty(self) -> int:
+        """v4 周期复测: 减少所有 penalty, 触发"复测更新分数"
+        - 距 last_failure > recovery_interval 的 model: penalty - decay_step
+        - penalty 降到 0 → 移除
+        返回更新的 model 数
+        """
+        interval = self.cfg.routing.get("recovery_interval", 300)
+        decay_step = self.cfg.routing.get("penalty_decay_step", 0.1)
+        now = time.time()
+        updated = 0
+        with self._lock:
+            for path in list(self._model_penalty.keys()):
+                last_fail = self._model_last_failure.get(path, 0)
+                if now - last_fail < interval:
+                    continue
+                old = self._model_penalty[path]
+                new = max(0.0, old - decay_step)
+                if new <= 0.001:
+                    del self._model_penalty[path]
+                    self._model_last_failure.pop(path, None)
+                    LOG.info("model penalty fully recovered (decay): %s", path)
+                else:
+                    self._model_penalty[path] = new
+                    LOG.info("model penalty decay: %s %.2f → %.2f", path, old, new)
+                updated += 1
+        if updated:
+            self._persist_stats()
+        return updated
+
+    # ── 模型失败/成功 (v4: penalty) ─────────────────────
 
     def _get_stats(self, provider: str) -> ProviderStats:
         if provider not in self._stats:
@@ -581,8 +676,31 @@ async def _proxy_normal(url, headers, payload, timeout, route) -> dict:
             body_text = resp.text
 
             if resp.status_code != 200:
+                # v4 修复: parse JSON error 或提取 status reason, 避免 raw HTTP header 污染
+                ctype = resp.headers.get("content-type", "")
+                error_msg = f"HTTP {resp.status_code} {resp.reason_phrase}"
+                # 优先尝试 resp.json() (标准 OpenAI 格式)
+                try:
+                    err_body = resp.json()
+                    if isinstance(err_body, dict):
+                        err_obj = err_body.get("error")
+                        if isinstance(err_obj, dict):
+                            error_msg = err_obj.get("message", error_msg)
+                        elif err_obj is not None:
+                            error_msg = str(err_obj)[:200]
+                except Exception:
+                    # 失败: raw body 含 status line + headers (e.g. proxy 注入)
+                    # regex 提取最后一个 {"error": {...}} 或纯 body 部分
+                    m = re.search(rb'\{"error":\s*\{[^}]*(?:"[^"]*"\s*:\s*"[^"]*"\s*[,}])*', body_text.encode())
+                    if m:
+                        try:
+                            err_obj = json.loads(m.group(0) + b"}")
+                            if isinstance(err_obj.get("error"), dict):
+                                error_msg = err_obj["error"].get("message", error_msg)
+                        except Exception:
+                            pass
                 return {
-                    "error": {"message": body_text[:500], "type": f"http_{resp.status_code}", "code": resp.status_code},
+                    "error": {"message": error_msg, "type": f"http_{resp.status_code}", "code": resp.status_code},
                     "_router": {"provider": route.provider_name, "model": route.model_id,
                                 "full_path": route.full_model_path, "latency_ms": round(elapsed * 1000, 1),
                                 "http_status": resp.status_code},
@@ -610,12 +728,14 @@ async def _proxy_stream(url, headers, payload, timeout) -> AsyncGenerator[str, N
         try:
             async with client.stream("POST", url, json=payload, headers=headers, timeout=timeout) as resp:
                 if resp.status_code != 200:
+                    # v4 修复: 4xx/5xx 抛异常, 让 app.py chain rotation 接住切下一个候选
                     body = await resp.aread()
-                    yield f'data: {json.dumps({"error": body.decode()[:500]})}\n\n'
-                    return
+                    err_msg = f"HTTP {resp.status_code}: {body.decode(errors='replace')[:300]}"
+                    raise httpx.HTTPStatusError(err_msg, request=resp.request, response=resp)
                 async for line in resp.aiter_lines():
                     if line:
                         yield line
                         yield "\n"
         except httpx.TimeoutException:
-            yield f'data: {json.dumps({"error": "Upstream timeout"})}\n\n'
+            # timeout 也抛, 让 app.py chain rotation 切链
+            raise httpx.TimeoutException("Upstream stream timeout")
