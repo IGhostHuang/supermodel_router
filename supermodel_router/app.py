@@ -5,6 +5,7 @@ import json
 import time
 import logging
 import asyncio
+import threading
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator, cast
 
@@ -28,6 +29,26 @@ from .classifier import (
 )
 
 LOG = logging.getLogger("app")
+
+
+def _refresh_async(registry, *, tag: str = "refresh"):
+    """后台线程跑 refresh_all,fire-and-forget。
+
+    POST provider 时不让 httpx.ConnectError 阻塞响应。
+    daemon=True → SMR 退出时 thread 自动终止,不卡进程。
+    try/except → daemon thread 异常默认被吞,这里显式记 LOG。
+    """
+    def _runner():
+        try:
+            t0 = time.time()
+            registry.refresh_all()
+            LOG.info("[%s] async refresh done in %.2fs", tag, time.time() - t0)
+        except Exception:
+            LOG.exception("[%s] async refresh failed", tag)
+
+    th = threading.Thread(target=_runner, daemon=True, name=f"smr-{tag}")
+    th.start()
+    LOG.info("[%s] async refresh kicked off", tag)
 
 # ---- 全局对象 ----
 registry: ModelRegistry = None
@@ -58,13 +79,45 @@ async def lifespan(app: FastAPI):
                 LOG.exception("periodic refresh failed")
     asyncio.create_task(_periodic_refresh())
 
-    LOG.info("Model Router v3 started: %d models across %d providers",
-             len(registry.get_model_ids()), len(registry._providers))
+    # v4: 定期 model penalty 衰减 (复测恢复分数)
+    decay_interval = config.routing.get("recovery_interval", 300)
+    async def _periodic_penalty_decay():
+        while True:
+            await asyncio.sleep(decay_interval)
+            try:
+                updated = engine.decay_model_penalty()
+                if updated:
+                    LOG.info("periodic penalty decay: %d models updated", updated)
+            except Exception:
+                LOG.exception("periodic penalty decay failed")
+    asyncio.create_task(_periodic_penalty_decay())
+
+    # v4.1: 启动时加载本地版本元数据 (v3.1)
+    try:
+        from .version import load_version_meta
+        version_meta = load_version_meta()
+        LOG.info("SMR v%s (%s) started: %d models across %d providers",
+                 version_meta["version"], version_meta["build_date"],
+                 len(registry.get_model_ids()), len(registry._providers))
+    except Exception:
+        LOG.info("Model Router v3 started: %d models across %d providers",
+                 len(registry.get_model_ids()), len(registry._providers))
+
     yield
     config.stop_watcher()
 
 
-app = FastAPI(title="Model Router v3 — Any-to-Any", version="3.0.0", lifespan=lifespan)
+# v3.1 — 实际版本从 version.py 读
+try:
+    from .version import VERSION as SMR_VERSION
+    from .version import BUILD_DATE as SMR_BUILD_DATE
+    SMR_APP_TITLE = f"SuperModel Router v{SMR_VERSION}"
+except Exception:
+    SMR_VERSION = "3.0.0"
+    SMR_BUILD_DATE = "2026-06-16"
+    SMR_APP_TITLE = "Model Router v3 — Any-to-Any"
+
+app = FastAPI(title=SMR_APP_TITLE, version=SMR_VERSION, lifespan=lifespan)
 
 
 # ============================================================
@@ -96,30 +149,63 @@ async def chat_completions(request: Request):
     LOG.debug("request: input=%s output=%s → modalities=%s model=%s",
               input_mod, output_mod, preferred_modalities, requested_model)
 
-    # 路由 (带重试)
+    # 路由 (v4: pick_chain traverse — 失败时自动切下一个候选)
     max_retry = config.routing.get("max_retry", 2)
     backoff_ms = config.routing.get("retry_backoff_ms", [0, 500])
     last_error = None
+    chain = engine.pick_chain(requested_model, preferred_modalities=preferred_modalities,
+                              max_candidates=max(8, max_retry * 4))
+    if not chain:
+        return JSONResponse(
+            {"error": {"message": "No available models", "type": "routing_error"}},
+            status_code=503,
+        )
 
-    for attempt in range(max_retry + 1):
-        route = engine.pick(requested_model, preferred_modalities=preferred_modalities)
-        if not route:
+    chain_idx = 0
+    candidate = chain[0]
+    route = candidate.materialize(registry)
+    if not route:
+        return JSONResponse(
+            {"error": {"message": "No available models (materialize failed)", "type": "routing_error"}},
+            status_code=503,
+        )
+    route = route  # type: ignore[assignment]  # LSP narrowing fix
+
+    # v4: traverse 候选链 — 5xx/timeout/429 (短) 自动切下一个候选
+    attempts = 0
+    while True:
+        attempts += 1
+        if attempts > max_retry + len(chain):
+            # 兜底: 链遍历完仍失败
             return JSONResponse(
-                {"error": {"message": "No available models", "type": "routing_error"}},
-                status_code=503,
+                last_error or {"error": {"message": "All candidates exhausted"}},
+                status_code=502,
             )
 
         t0 = time.time()
         try:
             if stream:
+                # v4 修复 B6: stream 路径加 pre-flight check
+                # 用 GET /models 探针 (已有 key rotation 逻辑) — 失败抛异常让 outer while 切链
+                pf_url = f"{route.base_url.rstrip('/')}/models"
+                pf_headers = {"Authorization": f"Bearer {route.api_key}"}
+                async with httpx.AsyncClient(timeout=5.0) as pf_client:
+                    pf_resp = await pf_client.get(pf_url, headers=pf_headers)
+                if pf_resp.status_code != 200:
+                    raise httpx.HTTPStatusError(
+                        f"preflight HTTP {pf_resp.status_code}",
+                        request=pf_resp.request, response=pf_resp,
+                    )
+                # pre-flight OK, 真正 stream
                 agen = cast(AsyncGenerator, await proxy_chat_request(route, body, stream=True))
-                async def _stream_generator(route=route, t0=t0):
+                async def _stream_generator(route=route, t0=t0, candidate=candidate,
+                                            chain=chain, chain_idx=chain_idx):
                     try:
                         async for chunk in agen:
                             yield chunk
                         engine.record_success(route.provider_name, time.time() - t0)
                     except Exception as e:
-                        engine.record_failure(route.provider_name)
+                        engine.record_failure(route.provider_name, route.model_id, 0, str(e))
                         LOG.exception("stream error to %s", route.full_model_path)
                         yield f'data: {json.dumps({"error": str(e)})}\n\n'
                 return StreamingResponse(
@@ -131,10 +217,28 @@ async def chat_completions(request: Request):
                 assert isinstance(result, dict), f"expected dict, got {type(result)}"
                 latency = time.time() - t0
                 if "error" in result:
-                    engine.record_failure(route.provider_name, route.model_id,
-                                          result.get("error", {}).get("code", 0),
-                                          result.get("error", {}).get("message", ""))
+                    http_code = result.get("error", {}).get("code", 0)
+                    error_msg = result.get("error", {}).get("message", "")
+                    engine.record_failure(route.provider_name, route.model_id, http_code, error_msg)
                     last_error = result
+                    # v4: 切下一个候选 (key 或 model)
+                    chain_idx += 1
+                    if chain_idx >= len(chain):
+                        return JSONResponse(
+                            last_error or {"error": {"message": "All candidates exhausted"}},
+                            status_code=502,
+                        )
+                    candidate = chain[chain_idx]
+                    route = candidate.materialize(registry)
+                    if not route:
+                        continue
+                    LOG.info("v4 rotate: → %s (key_idx=%d, score=%.1f, penalty=%.2f)",
+                             route.full_model_path, candidate.key_index,
+                             candidate.score, candidate.penalty)
+                    if attempts <= max_retry:
+                        ms = backoff_ms[min(attempts - 1, len(backoff_ms) - 1)]
+                        if ms > 0:
+                            await asyncio.sleep(ms / 1000)
                     continue
                 engine.record_success(route.provider_name, latency)
                 result["_router"] = {
@@ -144,29 +248,39 @@ async def chat_completions(request: Request):
                     "latency_ms": round(latency * 1000, 1),
                     "input_modality": input_mod,
                     "output_modality": output_mod,
+                    "key_index": candidate.key_index,
+                    "chain_position": chain_idx,
+                    "chain_size": len(chain),
                 }
                 return JSONResponse(result)
         except httpx.TimeoutException:
             latency = time.time() - t0
-            LOG.warning("timeout %s (attempt %d/%d, %.1fs)",
-                        route.full_model_path, attempt + 1, max_retry + 1, latency)
-            engine.record_failure(route.provider_name, route.model_id)
+            LOG.warning("timeout %s (attempt %d, %.1fs)",
+                        route.full_model_path, attempts, latency)
+            engine.record_failure(route.provider_name, route.model_id, 0, "timeout")
             last_error = {"error": {"message": "Upstream timeout", "type": "timeout"}}
         except Exception as e:
-            LOG.exception("proxy error %s (attempt %d/%d)",
-                          route.full_model_path, attempt + 1, max_retry + 1)
-            engine.record_failure(route.provider_name, route.model_id)
+            LOG.exception("proxy error %s (attempt %d)", route.full_model_path, attempts)
+            engine.record_failure(route.provider_name, route.model_id, 0, str(e))
             last_error = {"error": {"message": str(e), "type": "proxy_error"}}
 
-        if attempt < max_retry:
-            ms = backoff_ms[min(attempt, len(backoff_ms) - 1)]
+        # 失败 — 切下一个候选
+        chain_idx += 1
+        if chain_idx >= len(chain):
+            return JSONResponse(
+                last_error or {"error": {"message": "All candidates exhausted"}},
+                status_code=502,
+            )
+        candidate = chain[chain_idx]
+        route = candidate.materialize(registry)
+        if not route:
+            continue
+        LOG.info("v4 rotate (exception): → %s (key_idx=%d)",
+                 route.full_model_path, candidate.key_index)
+        if attempts <= max_retry:
+            ms = backoff_ms[min(attempts - 1, len(backoff_ms) - 1)]
             if ms > 0:
                 await asyncio.sleep(ms / 1000)
-
-    return JSONResponse(
-        last_error or {"error": {"message": "All retries exhausted"}},
-        status_code=502,
-    )
 
 
 @app.post("/v1/images/generations")
@@ -848,12 +962,23 @@ async def admin_page():
 
 @app.get("/v1/health")
 async def health():
+    from .version import VERSION as CURRENT_VERSION, BUILD_DATE
+    penalty_state = engine.get_model_penalty()
     return JSONResponse({
         "status": "ok",
-        "version": "3.0.0",
+        "version": CURRENT_VERSION,
+        "build_date": BUILD_DATE,
+        "title": SMR_APP_TITLE,
         "uptime_seconds": round(time.time() - _start_time, 1),
         "total_models": len(registry.get_model_ids()),
         "providers": registry.get_state(),
+        "model_penalty_summary": {
+            "count": len(penalty_state["penalties"]),
+            "top_5": dict(sorted(
+                penalty_state["penalties"].items(),
+                key=lambda x: -x[1]
+            )[:5]),
+        },
     })
 
 
@@ -941,10 +1066,17 @@ async def admin_providers_add(payload: dict):
             {"error": f"provider '{name}' already exists"},
             status_code=409,
         )
-    # 立即注册 + 拉模型
+    # 立即注册 (build 必须同步,否则 provider 不在 registry 里)
     registry.build()
-    registry.refresh_all()
-    return JSONResponse({"ok": True, "name": name, "config": pcfg})
+    # refresh 异步跑 — 不让 provider 网络慢/挂时阻塞响应
+    _refresh_async(registry, tag=f"add:{name}")
+    return JSONResponse({
+        "ok": True,
+        "name": name,
+        "config": pcfg,
+        "refreshing": True,
+        "hint": "model discovery running in background, GET /v1/admin/providers to check status",
+    })
 
 
 @app.delete("/v1/admin/providers/{name}")
@@ -1081,3 +1213,127 @@ async def admin_routing_update(payload: dict):
         )
     config.update_routing(rt)
     return JSONResponse({"ok": True, "updated": list(rt.keys())})
+
+
+# ============================================================
+# v4: Model Penalty 管理 (admin) — 老大 09:48 拍
+# ============================================================
+
+@app.get("/v1/admin/penalty")
+async def admin_penalty_get():
+    """查看所有 model penalty 状态 (用于 dashboard 调试 + 复测决策)"""
+    return JSONResponse(engine.get_model_penalty())
+
+
+@app.post("/v1/admin/penalty/reset")
+async def admin_penalty_reset(payload: dict | None = None):
+    """手动清零 model penalty (强制复测恢复)
+
+    payload = {"model": "openrouter/gpt-4o"} 或 {} (清空所有)
+    """
+    payload = payload or {}
+    target = payload.get("model")
+    result = engine.reset_model_penalty(target)
+    return JSONResponse(result)
+
+
+@app.post("/v1/admin/penalty/decay")
+async def admin_penalty_decay(payload: dict | None = None):
+    """手动触发 penalty decay (admin 强制复测恢复)
+
+    payload = {"force": true}  # 跳过 interval 等待, 立即对所有 model 衰减
+    """
+    payload = payload or {}
+    force = payload.get("force", False)
+    if force:
+        # 强制衰减 (跳过 interval 检查) — 用于 dashboard "立即复测" 按钮
+        with engine._lock:
+            updated = 0
+            for path in list(engine._model_penalty.keys()):
+                old = engine._model_penalty[path]
+                new = max(0.0, old - engine.cfg.routing.get("penalty_decay_step", 0.1))
+                if new <= 0.001:
+                    del engine._model_penalty[path]
+                    engine._model_last_failure.pop(path, None)
+                else:
+                    engine._model_penalty[path] = new
+                updated += 1
+            if updated:
+                engine._persist_stats()
+        return JSONResponse({"ok": True, "updated_models": updated, "forced": True})
+    # 普通: 等 interval 过了才衰减
+    updated = engine.decay_model_penalty()
+    return JSONResponse({"ok": True, "updated_models": updated, "forced": False})
+
+
+# ============================================================
+# v3.1: 版本管理 (admin) — 老大 09:48 拍 C 项
+# ============================================================
+
+@app.get("/v1/admin/version")
+async def admin_version_get(force_check: bool = False):
+    """返回当前版本 + 最新 GitHub release + 升级建议"""
+    from .version import (
+        VERSION as CURRENT_VERSION, BUILD_DATE, GITHUB_REPO,
+        get_cached_release, is_newer_version,
+    )
+
+    release = None
+    if force_check:
+        from .version import fetch_latest_release
+        release = fetch_latest_release()
+    else:
+        release = get_cached_release()
+
+    has_update = False
+    latest_tag = None
+    if release:
+        latest_tag = release["tag"]
+        has_update = is_newer_version(CURRENT_VERSION, latest_tag)
+
+    return JSONResponse({
+        "current": {
+            "version": CURRENT_VERSION,
+            "build_date": BUILD_DATE,
+            "title": SMR_APP_TITLE,
+            "repository": GITHUB_REPO,
+        },
+        "latest_release": release,
+        "has_update": has_update,
+        "upgrade_methods": ["git", "pip", "docker", "binary"],
+        "checked_at": time.time(),
+    })
+
+
+@app.post("/v1/admin/upgrade")
+async def admin_upgrade(payload: dict | None = None):
+    """生成升级命令 (不直接执行 — 需手动确认)
+
+    payload = {"method": "git" | "pip" | "docker" | "binary",
+               "target_tag": "v3.2.0"}  # 可选, 默认 latest
+
+    返回: 升级命令 + 风险提示
+    """
+    payload = payload or {}
+    method = payload.get("method", "git")
+    target_tag = payload.get("target_tag", "latest")
+
+    from .version import (
+        fetch_latest_release, get_upgrade_command, GITHUB_REPO,
+    )
+    release = fetch_latest_release()
+    if target_tag == "latest" and release:
+        target_tag = release["tag"]
+
+    cmd = get_upgrade_command(target_tag, repo=GITHUB_REPO, method=method)
+    return JSONResponse({
+        "ok": True,
+        "method": method,
+        "target_tag": target_tag,
+        "command": cmd,
+        "warning": (
+            "升级会重启服务, 期间请求会失败。建议在低峰期执行, "
+            "或先在 staging 环境验证。命令需要手动在终端执行 (SMR 不直接执行危险操作)。"
+        ),
+        "release_notes": release["body"][:500] if release else "",
+    })

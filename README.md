@@ -1,9 +1,19 @@
 # SMR (supermodel_router)
 
 > **SMR (前 FMR / free-model-router)** — OpenAI 兼容的多 provider LLM 路由网关
-> v1.0.0 · 2026-06-16 · 独立运行模式（不集成到 Hermes）
+> **v3.1.0** · 2026-06-17 · 独立运行模式（不集成到 Hermes）
 
 ---
+
+## 🎉 v3.1.0 新增 (2026-06-17)
+
+- **轮询机制 v4**: 高分模型优先, 同 model 全部 key 失败再换下一 model (跨 provider); 失败时自动降分避免下次重复失败路径; 周期复测自动恢复分数
+- **多 key 真正轮询** (B1 修复): `/v1/models` 拉取阶段 401/403 自动换 key, 不再因第 1 个 key 失败而 0 模型
+- **exclude 正则匹配** (B4 修复): `exclude: [".*-legacy.*"]` 真正生效 (之前是字面匹配)
+- **错误消息干净** (B2 修复): 4xx/5xx 不再泄漏 raw HTTP status line + headers
+- **版本管理** (C): `/v1/admin/version` (当前+GitHub release) + `/v1/admin/upgrade` (生成 git/pip/docker/binary 升级命令)
+- **Penalty 管理**: `/v1/admin/penalty` GET 状态, `/reset` 清零, `/decay` (支持 `force:true` 立即复测)
+- **PyInstaller 单文件 21MB** + **Docker 镜像 v3.1.0** 一键部署
 
 ## 🎯 设计目标
 
@@ -333,8 +343,10 @@ providers:
 
 ## 📜 版本历史
 
-- **v1.0.0 (SMR 阶段 1)** — OpenAI 兼容网关, 4 模式过滤, 多 key 轮询, 401 换 key
+- **v3.1.0 (2026-06-17)** — 轮询机制 v4 (高分优先 + key 轮询 + 跨 provider + 降分 + 周期复测); 多 key 真正轮询 (B1); exclude 正则 (B4); 错误消息干净 (B2); 版本管理 (C: /v1/admin/version + upgrade); penalty admin endpoints
+- **v3.0.0 (2026-06-16)** — 模态路由 + 质量评分 (capability_score + EWMA latency)
 - **v1.0.0 (SMR 阶段 2)** — 修复流式 chat 500 bug (560eb61)
+- **v1.0.0 (SMR 阶段 1)** — OpenAI 兼容网关, 4 模式过滤, 多 key 轮询, 401 换 key
 - **v0.x (FMR 阶段)** — 内部代号 free-model-router, 已废弃
 
 ---

@@ -11,3 +11,6 @@ test_models.py
 build/
 dist/
 *.spec
+.backups/
+pip-cache/
+dist_windows/
