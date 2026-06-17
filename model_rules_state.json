@@ -562,7 +562,7 @@
       "notifications_sent": 0
     },
     {
-      "timestamp": 1781707179.8235157,
+      "timestamp": 1781707539.6275897,
       "provider": "openrouter",
       "model_count": 0,
       "new_models": [],
@@ -572,7 +572,47 @@
       "notifications_sent": 0
     },
     {
-      "timestamp": 1781707189.8510826,
+      "timestamp": 1781707549.654768,
+      "provider": "newapi",
+      "model_count": 0,
+      "new_models": [],
+      "removed_models": [],
+      "blacklisted": [],
+      "whitelisted": [],
+      "notifications_sent": 0
+    },
+    {
+      "timestamp": 1781708150.394388,
+      "provider": "openrouter",
+      "model_count": 0,
+      "new_models": [],
+      "removed_models": [],
+      "blacklisted": [],
+      "whitelisted": [],
+      "notifications_sent": 0
+    },
+    {
+      "timestamp": 1781708160.424025,
+      "provider": "newapi",
+      "model_count": 0,
+      "new_models": [],
+      "removed_models": [],
+      "blacklisted": [],
+      "whitelisted": [],
+      "notifications_sent": 0
+    },
+    {
+      "timestamp": 1781708761.1789308,
+      "provider": "openrouter",
+      "model_count": 0,
+      "new_models": [],
+      "removed_models": [],
+      "blacklisted": [],
+      "whitelisted": [],
+      "notifications_sent": 0
+    },
+    {
+      "timestamp": 1781708771.2062488,
       "provider": "newapi",
       "model_count": 0,
       "new_models": [],
@@ -584,7 +624,7 @@
   ],
   "notify_log": [],
   "stats": {
-    "total_discoveries": 58,
-    "last_discovery": 1781707189.8510916
+    "total_discoveries": 62,
+    "last_discovery": 1781708771.2062542
   }
 }

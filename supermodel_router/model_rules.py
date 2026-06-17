@@ -86,8 +86,18 @@ class ModelRuleEngine:
     5. 持久化规则到 JSON
     """
 
-    def __init__(self, rules_dir: str = "."):
+    def __init__(self, rules_dir: str = ".", config_obj=None):
+        """v3.6: 接受 config_obj 决定 state_dir (集中管理, 默认 '.')"""
         self._lock = threading.RLock()
+        # v3.6: 优先从 config.model_management.state_dir 读
+        if config_obj is not None:
+            mm = (config_obj.data.get("model_management") or {})
+            rules_dir = mm.get("state_dir", rules_dir)
+        try:
+            os.makedirs(rules_dir, exist_ok=True)
+        except Exception:
+            LOG.warning("model_rules: state_dir '%s' not creatable, fallback to '.'", rules_dir)
+            rules_dir = "."
         self._rules_dir = rules_dir
         self._rules: list[ModelRule] = []
         self._history: list[DiscoveryRecord] = []

@@ -19,6 +19,72 @@ from .model_rules import ModelRuleEngine
 LOG = logging.getLogger("models")
 
 
+# v3.6 知名 provider 的默认 base_url (用户填域名就自动补全)
+KNOWN_BASE_URLS: dict[str, str] = {
+    "openrouter": "https://openrouter.ai/api/v1",
+    "anthropic": "https://api.anthropic.com/v1",
+    "openai": "https://api.openai.com/v1",
+    "groq": "https://api.groq.com/openai/v1",
+    "mistral": "https://api.mistral.ai/v1",
+    "deepseek": "https://api.deepseek.com/v1",
+    "moonshot": "https://api.moonshot.cn/v1",
+    "zhipu": "https://open.bigmodel.cn/api/paas/v4",
+    "yi": "https://api.lingyiwanwu.com/v1",
+    "ollama": "http://localhost:11434/v1",
+    "lm-studio": "http://localhost:1234/v1",
+    "nvidia": "https://integrate.api.nvidia.com/v1",
+    "volcengine": "https://ark.cn-beijing.volces.com/api/v3",
+    "dashscope": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "siliconflow": "https://api.siliconflow.cn/v1",
+}
+
+
+def normalize_base_url(name: str, raw: str) -> str:
+    """v3.6 自动补全 base_url:
+    1. 空 → 按 provider name 查 KNOWN_BASE_URLS
+    2. 没 scheme → 加 https://
+    3. 知名 provider 域名但缺 /v1 → 自动补 (openrouter.ai/api → https://openrouter.ai/api/v1)
+    4. rstrip('/') 标准化
+    """
+    if not raw:
+        return KNOWN_BASE_URLS.get(name.lower(), "")
+    s = raw.strip()
+    # 1. 没 scheme → 加 https://
+    if not s.startswith(("http://", "https://")):
+        s = "https://" + s
+    # 2. 知名域名补 /v1 (含 localhost 本地服务)
+    from urllib.parse import urlparse, urlunparse
+    p = urlparse(s)
+    host = p.netloc.lower()
+    path = p.path.rstrip("/")
+    # 知名域名 (带 /v1 默认 path)
+    known_hosts_full = {
+        "openrouter.ai": "/api/v1",
+        "api.openai.com": "/v1",
+        "api.anthropic.com": "/v1",
+        "api.deepseek.com": "/v1",
+        "integrate.api.nvidia.com": "/v1",
+        "api.mistral.ai": "/v1",
+        "api.groq.com": "/openai/v1",
+        "api.moonshot.cn": "/v1",
+        "open.bigmodel.cn": "/api/paas/v4",
+        "api.lingyiwanwu.com": "/v1",
+        "ark.cn-beijing.volces.com": "/api/v3",
+        "dashscope.aliyuncs.com": "/compatible-mode/v1",
+        "api.siliconflow.cn": "/v1",
+        "localhost:11434": "/v1",       # ollama
+        "localhost:1234": "/v1",        # lm-studio
+        "127.0.0.1:11434": "/v1",       # ollama IP
+        "127.0.0.1:1234": "/v1",        # lm-studio IP
+    }
+    if host in known_hosts_full and not path:
+        path = known_hosts_full[host]
+    # openrouter 特殊: path=/api 时升级为 /api/v1 (用户常见填法)
+    if host == "openrouter.ai" and path in ("", "/api"):
+        path = "/api/v1"
+    return urlunparse((p.scheme, p.netloc, path, "", "", "")).rstrip("/")
+
+
 @dataclass
 class ModelInfo:
     id: str
@@ -87,7 +153,7 @@ class ModelRegistry:
                     continue
                 ps = ProviderState(
                     name=name,
-                    base_url=pcfg["base_url"].rstrip("/"),
+                    base_url=normalize_base_url(name, pcfg.get("base_url", "")),
                     api_keys=pcfg.get("api_keys", []),
                     model_rules=pcfg.get("model_rules", {"mode": "all"}),
                     max_concurrent=pcfg.get("max_concurrent", 3),
@@ -127,6 +193,37 @@ class ModelRegistry:
                 cb()
             except Exception:
                 LOG.exception("refresh callback failed")
+
+    def refresh_provider(self, name: str, timeout: float = 15.0):
+        """v3.6: 单独刷新一个 provider (针对性获取模型, 不动其他)
+        用途: UI 上点 "刷新模型" 按钮, 避免刷新全表
+        """
+        ps = self._providers.get(name)
+        if not ps:
+            LOG.warning("refresh_provider: '%s' not found", name)
+            return False
+        with self._lock:
+            try:
+                old_ids = list(self._prev_model_ids.get(ps.name, []))
+                self._refresh_provider(ps, timeout)
+                raw_models = [{"id": m.id, **m.extra} for m in ps.models]
+                filtered = self.rule_engine.apply_to_model_list(raw_models, ps.name)
+                filtered_ids = [m["id"] for m in filtered]
+                ps.models = [m for m in ps.models if m.id in filtered_ids]
+                ps.model_ids = [m.id for m in ps.models]
+                self._prev_model_ids[ps.name] = list(ps.model_ids)
+                self.rule_engine.record_discovery(ps.name, old_ids, list(ps.model_ids))
+                self._rebuild_route_map()
+                LOG.info("refresh_provider '%s': %d models", name, len(ps.models))
+                for cb in self._refresh_callbacks:
+                    try:
+                        cb()
+                    except Exception:
+                        LOG.exception("refresh callback failed")
+                return True
+            except Exception:
+                LOG.exception("refresh_provider '%s' failed", name)
+                return False
 
     def _refresh_provider(self, ps: ProviderState, timeout: float):
         """拉 /v1/models 并按规则过滤"""

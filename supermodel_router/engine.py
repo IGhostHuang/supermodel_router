@@ -186,9 +186,18 @@ class RouteEngine:
         self._model_penalty: dict[str, float] = {}
         self._model_last_failure: dict[str, float] = {}
 
-        self._stats_dir = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), ".."
-        )
+        # v3.6: state_dir 走 config (集中管理)
+        from .config import Config
+        state_dir = "."
+        if isinstance(cfg, Config):
+            mm = (cfg.data.get("model_management") or {})
+            state_dir = mm.get("state_dir", ".")
+            try:
+                os.makedirs(state_dir, exist_ok=True)
+            except Exception:
+                LOG.warning("engine: state_dir '%s' not creatable, fallback to '.'", state_dir)
+                state_dir = "."
+        self._stats_dir = state_dir
         self._load_stats()
 
     # ── 配置辅助 ────────────────────────────────────────

@@ -55,6 +55,19 @@ tr:hover td{background:#1a1a24}
 .modality-image-gen{background:#1a3b1a;color:#4ade80}
 .modality-video-gen{background:#3b1a3b;color:#c084fc}
 .modality-audio-gen{background:#3b2a1a;color:#fbbf24}
+
+/* v3.6.0: Keys 视图表格 ──────────────────────── */
+.kv-table{width:100%;border-collapse:collapse;margin-top:10px}
+.kv-table th,.kv-table td{padding:8px 12px;text-align:left;border-bottom:1px solid #2a3a4a;font-size:13px}
+.kv-table th{background:#1a2530;color:#9ca3af;font-weight:600;text-transform:uppercase;font-size:11px}
+.kv-table tr:hover td{background:#1a2530}
+.kv-table .actions button{margin-right:4px}
+.kv-table code{background:#0f1a24;padding:2px 6px;border-radius:3px;font-size:11px;font-family:'SF Mono',Consolas,monospace;color:#4ade80}
+.kv-table code.fp{color:#fbbf24}
+.badge-green{background:#1a4a2a;color:#4ade80;padding:2px 8px;border-radius:3px;font-size:11px;font-weight:600}
+.badge-gray{background:#3a3a3a;color:#888;padding:2px 8px;border-radius:3px;font-size:11px;font-weight:600}
+.btn-danger{background:#7a2a2a!important;border-color:#a04040!important}
+.btn-danger:hover{background:#a04040!important}
 .score-bar{display:inline-block;height:6px;border-radius:3px;background:#2563eb;margin-right:6px;vertical-align:middle}
 .btn{background:#2563eb;color:#fff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:13px}
 .btn:hover{background:#1d4ed8}
@@ -94,43 +107,236 @@ tr:hover td{background:#1a1a24}
 .kv-edit{display:flex;gap:6px;margin-bottom:6px;align-items:center}
 .kv-edit input{flex:1}
 .kv-edit button{padding:4px 8px}
+
+/* v3.6 UI/UX ──────────────────────── */
+.section-header{display:flex;justify-content:space-between;align-items:center;margin:18px 0 12px}
+.provider-toolbar{display:flex;gap:8px;align-items:center}
+.filter-select{background:#0f0f13;border:1px solid #333;color:#e0e0e0;padding:6px 10px;border-radius:4px;font-size:12px;cursor:pointer}
+.filter-select:hover{border-color:#555}
+.filter-select:focus{outline:none;border-color:#5b8def}
+.provider-card{transition:all .2s ease,box-shadow .2s ease}
+.provider-card:hover{background:#1f1f2e;box-shadow:0 4px 16px rgba(91,141,239,0.12);transform:translateY(-1px)}
+.provider-card.disabled{opacity:0.55;background:#0f0f13}
+.provider-card.disabled:hover{transform:none;box-shadow:none}
+.provider-info{flex:1;min-width:0}
+.provider-name{font-weight:600;font-size:14px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.provider-tag{background:#0f0f13;border:1px solid #333;padding:1px 6px;border-radius:3px;font-size:10px;color:#94a3b8;font-weight:normal}
+.provider-tag[title*="内置"]{border-color:#5b8def;color:#5b8def}
+.provider-url{font-size:11px;color:#666;margin-top:4px;font-family:ui-monospace,monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.provider-meta{display:flex;gap:12px;margin-top:6px;font-size:11px;color:#888}
+.provider-actions{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.provider-badge{font-size:10px;padding:2px 8px;border-radius:10px;font-weight:500}
+.badge-ok{background:#0d3d24;color:#4ade80}
+.badge-disabled{background:#3a1a1a;color:#f87171}
+.badge-degraded{background:#3d2e0d;color:#fbbf24}
+.empty-state{text-align:center;padding:30px 20px;color:#666;background:#0f0f13;border:1px dashed #333;border-radius:8px;margin:10px 0}
+.btn-sm.primary{background:#1e40af;color:#e0e0e0;border-color:#1e40af}
+.btn-sm.primary:hover{background:#2563eb;border-color:#2563eb}
+.btn-sm:disabled{opacity:0.5;cursor:not-allowed}
+.pattern-builder{background:#0f0f13;padding:10px;border-radius:4px;border:1px solid #333}
+.pattern-row{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.pattern-row:last-child{margin-bottom:0}
+.pattern-op{flex:0 0 60px;font-size:12px;color:#5b8def;font-weight:500}
+.pattern-row input{flex:1;background:#1a1a24;border:1px solid #333;color:#e0e0e0;padding:5px 8px;border-radius:3px;font-size:12px}
+.pattern-hint{margin-top:8px;font-size:11px;color:#888}
+.pattern-hint code{background:#0d0d12;padding:2px 6px;border-radius:3px;font-family:ui-monospace,monospace;color:#4ade80;font-size:11px;display:inline-block;max-width:100%;overflow-x:auto}
+.pattern-raw{margin-top:6px;font-size:11px;color:#888}
+.pattern-raw summary{cursor:pointer;color:#5b8def}
+.pattern-raw input{width:100%;background:#0d0d12;border:1px solid #333;color:#e0e0e0;padding:5px 8px;border-radius:3px;font-size:12px;margin-top:4px;font-family:ui-monospace,monospace}
+.route-item{display:flex;justify-content:space-between;align-items:center;padding:6px 10px;background:#0f0f13;border-radius:4px;margin-bottom:4px;font-size:12px;font-family:ui-monospace,monospace}
+.route-path{color:#e0e0e0}
+.route-pricing{font-size:10px;padding:1px 6px;border-radius:3px;font-weight:500;background:#1a1a24}
+/* v3.6 动效: toast 滑入 */
+.toast{transition:all .3s ease}
+/* v3.6 模态动效 */
+.modal-bg{transition:opacity .2s ease}
+.modal{transition:transform .2s ease}
+
+/* v3.6.0 左侧 sidebar 导航 ──────────────────────── */
+body{display:flex;gap:0;padding:0;max-width:none;min-height:100vh;background:#0a0a0e}
+.sidebar{width:220px;background:#0f0f13;border-right:1px solid #1a1a24;padding:18px 0;position:fixed;top:0;left:0;bottom:0;overflow-y:auto;z-index:50}
+.sidebar h1{font-size:15px;margin:0 18px 18px;padding-bottom:14px;border-bottom:1px solid #1a1a24;color:#5b8def;display:flex;align-items:center;gap:8px}
+.sidebar h1 .logo{font-size:18px}
+.nav-item{display:flex;align-items:center;gap:10px;padding:10px 18px;color:#a0a0b0;cursor:pointer;font-size:13px;border-left:3px solid transparent;transition:all .15s ease;user-select:none}
+.nav-item:hover{background:#1a1a24;color:#e0e0e0}
+.nav-item.active{background:#1a1a24;color:#5b8def;border-left-color:#5b8def;font-weight:500}
+.nav-item .icon{font-size:16px;width:20px;text-align:center}
+.nav-item .badge{background:#dc2626;color:#fff;font-size:10px;padding:1px 6px;border-radius:10px;margin-left:auto}
+.sidebar-footer{position:absolute;bottom:0;left:0;right:0;padding:14px 18px;border-top:1px solid #1a1a24;font-size:11px;color:#666}
+.sidebar-footer .ver{color:#4ade80;cursor:pointer}
+.sidebar-footer .ver:hover{text-decoration:underline}
+
+.main{flex:1;margin-left:220px;padding:24px 28px;max-width:1400px}
+.view{display:none}
+.view.active{display:block}
+.view-title{font-size:20px;margin:0 0 18px;display:flex;align-items:center;gap:10px}
+.view-subtitle{color:#666;font-size:12px;margin:-12px 0 18px}
+
+/* v3.6.0 分页 ──────────────────────── */
+.pagination{display:flex;align-items:center;gap:8px;margin:14px 0;flex-wrap:wrap;font-size:12px}
+.pagination .info{color:#888}
+.pagination button{background:#1a1a24;border:1px solid #333;color:#e0e0e0;padding:5px 12px;border-radius:4px;cursor:pointer;font-size:12px;min-width:32px}
+.pagination button:hover:not(:disabled){background:#333;border-color:#5b8def}
+.pagination button:disabled{opacity:0.4;cursor:not-allowed}
+.pagination button.active{background:#2563eb;border-color:#2563eb;color:#fff}
+.pagination .page-jump{display:flex;align-items:center;gap:4px;color:#888}
+.pagination .page-jump input{width:50px;background:#0f0f13;border:1px solid #333;color:#e0e0e0;padding:4px 8px;border-radius:3px;font-size:12px;text-align:center}
+.pagination select{background:#0f0f13;border:1px solid #333;color:#e0e0e0;padding:5px 8px;border-radius:3px;font-size:12px;cursor:pointer}
+
+/* v3.6.0 Stats 卡片扩展 ──────────────────────── */
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:20px}
+.stats-grid .stat-card{background:#1a1a24;border-radius:8px;padding:16px 18px;min-width:0}
+.stats-grid .stat-card .label{font-size:11px;color:#666;text-transform:uppercase;letter-spacing:0.5px}
+.stats-grid .stat-card .value{font-size:24px;font-weight:600;margin-top:6px;color:#e0e0e0}
+.stats-grid .stat-card .value.good{color:#4ade80}
+.stats-grid .stat-card .value.warn{color:#fbbf24}
+.stats-grid .stat-card .value.bad{color:#f87171}
+.stats-grid .stat-card .delta{font-size:11px;color:#888;margin-top:4px}
+.provider-stats-table{font-size:12px}
+.provider-stats-table td{font-family:ui-monospace,monospace}
 </style>
 </head>
 <body>
-<h1>⚡ Model Router v3</h1>
-<div class="toolbar">
-  <button class="btn" onclick="refresh()">🔄 刷新</button>
-  <button class="btn-sm" onclick="reloadConfig()">重载配置</button>
-  <button class="btn-sm" onclick="loadModels()">获取模型</button>
-  <button class="btn" onclick="openAddProvider()">➕ 添加 Provider</button>
-  <button class="btn-sm" onclick="openClassifier()">⚙️ Tier Bonus</button>
-  <button class="btn-sm" onclick="openServer()">🔧 修改配置</button>
-  <button class="btn-sm" onclick="openConfigBackups()">📜 配置历史</button>
-  <button class="btn-sm" onclick="checkVersion()">🔔 检查更新</button>
+<!-- 左侧 sidebar nav (v3.6.0) -->
+<div class="sidebar">
+  <h1><span class="logo">⚡</span> SMR v3.6.0</h1>
+  <div class="nav-item active" data-view="dashboard" onclick="showView('dashboard')">
+    <span class="icon">📊</span> Dashboard
+  </div>
+  <div class="nav-item" data-view="providers" onclick="showView('providers')">
+    <span class="icon">🔌</span> Providers <span id="provNavBadge" class="badge" style="display:none">0</span>
+  </div>
+  <div class="nav-item" data-view="models" onclick="showView('models')">
+    <span class="icon">🤖</span> Models
+  </div>
+  <div class="nav-item" data-view="keys" onclick="showView('keys')">
+    <span class="icon">🔑</span> API Keys
+  </div>
+  <div class="nav-item" data-view="stats" onclick="showView('stats')">
+    <span class="icon">📈</span> Usage Stats
+  </div>
+  <div class="nav-item" data-view="classifier" onclick="showView('classifier')">
+    <span class="icon">⚙️</span> Classifier
+  </div>
+  <div class="nav-item" data-view="config" onclick="showView('config')">
+    <span class="icon">🔧</span> Server Config
+  </div>
+  <div class="nav-item" data-view="history" onclick="showView('history')">
+    <span class="icon">📜</span> Config History
+  </div>
+  <div class="nav-item" data-view="version" onclick="showView('version')">
+    <span class="icon">🔔</span> Version
+  </div>
+  <div class="sidebar-footer">
+    <div>运行时间 <span id="navUptime" class="uptime">-</span></div>
+    <div>版本 <span class="ver" id="navVer" onclick="showView('version')">-</span></div>
+  </div>
 </div>
 
-<!-- 状态栏 -->
-<div class="status-bar" id="statusBar">
-  <div class="stat-card"><div class="label">Providers</div><div class="value" id="statProviders">-</div></div>
-  <div class="stat-card"><div class="label">Models</div><div class="value" id="statModels">-</div></div>
-  <div class="stat-card"><div class="label">Uptime</div><div class="value" id="statUptime">-</div></div>
-  <div class="stat-card"><div class="label">Version</div><div class="value" id="statVersion" style="font-size:14px;cursor:pointer" onclick="checkVersion()" title="点击检查更新">-</div></div>
+<!-- 主内容区 -->
+<div class="main">
+
+<!-- 视图: Dashboard -->
+<div class="view active" id="view-dashboard">
+  <h2 class="view-title">📊 Dashboard</h2>
+  <p class="view-subtitle">SMR 整体状态速览</p>
+  <div class="stats-grid" id="dashboardStats"><div class="loading">加载中...</div></div>
+  <h2 style="font-size:14px;color:#888;margin:20px 0 10px">模态分布</h2>
+  <div class="modality-grid" id="modalityGrid"><div class="loading">加载中...</div></div>
+  <h2 style="font-size:14px;color:#888;margin:20px 0 10px">最近 Provider</h2>
+  <div class="provider-grid" id="providerGridRecent"><div class="loading">加载中...</div></div>
 </div>
 
-<!-- 模态分布 -->
-<h2>模态分布</h2>
-<div class="modality-grid" id="modalityGrid"><div class="loading">加载中...</div></div>
-
-<!-- Provider 状态 -->
-<h2>Providers</h2>
-<div class="provider-grid" id="providerGrid"><div class="loading">加载中...</div></div>
-
-<!-- 模型列表 (带分类信息) -->
-<h2>Models <span style="font-size:12px;color:#666" id="modelCount"></span></h2>
-<div class="modality-filter" id="modalityFilter"></div>
-<div id="modelSection">
-<table><thead><tr><th>Model</th><th>Provider</th><th>分类</th><th>能力分</th></tr></thead><tbody id="modelTable"></tbody></table>
+<!-- 视图: Providers -->
+<div class="view" id="view-providers">
+  <h2 class="view-title">🔌 Providers</h2>
+  <p class="view-subtitle">添加 / 编辑 / 启用 / 停用 / 复制 / 导入 / 导出</p>
+  <div class="section-header">
+    <div class="provider-toolbar">
+      <select id="provFilter" onchange="refreshProviders()" class="filter-select">
+        <option value="all">全部</option>
+        <option value="enabled">✓ 启用</option>
+        <option value="disabled">⏸ 停用</option>
+        <option value="known">⭐ 内置</option>
+        <option value="unknown">🆕 自定义</option>
+      </select>
+      <button class="btn-sm" onclick="refreshProviders()">🔄 刷新</button>
+    </div>
+    <div class="provider-toolbar">
+      <button class="btn-sm" onclick="exportProviders()">📤 导出</button>
+      <button class="btn-sm" onclick="document.getElementById('importFileInput').click()">📥 导入</button>
+      <input type="file" id="importFileInput" style="display:none" accept=".yaml,.yml,.json" onchange="importProviders(event)">
+      <button class="btn-sm primary" onclick="openAddProvider()">➕ 添加</button>
+    </div>
+  </div>
+  <div class="provider-grid" id="providerGrid"><div class="loading">加载中...</div></div>
 </div>
+
+<!-- 视图: Models -->
+<div class="view" id="view-models">
+  <h2 class="view-title">🤖 Models <span style="font-size:13px;color:#666" id="modelCount"></span></h2>
+  <p class="view-subtitle">分页浏览所有可用模型 (按能力分排序)</p>
+  <div class="modality-filter" id="modalityFilter"></div>
+  <div id="modelSection">
+    <table><thead><tr><th>Model</th><th>Provider</th><th>分类</th><th>价格</th><th>能力分</th></tr></thead><tbody id="modelTable"></tbody></table>
+  </div>
+  <div class="pagination" id="modelPagination"></div>
+</div>
+
+<!-- 视图: API Keys (v3.6.0 新) -->
+<div class="view" id="view-keys">
+  <h2 class="view-title">🔑 API Keys 管理</h2>
+  <p class="view-subtitle">独立管理各 provider 的 API key (脱敏指纹显示)</p>
+  <div id="keysList"><div class="loading">加载中...</div></div>
+</div>
+
+<!-- 视图: Usage Stats (v3.6.0 新真数据) -->
+<div class="view" id="view-stats">
+  <h2 class="view-title">📈 Usage Stats</h2>
+  <p class="view-subtitle">真实使用量数据 (来自 /v1/admin/stats)</p>
+  <div class="stats-grid" id="statsSummary"><div class="loading">加载中...</div></div>
+  <h3 style="font-size:14px;color:#888;margin:20px 0 10px">按 Provider 拆分</h3>
+  <table class="provider-stats-table">
+    <thead><tr><th>Provider</th><th>总请求</th><th>成功</th><th>失败</th><th>今日</th><th>今日 token</th><th>平均延迟</th><th>首 token</th></tr></thead>
+    <tbody id="providerStatsTable"><tr><td colspan="8" style="text-align:center;color:#666;padding:20px">暂无数据</td></tr></tbody>
+  </table>
+  <h3 style="font-size:14px;color:#888;margin:20px 0 10px">上下文桥接 (ContextBridge)</h3>
+  <div id="contextBridgeStats" class="text-muted" style="padding:12px;background:#0f0f13;border-radius:6px;font-family:ui-monospace,monospace;font-size:12px">加载中...</div>
+</div>
+
+<!-- 视图: Classifier -->
+<div class="view" id="view-classifier">
+  <h2 class="view-title">⚙️ Tier Bonus & 自定义关键词</h2>
+  <p class="view-subtitle">模型评分规则 (内置 + 用户覆盖)</p>
+  <button class="btn" onclick="openClassifier()">✏️ 编辑 Classifier</button>
+</div>
+
+<!-- 视图: Server Config -->
+<div class="view" id="view-config">
+  <h2 class="view-title">🔧 Server & Routing</h2>
+  <p class="view-subtitle">监听端口 + 鉴权 + 路由策略</p>
+  <button class="btn" onclick="openServer()">✏️ 修改配置</button>
+  <div class="row" style="margin-top:12px">
+    <button class="btn-sm" onclick="reloadConfig()">🔄 重载配置</button>
+    <button class="btn-sm" onclick="loadModels()">📥 获取模型</button>
+  </div>
+</div>
+
+<!-- 视图: Config History -->
+<div class="view" id="view-history">
+  <h2 class="view-title">📜 Config History</h2>
+  <p class="view-subtitle">自动备份的 config.yaml 历史 (保留 50 个)</p>
+  <button class="btn" onclick="openConfigBackups()">📜 查看历史</button>
+</div>
+
+<!-- 视图: Version -->
+<div class="view" id="view-version">
+  <h2 class="view-title">🔔 Version</h2>
+  <p class="view-subtitle">当前版本 + GitHub release 检查</p>
+  <div class="stats-grid" id="versionGrid"><div class="loading">加载中...</div></div>
+</div>
+
+</div> <!-- .main -->
 
 <!-- Toast -->
 <div class="toast" id="toast"></div>
@@ -138,6 +344,116 @@ tr:hover td{background:#1a1a24}
 <script>
 const BASE = '';
 let filterModality = '';
+
+// v3.6.0: 视图状态
+let currentView = 'dashboard';
+let currentPage = 0;
+const PAGE_SIZE = 20;
+let lastModelsData = null;
+let lastStatsData = null;
+let lastVersionData = null;
+
+function showView(view){
+  currentView = view;
+  // 切换 nav active
+  document.querySelectorAll('.nav-item').forEach(n => {
+    n.classList.toggle('active', n.dataset.view === view);
+  });
+  // 切换 view
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  const el = document.getElementById('view-' + view);
+  if(el) el.classList.add('active');
+  // 切到特定视图时, 拉对应数据
+  if(view === 'stats') renderStatsView();
+  else if(view === 'keys') renderKeysView();
+  else if(view === 'version') renderVersionView();
+  else if(view === 'models') { /* keep current page */ }
+}
+
+// v3.6.0: API Keys 独立管理视图 (Phase G)
+async function renderKeysView(){
+  const container = document.getElementById('keysList');
+  if(!container) return;
+  container.innerHTML = '<div class="loading">加载中...</div>';
+  const data = await api('/v1/admin/api-keys').catch(e=>({keys:[], error: e.message}));
+  if(data.error){
+    container.innerHTML = `<div class="empty-state"><p>❌ 加载失败: ${data.error}</p></div>`;
+    return;
+  }
+  const items = data.keys || [];
+  if(items.length === 0){
+    container.innerHTML = '<div class="empty-state"><p>暂无 provider</p></div>';
+    return;
+  }
+  let html = `<table class="kv-table">
+    <thead><tr>
+      <th>Provider</th>
+      <th>Key 数量</th>
+      <th>预览 (脱敏)</th>
+      <th>联合指纹 (sha256)</th>
+      <th>状态</th>
+      <th>操作</th>
+    </tr></thead><tbody>`;
+  for(const it of items){
+    const previewHtml = it.preview.length > 0
+      ? it.preview.map(p => `<code>${p}</code>`).join('<br>')
+      : '<span class="text-muted">(无)</span>';
+    html += `<tr>
+      <td><span class="provider-tag">${it.provider}</span></td>
+      <td><strong>${it.count}</strong></td>
+      <td>${previewHtml}</td>
+      <td><code class="fp">${it.fingerprint || '-'}</code></td>
+      <td>${it.enabled ? '<span class="badge-green">启用</span>' : '<span class="badge-gray">停用</span>'}</td>
+      <td class="actions">
+        <button class="btn-sm" onclick="addKeyPrompt('${it.provider}')">➕ 加 key</button>
+        <button class="btn-sm btn-danger" onclick="clearKeysConfirm('${it.provider}', ${it.count})">🗑️ 清空</button>
+      </td>
+    </tr>`;
+  }
+  html += '</tbody></table>';
+  container.innerHTML = html;
+}
+
+async function addKeyPrompt(provider){
+  const key = prompt(`为 provider "${provider}" 添加新的 API key:\n\n(注意: 添加后会立即写盘 + 触发模型列表刷新)`);
+  if(!key) return;
+  const r = await fetch(BASE+'/v1/admin/api-keys', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({provider, api_key: key})
+  });
+  const d = await r.json().catch(()=>({error:'parse failed'}));
+  if(d.ok){
+    toast(`✅ added: fp=${d.added_fingerprint}, total=${d.count}`);
+    renderKeysView();
+  } else {
+    toast(d.error || 'add failed', false);
+  }
+}
+
+async function clearKeysConfirm(provider, count){
+  if(!confirm(`确认清空 provider "${provider}" 的全部 ${count} 个 API key?\n\n(警告: 清空后该 provider 无法访问, 需重新添加 key)`)) return;
+  const r = await fetch(BASE+`/v1/admin/api-keys/${provider}`, {method:'DELETE'});
+  const d = await r.json().catch(()=>({error:'parse failed'}));
+  if(d.ok){
+    toast(`✅ cleared: ${provider}`);
+    renderKeysView();
+  } else {
+    toast(d.error || 'clear failed', false);
+  }
+}
+
+async function removeKeyByIndex(provider, idx){
+  if(!confirm(`删除 provider "${provider}" 的第 ${idx+1} 个 key?`)) return;
+  const r = await fetch(BASE+`/v1/admin/api-keys/${provider}?key_index=${idx}`, {method:'DELETE'});
+  const d = await r.json().catch(()=>({error:'parse failed'}));
+  if(d.ok){
+    toast(`✅ removed: fp=${d.removed_fingerprint}, remaining=${d.remaining}`);
+    renderKeysView();
+  } else {
+    toast(d.error || 'remove failed', false);
+  }
+}
 
 function toast(msg, ok=true){
   const t=document.getElementById('toast');
@@ -148,22 +464,41 @@ function toast(msg, ok=true){
 }
 async function api(path, opts={}){
   const r=await fetch(BASE+path,{headers:{'Accept':'application/json'},...opts});
+  if(!r.ok && r.status !== 404){
+    let err={}; try{err=await r.json();}catch(e){}
+    if(err.error) throw new Error(err.error);
+  }
   return r.json();
 }
 async function refresh(){
-  const [h,m,r,s,mo]=await Promise.all([
-    api('/v1/health'),
-    api('/v1/models'),
-    api('/v1/admin/routes'),
-    api('/v1/admin/stats'),
-    api('/v1/admin/modalities'),
+  const [h,m,r,s,mo,prov,v]=await Promise.all([
+    api('/v1/health').catch(e=>({error:e.message})),
+    api('/v1/models').catch(e=>({data:[]})),
+    api('/v1/admin/routes').catch(e=>({routes:[]})),
+    api('/v1/admin/stats').catch(e=>({})),
+    api('/v1/admin/modalities').catch(e=>({})),
+    api('/v1/admin/providers').catch(e=>({providers:[]})),
+    api('/v1/admin/version').catch(e=>({current:{version:'3.6.0'}})),
   ]);
   renderHealth(h);
-  renderProviders(h);
+  renderDashboard(h, m, s, mo, prov);
   renderModalities(mo);
-  renderModelFilter();
-  renderModels(m);
-  renderStats(s);
+  renderRoutesData(r);
+  // 切到 providers 视图时单独刷, 这里不刷避免与 provFilter 冲突
+  if(currentView === 'providers'){
+    renderProviders(prov);
+  }
+  renderVersion(v);
+  lastVersionData = v;
+  lastStatsData = s;
+  lastModelsData = m;
+  // models 视图: 立即渲染第一页
+  if(currentView === 'models'){
+    renderModels(m);
+  }
+  // 同步 sidebar 底部版本
+  const verEl = document.getElementById('navVer');
+  if(verEl && v.current?.version) verEl.textContent = 'v'+v.current.version;
 }
 async function reloadConfig(){
   const r=await api('/v1/admin/config/reload',{method:'POST'});
@@ -222,33 +557,433 @@ function renderVersion(v){
   document.body.insertAdjacentHTML('beforeend',html);
 }
 function renderHealth(h){
-  if(!h)return;
-  document.getElementById('statProviders').textContent=Object.keys(h.providers||{}).length;
-  document.getElementById('statModels').textContent=h.total_models;
-  document.getElementById('statUptime').textContent=Math.floor(h.uptime_seconds/60)+'m';
+  if(!h) return;
+  const upEl = document.getElementById('navUptime');
+  if(upEl && h.uptime_seconds != null) upEl.textContent = Math.floor(h.uptime_seconds/60)+'m';
+  const verEl = document.getElementById('navVer');
+  if(verEl && h.version) verEl.textContent = 'v'+h.version;
 }
-function renderProviders(h){
+
+// v3.6.0: routes 数据 (不渲染, 留给 stats 视图备用)
+function renderRoutesData(r){
+  // 当前 dashboard 暂不展示, 留接口给将来
+  // (Phase E 简化: routes 在 providers 视图统计 "最近添加" 里隐含)
+  if(r && r.routes && r.routes.length > 0){
+    document.title = `SMR · ${r.routes.length} routes`;
+  }
+}
+async function renderProviders(h){
+  // v3.6: h 来自 /v1/admin/providers 列表, 含 enabled 字段
   const g=document.getElementById('providerGrid');
-  const ps=h.providers||{};
-  if(Object.keys(ps).length===0){
-    g.innerHTML='<div style="color:#666">No providers configured</div>';
+  const filterEl=document.getElementById('provFilter');
+  const filter=filterEl?filterEl.value:'all';
+  // h 是数组形式 (admin_providers_list 返回) 或 dict (旧 /v1/health)
+  let arr;
+  if(Array.isArray(h)){
+    arr=h;
+  } else if(h && h.providers && Array.isArray(h.providers)){
+    arr=h.providers;
+  } else {
+    // 兜底: 从 health endpoint 拿 dict
+    const ps=(h&&h.providers)||{};
+    arr=Object.entries(ps).map(([name,p])=>({name,enabled:true,base_url:p.base_url,key_count:0,model_rules:{mode:'all'},max_concurrent:3,models:p.models,fail_count:p.fail_count,degraded:p.degraded}));
+  }
+  // 筛选
+  if(filter==='enabled') arr=arr.filter(p=>p.enabled!==false);
+  else if(filter==='disabled') arr=arr.filter(p=>p.enabled===false);
+  else if(filter==='known') arr=arr.filter(p=>p.is_known);
+  else if(filter==='unknown') arr=arr.filter(p=>!p.is_known);
+  if(arr.length===0){
+    g.innerHTML='<div class="empty-state">📭 没有匹配的 provider</div>';
     return;
   }
-  g.innerHTML=Object.entries(ps).map(([name,p])=>{
-    let cls='badge-ok',label='OK';
-    if(p.degraded){cls='badge-degraded';label='Degraded';}
-    return `<div class="provider-card">
-      <div style="flex:1">
-        <div class="provider-name">${name}</div>
-        <div style="font-size:11px;color:#666;margin-top:4px">${p.base_url}</div>
+  g.innerHTML=arr.map(p=>{
+    const enabled=p.enabled!==false;
+    const isKnown=p.is_known;
+    const badge=enabled?'<span class="provider-badge badge-ok">✓ 启用</span>':'<span class="provider-badge badge-disabled">⏸ 停用</span>';
+    const knownTag=isKnown?'<span class="provider-tag" title="内置已知 provider, base_url 自动补全">⭐ known</span>':'';
+    const mode=p.model_rules?.mode||'all';
+    const modeTag=`<span class="provider-tag">${mode}</span>`;
+    return `<div class="provider-card ${enabled?'':'disabled'}">
+      <div class="provider-info">
+        <div class="provider-name">${p.name}${knownTag}${modeTag}</div>
+        <div class="provider-url" title="${p.base_url}">${p.base_url}</div>
+        <div class="provider-meta">
+          <span title="API key 数量">🔑 ${p.key_count||0}</span>
+          <span title="并发槽数">⚡ ${p.max_concurrent||3}</span>
+          ${p.key_fingerprint?`<span title="key 指纹">${p.key_fingerprint}</span>`:''}
+        </div>
       </div>
-      <div style="display:flex;align-items:center;gap:10px">
-        <span class="provider-badge ${cls}">${label}</span>
-        <span style="font-size:11px;color:#666">${p.models} models · fail ${p.fail_count}</span>
-        <button class="btn-sm danger" onclick="deleteProvider('${name}')">删除</button>
+      <div class="provider-actions">
+        ${badge}
+        <button class="btn-sm" onclick="refreshProvider('${p.name}')" title="针对性获取该 provider 的模型">🔄 刷新</button>
+        <button class="btn-sm" onclick="openEditProvider('${p.name}')" title="编辑配置">✏️ 编辑</button>
+        <button class="btn-sm" onclick="cloneProvider('${p.name}')" title="复制为新 provider">📋 复制</button>
+        ${enabled
+          ? `<button class="btn-sm" onclick="disableProvider('${p.name}')">⏸ 停用</button>`
+          : `<button class="btn-sm primary" onclick="enableProvider('${p.name}')">▶ 启用</button>`}
+        ${!enabled
+          ? `<button class="btn-sm danger" onclick="hardDeleteProvider('${p.name}')" title="彻底删除 (仅对已停用)">🗑️ 删除</button>`
+          : ''}
       </div>
     </div>`;
   }).join('');
+}
+
+// v3.6.0: Dashboard 渲染
+function renderDashboard(h, m, s, mo, prov){
+  // 顶部 4 个 stat 卡片 (SMR 总览)
+  const providers = prov?.providers || [];
+  const enabledCount = providers.filter(p=>p.enabled!==false).length;
+  const disabledCount = providers.length - enabledCount;
+  const totalModels = (m?.data || m?.models || []).length;
+  const freeModels = (m?.data || m?.models || []).filter(x=>x.pricing_type==='free' || x.pricing==='free' || x.is_free).length;
+
+  // Stats 汇总
+  let totalCalls=0, successCalls=0, failCalls=0, dailyTokens=0, latencySum=0, latencyCount=0;
+  if(s && typeof s==='object' && !Array.isArray(s)){
+    for(const [k,v] of Object.entries(s)){
+      if(v && typeof v==='object' && 'total_calls' in v){
+        totalCalls += v.total_calls||0;
+        successCalls += v.success_calls||0;
+        failCalls += v.fail_calls||0;
+        dailyTokens += v.daily_tokens||0;
+        if(v.avg_latency_ms>0){ latencySum += v.avg_latency_ms; latencyCount++; }
+      }
+    }
+  }
+  const successRate = totalCalls > 0 ? (successCalls/totalCalls*100) : 0;
+  const avgLat = latencyCount>0 ? Math.round(latencySum/latencyCount) : 0;
+
+  const g = document.getElementById('dashboardStats');
+  g.innerHTML = `
+    <div class="stat-card"><div class="label">Providers</div><div class="value">${providers.length}</div><div class="delta">启用 ${enabledCount} · 停用 ${disabledCount}</div></div>
+    <div class="stat-card"><div class="label">Models</div><div class="value">${totalModels}</div><div class="delta">免费 ${freeModels}</div></div>
+    <div class="stat-card"><div class="label">总请求</div><div class="value">${totalCalls.toLocaleString()}</div><div class="delta">成功 ${successCalls.toLocaleString()}</div></div>
+    <div class="stat-card"><div class="label">成功率</div><div class="value ${successRate>=95?'good':successRate>=80?'warn':'bad'}">${successRate.toFixed(1)}%</div><div class="delta">失败 ${failCalls.toLocaleString()}</div></div>
+    <div class="stat-card"><div class="label">平均延迟</div><div class="value">${avgLat}ms</div><div class="delta">${latencyCount} providers</div></div>
+    <div class="stat-card"><div class="label">今日 token</div><div class="value">${dailyTokens.toLocaleString()}</div><div class="delta">运行 ${h?.uptime_seconds ? Math.floor(h.uptime_seconds/60)+'m' : '-'}</div></div>
+  `;
+  // sidebar 底部 uptime
+  const upEl = document.getElementById('navUptime');
+  if(upEl && h?.uptime_seconds != null) upEl.textContent = Math.floor(h.uptime_seconds/60)+'m';
+  // Recent providers (前 4 个)
+  const rpg = document.getElementById('providerGridRecent');
+  if(rpg){
+    const recent = providers.slice(0,4);
+    if(recent.length === 0){ rpg.innerHTML = '<div class="empty-state">暂无 provider</div>'; return; }
+    rpg.innerHTML = recent.map(p=>{
+      const enabled=p.enabled!==false;
+      const badge=enabled?'<span class="provider-badge badge-ok">✓</span>':'<span class="provider-badge badge-disabled">⏸</span>';
+      return `<div class="provider-card ${enabled?'':'disabled'}">
+        <div class="provider-info">
+          <div class="provider-name">${p.name} ${badge}</div>
+          <div class="provider-url">${p.base_url}</div>
+        </div>
+        <div class="provider-actions">
+          <span class="text-muted">${p.key_count||0} keys</span>
+        </div>
+      </div>`;
+    }).join('');
+  }
+  // sidebar provider badge (停用数量)
+  const pb = document.getElementById('provNavBadge');
+  if(pb){
+    if(disabledCount > 0){ pb.style.display='inline'; pb.textContent = disabledCount; }
+    else { pb.style.display='none'; }
+  }
+}
+
+// v3.6.0: 模型分页
+function renderModels(data){
+  const t=document.getElementById('modelTable');
+  if(!t) return;
+  // admin_models 返回 {models: [...], total} 或 /v1/models 返回 {data: [...]}
+  const all=(data?.data || data?.models || []).filter(m=>!filterModality||m.modality===filterModality);
+  // 按能力分降序
+  all.sort((a,b)=>(b.capability_score||0)-(a.capability_score||0));
+  document.getElementById('modelCount').textContent=`(${all.length} 总数 · 第 ${currentPage+1}/${Math.max(1,Math.ceil(all.length/PAGE_SIZE))} 页)`;
+  const start = currentPage * PAGE_SIZE;
+  const pageModels = all.slice(start, start + PAGE_SIZE);
+  if(pageModels.length===0){
+    t.innerHTML='<tr><td colspan="5" style="color:#666;text-align:center;padding:20px">无模型</td></tr>';
+    document.getElementById('modelPagination').innerHTML='';
+    return;
+  }
+  t.innerHTML=pageModels.map(m=>{
+    const sc=m.capability_score||0;
+    const pct=Math.min(sc,100);
+    const color=sc>=80?'#4ade80':sc>=50?'#fbbf24':'#f87171';
+    // pricing 字段: 'free'/'paid'/'unknown' 或 pricing_type: 'free'/'paid'/'mixed'
+    const pricing = m.pricing_type || m.pricing || (m.is_free?'free':'unknown');
+    const priceColor = pricing==='free'?'#4ade80':pricing==='paid'?'#fbbf24':'#888';
+    const priceText = pricing==='free'?'🆓 free':pricing==='paid'?'💰 paid':(pricing==='mixed'?'🌓 mixed':'❓ unknown');
+    return `<tr>
+      <td>${m.id}</td>
+      <td><span class="provider-tag">${m.provider||'?'}</span></td>
+      <td><span class="modality-tag ${renderModalityClass(m.modality)}">${m.modality_display||m.modality||'?'}</span></td>
+      <td><span style="color:${priceColor}">${priceText}</span></td>
+      <td><span class="score-bar" style="width:${pct*0.7}px;background:${color}"></span>${sc}</td>
+    </tr>`;
+  }).join('');
+  renderPagination(all.length);
+}
+function renderPagination(total){
+  const totalPages = Math.max(1, Math.ceil(total/PAGE_SIZE));
+  const pg = document.getElementById('modelPagination');
+  if(!pg) return;
+  if(totalPages <= 1){ pg.innerHTML = `<span class="info">共 ${total} 条</span>`; return; }
+  let html = `<span class="info">共 ${total} 条</span>`;
+  html += `<button onclick="goPage(0)" ${currentPage===0?'disabled':''}>« 首页</button>`;
+  html += `<button onclick="goPage(${currentPage-1})" ${currentPage===0?'disabled':''}>‹ 上一页</button>`;
+  // 页码按钮 (最多显示 7 个)
+  const maxBtns = 7;
+  let startBtn = Math.max(0, currentPage - 3);
+  let endBtn = Math.min(totalPages-1, startBtn + maxBtns - 1);
+  startBtn = Math.max(0, endBtn - maxBtns + 1);
+  for(let i=startBtn; i<=endBtn; i++){
+    html += `<button class="${i===currentPage?'active':''}" onclick="goPage(${i})">${i+1}</button>`;
+  }
+  html += `<button onclick="goPage(${currentPage+1})" ${currentPage>=totalPages-1?'disabled':''}>下一页 ›</button>`;
+  html += `<button onclick="goPage(${totalPages-1})" ${currentPage>=totalPages-1?'disabled':''}>末页 »</button>`;
+  html += `<span class="page-jump">跳到 <input type="number" min="1" max="${totalPages}" id="pageJump" value="${currentPage+1}"> / ${totalPages} 页</span>`;
+  html += `<select onchange="changePageSize(this.value)"><option value="10" ${PAGE_SIZE==10?'selected':''}>10/页</option><option value="20" ${PAGE_SIZE==20?'selected':''}>20/页</option><option value="50" ${PAGE_SIZE==50?'selected':''}>50/页</option><option value="100" ${PAGE_SIZE==100?'selected':''}>100/页</option></select>`;
+  pg.innerHTML = html;
+  // 跳页 enter 事件
+  const inp = document.getElementById('pageJump');
+  if(inp){ inp.onkeydown = (e)=>{ if(e.key==='Enter'){ const v=parseInt(inp.value); if(v>=1 && v<=totalPages){ goPage(v-1); } } }; }
+}
+function goPage(p){
+  if(!lastModelsData) return;
+  const all=(lastModelsData?.data || lastModelsData?.models || []).filter(m=>!filterModality||m.modality===filterModality);
+  const totalPages = Math.max(1, Math.ceil(all.length/PAGE_SIZE));
+  currentPage = Math.max(0, Math.min(totalPages-1, p));
+  renderModels(lastModelsData);
+  document.getElementById('modelSection').scrollIntoView({behavior:'smooth', block:'start'});
+}
+function changePageSize(n){
+  const newSize = parseInt(n);
+  if(!lastModelsData) return;
+  const all=(lastModelsData?.data || lastModelsData?.models || []).filter(m=>!filterModality||m.modality===filterModality);
+  currentPage = Math.floor((currentPage * PAGE_SIZE) / newSize);
+  // 直接用 newSize 渲染
+  const slice = all.slice(currentPage*newSize, (currentPage+1)*newSize);
+  if(slice.length === 0){
+    document.getElementById('modelTable').innerHTML = '<tr><td colspan="5" style="color:#666;text-align:center;padding:20px">无模型</td></tr>';
+  } else {
+    document.getElementById('modelTable').innerHTML = slice.map(m=>{
+      const sc=m.capability_score||0;
+      const pct=Math.min(sc,100);
+      const color=sc>=80?'#4ade80':sc>=50?'#fbbf24':'#f87171';
+      const pricing = m.pricing_type || m.pricing || (m.is_free?'free':'unknown');
+      const priceColor = pricing==='free'?'#4ade80':pricing==='paid'?'#fbbf24':'#888';
+      const priceText = pricing==='free'?'🆓 free':pricing==='paid'?'💰 paid':(pricing==='mixed'?'🌓 mixed':'❓ unknown');
+      return `<tr>
+        <td>${m.id}</td>
+        <td><span class="provider-tag">${m.provider||'?'}</span></td>
+        <td><span class="modality-tag ${renderModalityClass(m.modality)}">${m.modality_display||m.modality||'?'}</span></td>
+        <td><span style="color:${priceColor}">${priceText}</span></td>
+        <td><span class="score-bar" style="width:${pct*0.7}px;background:${color}"></span>${sc}</td>
+      </tr>`;
+    }).join('');
+  }
+  // 重渲 pagination (用 newSize)
+  const totalPages2 = Math.max(1, Math.ceil(all.length/newSize));
+  const pg = document.getElementById('modelPagination');
+  if(pg){
+    let html = `<span class="info">共 ${all.length} 条 · ${newSize}/页</span>`;
+    html += `<button onclick="goPageN(0,${newSize})" ${currentPage===0?'disabled':''}>« 首页</button>`;
+    html += `<button onclick="goPageN(${currentPage-1},${newSize})" ${currentPage===0?'disabled':''}>‹ 上一页</button>`;
+    html += `<span class="info">${currentPage+1} / ${totalPages2}</span>`;
+    html += `<button onclick="goPageN(${currentPage+1},${newSize})" ${currentPage>=totalPages2-1?'disabled':''}>下一页 ›</button>`;
+    html += `<button onclick="goPageN(${totalPages2-1},${newSize})" ${currentPage>=totalPages2-1?'disabled':''}>末页 »</button>`;
+    html += `<select onchange="changePageSize(this.value)"><option value="10" ${newSize==10?'selected':''}>10/页</option><option value="20" ${newSize==20?'selected':''}>20/页</option><option value="50" ${newSize==50?'selected':''}>50/页</option><option value="100" ${newSize==100?'selected':''}>100/页</option></select>`;
+    pg.innerHTML = html;
+  }
+  window._currentPageSize = newSize;
+}
+function goPageN(p, sz){
+  if(!lastModelsData) return;
+  const all=(lastModelsData?.data || lastModelsData?.models || []).filter(m=>!filterModality||m.modality===filterModality);
+  sz = sz || window._currentPageSize || 20;
+  const totalPages = Math.max(1, Math.ceil(all.length/sz));
+  currentPage = Math.max(0, Math.min(totalPages-1, p));
+  const start = currentPage * sz;
+  const slice = all.slice(start, start+sz);
+  const t=document.getElementById('modelTable');
+  t.innerHTML=slice.map(m=>{
+    const sc=m.capability_score||0;
+    const pct=Math.min(sc,100);
+    const color=sc>=80?'#4ade80':sc>=50?'#fbbf24':'#f87171';
+    const pricing = m.pricing_type || m.pricing || (m.is_free?'free':'unknown');
+    const priceColor = pricing==='free'?'#4ade80':pricing==='paid'?'#fbbf24':'#888';
+    const priceText = pricing==='free'?'🆓 free':pricing==='paid'?'💰 paid':(pricing==='mixed'?'🌓 mixed':'❓ unknown');
+    return `<tr>
+      <td>${m.id}</td>
+      <td><span class="provider-tag">${m.provider||'?'}</span></td>
+      <td><span class="modality-tag ${renderModalityClass(m.modality)}">${m.modality_display||m.modality||'?'}</span></td>
+      <td><span style="color:${priceColor}">${priceText}</span></td>
+      <td><span class="score-bar" style="width:${pct*0.7}px;background:${color}"></span>${sc}</td>
+    </tr>`;
+  }).join('');
+  // 重渲 pagination (保持 sz)
+  const totalPages2 = Math.max(1, Math.ceil(all.length/sz));
+  const pg = document.getElementById('modelPagination');
+  if(pg){
+    let html = `<span class="info">共 ${all.length} 条 · ${sz}/页</span>`;
+    html += `<button onclick="goPageN(0,${sz})" ${currentPage===0?'disabled':''}>« 首页</button>`;
+    html += `<button onclick="goPageN(${currentPage-1},${sz})" ${currentPage===0?'disabled':''}>‹ 上一页</button>`;
+    html += `<span class="info">${currentPage+1} / ${totalPages2}</span>`;
+    html += `<button onclick="goPageN(${currentPage+1},${sz})" ${currentPage>=totalPages2-1?'disabled':''}>下一页 ›</button>`;
+    html += `<button onclick="goPageN(${totalPages2-1},${sz})" ${currentPage>=totalPages2-1?'disabled':''}>末页 »</button>`;
+    html += `<select onchange="changePageSize(this.value)"><option value="10" ${sz==10?'selected':''}>10/页</option><option value="20" ${sz==20?'selected':''}>20/页</option><option value="50" ${sz==50?'selected':''}>50/页</option><option value="100" ${sz==100?'selected':''}>100/页</option></select>`;
+    pg.innerHTML = html;
+  }
+}
+
+// v3.6.0: Stats 视图 (从 /v1/admin/stats 拿真数据)
+async function renderStatsView(){
+  const s = await api('/v1/admin/stats').catch(e=>({}));
+  const cb = await api('/v1/admin/context_bridge').catch(e=>({}));
+  const cbStats = cb?.stats || cb || {};
+  lastStatsData = s;
+  // 汇总
+  let totalCalls=0, successCalls=0, failCalls=0, dailyTokens=0, dailyCalls=0, latencySum=0, latencyCount=0, ftSum=0, ftCount=0;
+  const rows = [];
+  for(const [name,v] of Object.entries(s||{})){
+    if(v && typeof v==='object' && 'total_calls' in v){
+      totalCalls += v.total_calls||0;
+      successCalls += v.success_calls||0;
+      failCalls += v.fail_calls||0;
+      dailyTokens += v.daily_tokens||0;
+      dailyCalls += v.daily_calls||0;
+      if(v.avg_latency_ms>0){ latencySum += v.avg_latency_ms; latencyCount++; }
+      if(v.avg_first_token_ms>0){ ftSum += v.avg_first_token_ms; ftCount++; }
+      rows.push({name, ...v, successRate: v.total_calls>0?(v.success_calls/v.total_calls*100):0});
+    }
+  }
+  const successRate = totalCalls>0?(successCalls/totalCalls*100):0;
+  const avgLat = latencyCount>0?Math.round(latencySum/latencyCount):0;
+  const avgFt = ftCount>0?Math.round(ftSum/ftCount):0;
+
+  // 4 汇总卡片
+  const sg = document.getElementById('statsSummary');
+  if(sg){
+    sg.innerHTML = `
+      <div class="stat-card"><div class="label">总请求</div><div class="value">${totalCalls.toLocaleString()}</div><div class="delta">成功 ${successCalls.toLocaleString()} / 失败 ${failCalls.toLocaleString()}</div></div>
+      <div class="stat-card"><div class="label">成功率</div><div class="value ${successRate>=95?'good':successRate>=80?'warn':'bad'}">${successRate.toFixed(1)}%</div><div class="delta">${successRate>=95?'✅ 健康':successRate>=80?'⚠️ 关注':'❌ 异常'}</div></div>
+      <div class="stat-card"><div class="label">平均延迟</div><div class="value">${avgLat}ms</div><div class="delta">首 token ${avgFt}ms</div></div>
+      <div class="stat-card"><div class="label">今日</div><div class="value">${dailyCalls.toLocaleString()}</div><div class="delta">${dailyTokens.toLocaleString()} tokens</div></div>
+    `;
+  }
+  // provider 表
+  const tb = document.getElementById('providerStatsTable');
+  if(tb){
+    if(rows.length === 0){
+      tb.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#666;padding:20px">暂无 stats 数据 (调用一次 /v1/chat/completions 后出现)</td></tr>';
+    } else {
+      rows.sort((a,b)=>(b.total_calls||0)-(a.total_calls||0));
+      tb.innerHTML = rows.map(r=>{
+        const srColor = r.successRate>=95?'#4ade80':r.successRate>=80?'#fbbf24':'#f87171';
+        return `<tr>
+          <td><span class="provider-tag">${r.name}</span></td>
+          <td>${(r.total_calls||0).toLocaleString()}</td>
+          <td>${(r.success_calls||0).toLocaleString()}</td>
+          <td style="color:${r.fail_calls>0?'#f87171':'#666'}">${(r.fail_calls||0).toLocaleString()}</td>
+          <td>${(r.daily_calls||0).toLocaleString()}</td>
+          <td>${(r.daily_tokens||0).toLocaleString()}</td>
+          <td>${r.avg_latency_ms||0}ms</td>
+          <td>${r.avg_first_token_ms||0}ms</td>
+        </tr>`;
+      }).join('');
+    }
+  }
+  // ContextBridge stats
+  const cbg = document.getElementById('contextBridgeStats');
+  if(cbg){
+    if(cbStats && Object.keys(cbStats).length > 0){
+      cbg.textContent = JSON.stringify(cbStats, null, 2);
+    } else {
+      cbg.textContent = '(暂无数据 — 调用一次带切链的请求后出现)';
+    }
+  }
+}
+
+// v3.6.0: API Keys 视图 (Phase G 实现)
+async function renderKeysView(){
+  const g = document.getElementById('keysList');
+  if(!g) return;
+  g.innerHTML = '<div class="loading">加载中...</div>';
+  const r = await api('/v1/admin/api-keys').catch(e=>({error:e.message, keys:[]}));
+  if(r.error || !r.keys){
+    g.innerHTML = `<div class="empty-state">🔑 API Key 管理 API 暂不可用<br><span class="text-muted">${r.error||'请确认 SMR v3.6.0+ 已部署'}</span></div>`;
+    return;
+  }
+  if(r.keys.length === 0){
+    g.innerHTML = '<div class="empty-state">🔑 暂无 API keys<br><span class="text-muted">去 Providers 视图添加 provider + key 后, 这里会显示脱敏指纹</span></div>';
+    return;
+  }
+  g.innerHTML = r.keys.map(k=>{
+    return `<div class="provider-card" style="cursor:default">
+      <div class="provider-info">
+        <div class="provider-name">${k.provider} <span class="provider-tag">${k.count} keys</span></div>
+        <div class="provider-url">指纹: ${k.fingerprint||'-'}</div>
+        <div class="provider-meta"><span>添加于 ${k.created_at||'-'}</span></div>
+      </div>
+      <div class="provider-actions">
+        <button class="btn-sm" onclick="addApiKey('${k.provider}')">➕ 加 key</button>
+        <button class="btn-sm danger" onclick="deleteApiKey('${k.provider}')">🗑️ 清空</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+async function addApiKey(provider){
+  const key = prompt(`为 provider "${provider}" 添加新的 API key:\n(留空取消)`);
+  if(!key) return;
+  const r = await api('/v1/admin/api-keys', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({provider, api_key: key})
+  }).catch(e=>({error:e.message}));
+  if(r.error){ toast(r.error, false); return; }
+  toast(`✅ 已为 ${provider} 添加 key`);
+  renderKeysView();
+}
+async function deleteApiKey(provider){
+  if(!confirm(`⚠️ 清空 provider "${provider}" 的所有 API keys?`)) return;
+  const r = await api('/v1/admin/api-keys/'+encodeURIComponent(provider), {method:'DELETE'}).catch(e=>({error:e.message}));
+  if(r.error){ toast(r.error, false); return; }
+  toast(`🗑️ ${provider} keys 已清空`);
+  renderKeysView();
+  refresh();
+}
+
+// v3.6.0: Version 视图 (修复 GitHub 404 噪音)
+async function renderVersionView(){
+  const v = await api('/v1/admin/version').catch(e=>({current:{version:'3.6.0'}, error:e.message}));
+  lastVersionData = v;
+  renderVersion(v);
+  // 额外: 渲染 version grid
+  const g = document.getElementById('versionGrid');
+  if(!g) return;
+  const cur=v.current||{};
+  const latest=v.latest_release||null;
+  // v3.6.0: latest 为 null (GitHub 404) 不显示错误, 改为 "未配置"
+  const latestTag = latest?.tag || '未配置';
+  const latestDate = latest?.published_at ? new Date(latest.published_at).toLocaleDateString('zh-CN') : '-';
+  const updateStatus = v.has_update ? '⬆ 有更新' : '✓ 最新';
+  const updateColor = v.has_update ? 'warn' : 'good';
+  // 如果 latest_release 缺失 (GitHub 404 / 无 token), 不当 bug
+  const releaseNotes = latest?.body ? latest.body.slice(0, 500) : null;
+  g.innerHTML = `
+    <div class="stat-card"><div class="label">当前版本</div><div class="value good">v${cur.version||'3.6.0'}</div><div class="delta">${cur.build_date||''}</div></div>
+    <div class="stat-card"><div class="label">最新版本</div><div class="value">${latestTag}</div><div class="delta">${latestDate}</div></div>
+    <div class="stat-card"><div class="label">状态</div><div class="value ${updateColor}">${updateStatus}</div><div class="delta">${v.error?'GitHub 检查失败 (非阻塞)':''}</div></div>
+    <div class="stat-card"><div class="label">构建</div><div class="value">${cur.title||'SMR'}</div><div class="delta">${v.has_update && latest ? `<a href="${latest.url}" target="_blank" style="color:#5b8def">查看 Release</a>` : '无需更新'}</div></div>
+  `;
+  // release notes
+  if(releaseNotes){
+    g.insertAdjacentHTML('afterend', `<div class="empty-state" style="text-align:left;white-space:pre-wrap;margin-top:14px"><strong>Release Notes</strong>\n\n${releaseNotes}</div>`);
+  }
 }
 function renderModalities(data){
   const g=document.getElementById('modalityGrid');
@@ -295,6 +1030,73 @@ function renderModels(data){
     </tr>`;
   }).join('');
 }
+
+// v3.6.0: 复制 provider (Phase F)
+async function cloneProvider(name){
+  const newName = prompt(`复制 provider "${name}" 为新 provider.\n请输入新名称:`, name+'_copy');
+  if(!newName || newName === name) return;
+  const r = await api('/v1/admin/providers/'+encodeURIComponent(name)+'/clone', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({new_name: newName})
+  }).catch(e=>({error:e.message}));
+  if(r.error){ toast(r.error, false); return; }
+  toast(`📋 已复制为 "${newName}"`);
+  await refreshProviders();
+  await refresh();
+}
+
+// v3.6.0: 导出 provider 配置 (Phase F)
+async function exportProviders(){
+  const r = await api('/v1/admin/providers/export').catch(e=>({error:e.message}));
+  if(r.error || !r.providers){
+    toast(r.error || '导出失败', false);
+    return;
+  }
+  const data = JSON.stringify(r, null, 2);
+  const blob = new Blob([data], {type: 'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `smr-providers-${new Date().toISOString().slice(0,10)}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+  toast(`✅ 已导出 ${r.providers.length} 个 provider 配置`);
+}
+
+// v3.6.0: 导入 provider 配置 (Phase F)
+async function importProviders(event){
+  const file = event.target.files[0];
+  if(!file) return;
+  const text = await file.text();
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch(e){
+    // 尝试 yaml
+    toast('❌ 仅支持 JSON 格式 (导出的格式)', false);
+    event.target.value = '';
+    return;
+  }
+  if(!data.providers || !Array.isArray(data.providers)){
+    toast('❌ 文件格式错误: 缺少 providers 数组', false);
+    event.target.value = '';
+    return;
+  }
+  if(!confirm(`确认导入 ${data.providers.length} 个 provider?`)) {
+    event.target.value = '';
+    return;
+  }
+  const r = await api('/v1/admin/providers/import', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(data)
+  }).catch(e=>({error:e.message}));
+  event.target.value = '';
+  if(r.error){ toast(r.error, false); return; }
+  toast(`✅ 导入完成: 新增 ${r.added||0} · 跳过 ${r.skipped||0} · 失败 ${r.failed||0}`);
+  await refreshProviders();
+  await refresh();
+}
+
 refresh();
 
 // ============================================================
@@ -310,24 +1112,28 @@ function closeAddProvider(){
   document.getElementById('addProvModal').classList.remove('show');
 }
 async function submitAddProvider(){
-  const name = document.getElementById('provName').value.trim();
-  const base_url = document.getElementById('provUrl').value.trim();
-  const api_keys_raw = document.getElementById('provKeys').value.trim();
-  const mode = document.getElementById('provMode').value;
-  const pattern = document.getElementById('provPattern').value.trim();
-  const include_raw = document.getElementById('provInclude').value.trim();
-  const max_concurrent = parseInt(document.getElementById('provMax').value) || 3;
-
+  const name=document.getElementById('provName').value.trim();
+  const base_url=document.getElementById('provUrl').value.trim();
+  const api_keys_raw=document.getElementById('provKeys').value.trim();
+  const mode=document.getElementById('provMode').value;
+  const pattern=document.getElementById('provPattern').value.trim();
+  const include_raw=document.getElementById('provInclude').value.trim();
+  const exclude_raw=document.getElementById('provExclude')?.value.trim() || '';
+  const max_concurrent=parseInt(document.getElementById('provMax').value)||3;
   if (!name || !base_url || !api_keys_raw) {
     toast('请填写 name / base_url / api_keys', false);
     return;
   }
   const api_keys = api_keys_raw.split('\n').map(s=>s.trim()).filter(Boolean);
   const include = include_raw ? include_raw.split('\n').map(s=>s.trim()).filter(Boolean) : [];
+  const exclude = exclude_raw ? exclude_raw.split('\n').map(s=>s.trim()).filter(Boolean) : [];
   const model_rules = {mode};
   if (mode === 'pattern' && pattern) model_rules.pattern = pattern;
   if (mode === 'include' && include.length) model_rules.include = include;
+  if (exclude.length) model_rules.exclude = exclude;
 
+  const btn=event.target;
+  btn.disabled=true; btn.textContent='添加中...';
   const r = await api('/v1/admin/providers', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
@@ -336,24 +1142,177 @@ async function submitAddProvider(){
       config: { base_url, api_keys, model_rules, max_concurrent, enabled: true },
     }),
   });
+  btn.disabled=false; btn.textContent='添加';
   if (r.error) { toast(r.error, false); return; }
-  toast(`Provider '${name}' added (${r.config?.model_rules?.mode || 'all'})`);
+  const normHint = r.config?.base_url && r.config.base_url !== base_url
+    ? ` (已自动补全为 ${r.config.base_url})` : '';
+  toast(`✅ Provider '${name}' added${normHint}`, true);
   closeAddProvider();
-  document.getElementById('provName').value = '';
-  document.getElementById('provUrl').value = '';
-  document.getElementById('provKeys').value = '';
-  document.getElementById('provPattern').value = '';
-  document.getElementById('provInclude').value = '';
-  refresh();
+  // v3.6: 自动刷新 (不靠 refresh() 整体, 单独刷 providers + routes)
+  await refreshProviders();
+  await refresh();
+  await renderRoutes();
+}
+
+async function enableProvider(name){
+  if (!confirm(`启用 provider '${name}'?`)) return;
+  const r = await api('/v1/admin/providers/'+encodeURIComponent(name)+'/enable', {method:'POST'});
+  if (r.error) { toast(r.error, false); return; }
+  toast(`▶ '${name}' 已启用`);
+  await refreshProviders();
+  await refresh();
+  await renderRoutes();
+}
+
+async function disableProvider(name){
+  if (!confirm(`停用 provider '${name}'?\n(配置保留, 路由立即移除, 可重新启用)`)) return;
+  const r = await api('/v1/admin/providers/'+encodeURIComponent(name)+'/disable', {method:'POST'});
+  if (r.error) { toast(r.error, false); return; }
+  toast(`⏸ '${name}' 已停用`);
+  await refreshProviders();
+  await refresh();
+  await renderRoutes();
+}
+
+async function refreshProvider(name){
+  const btn=event?.target;
+  const origText=btn?.textContent;
+  if(btn){btn.disabled=true; btn.textContent='⏳ 拉取中...';}
+  const r = await api('/v1/admin/providers/'+encodeURIComponent(name)+'/refresh', {method:'POST'});
+  if(btn){btn.disabled=false; btn.textContent=origText;}
+  if (r.error) { toast(r.error, false); return; }
+  toast(`🔄 '${name}' 正在拉取模型... ${r.hint||''}`);
+  // 2s 后自动刷新列表 (等 async refresh 完成)
+  setTimeout(async()=>{ await refreshProviders(); await refresh(); }, 2000);
+}
+
+async function hardDeleteProvider(name){
+  if (!confirm(`⚠️ 彻底删除 provider '${name}'?\n\n配置从 config.yaml 永久移除, 不可恢复!\n\n(只有已停用的 provider 才能删除)`)) return;
+  const r = await api('/v1/admin/providers/'+encodeURIComponent(name)+'?force=true', {method:'DELETE'});
+  if (r.error) { toast(r.error, false); return; }
+  toast(`🗑️ '${name}' 已彻底删除`);
+  await refreshProviders();
+  await refresh();
+  await renderRoutes();
 }
 
 async function deleteProvider(name){
-  if (!confirm(`确定删除 provider '${name}' 吗?\n(配置会从 config.yaml 移除)`)) return;
+  // v3.6: 软删除 (默认走这个, 用户能恢复)
+  if (!confirm(`停用 provider '${name}'?\n(配置保留, 可在筛选栏"停用"里找到并重新启用或彻底删除)`)) return;
   const r = await api('/v1/admin/providers/' + encodeURIComponent(name), {method: 'DELETE'});
   if (r.error) { toast(r.error, false); return; }
-  toast(`Provider '${name}' removed`);
-  refresh();
+  toast(`⏸ '${name}' 已停用 (可恢复)`);
+  await refreshProviders();
+  await refresh();
+  await renderRoutes();
 }
+
+// v3.6: 单独刷 providers 列表 (不刷其他)
+async function refreshProviders(){
+  const r = await api('/v1/admin/providers');
+  if (r && r.providers) {
+    await renderProviders(r);
+  }
+}
+
+// v3.6: 渲染 routes 列表 (用新格式)
+async function renderRoutes(){
+  const g=document.getElementById('routesGrid');
+  if(!g) return;
+  const r = await api('/v1/admin/routes');
+  if(!r || !r.routes){ g.innerHTML='<div class="empty-state">暂无路由</div>'; return; }
+  if(r.routes.length===0){ g.innerHTML='<div class="empty-state">暂无路由</div>'; return; }
+  // r.routes 现在是对象数组 [{route, provider, model, pricing}]
+  if(typeof r.routes[0]==='string'){
+    // 旧格式
+    g.innerHTML=r.routes.map(rt=>`<div class="route-item">${rt}</div>`).join('');
+  } else {
+    g.innerHTML=r.routes.map(rt=>{
+      const pricingColor = rt.pricing==='free' ? '#4caf50' : rt.pricing==='paid' ? '#ff9800' : '#888';
+      return `<div class="route-item">
+        <span class="route-path">${rt.route}</span>
+        <span class="route-pricing" style="color:${pricingColor}">${rt.pricing}</span>
+      </div>`;
+    }).join('');
+  }
+}
+
+// v3.6: 编辑 provider 模态框
+async function openEditProvider(name){
+  const r = await api('/v1/admin/providers');
+  const p = r.providers?.find(x=>x.name===name);
+  if(!p){toast('找不到 provider '+name, false); return;}
+  // 复用 add modal, 但填入现有值 + 改标题 + 改 submit handler
+  document.getElementById('addProviderTitle').textContent='✏️ 编辑 Provider: '+name;
+  document.getElementById('provName').value=name;
+  document.getElementById('provName').disabled=true;
+  document.getElementById('provUrl').value=p.base_url;
+  document.getElementById('provKeys').value='';  // 不显示 key, 让用户重新填 (空 = 不改)
+  document.getElementById('provMode').value=p.model_rules?.mode||'all';
+  document.getElementById('provPattern').value=p.model_rules?.pattern||'';
+  document.getElementById('provInclude').value=(p.model_rules?.include||[]).join('\n');
+  document.getElementById('provExclude').value=(p.model_rules?.exclude||[]).join('\n');
+  document.getElementById('provMax').value=p.max_concurrent||3;
+  // 显示/隐藏 mode 子字段
+  document.getElementById('patternField').style.display=p.model_rules?.mode==='pattern'?'block':'none';
+  document.getElementById('includeField').style.display=p.model_rules?.mode==='include'?'block':'none';
+  document.getElementById('excludeField').style.display=(p.model_rules?.exclude||[]).length>0?'block':'none';
+  // 改 submit 按钮: 调 PUT 而非 POST
+  const btn=document.getElementById('addProviderBtn');
+  btn.textContent='保存修改';
+  btn.onclick=async()=>await submitEditProvider(name);
+  document.getElementById('addProviderModal').classList.add('open');
+}
+
+async function submitEditProvider(name){
+  const base_url=document.getElementById('provUrl').value.trim();
+  const api_keys_raw=document.getElementById('provKeys').value.trim();
+  const mode=document.getElementById('provMode').value;
+  const pattern=document.getElementById('provPattern').value.trim();
+  const include_raw=document.getElementById('provInclude').value.trim();
+  const exclude_raw=document.getElementById('provExclude')?.value.trim() || '';
+  const max_concurrent=parseInt(document.getElementById('provMax').value)||3;
+  if (!base_url) { toast('请填写 base_url', false); return; }
+  const pcfg = { base_url, max_concurrent, enabled: true, model_rules: {mode} };
+  if(mode==='pattern' && pattern) pcfg.model_rules.pattern = pattern;
+  if(mode==='include') {
+    const inc = include_raw ? include_raw.split('\n').map(s=>s.trim()).filter(Boolean) : [];
+    pcfg.model_rules.include = inc;
+  }
+  if(exclude_raw) {
+    pcfg.model_rules.exclude = exclude_raw.split('\n').map(s=>s.trim()).filter(Boolean);
+  }
+  if(api_keys_raw) {
+    pcfg.api_keys = api_keys_raw.split('\n').map(s=>s.trim()).filter(Boolean);
+  }
+  const btn=event.target;
+  btn.disabled=true; btn.textContent='保存中...';
+  const r = await api('/v1/admin/providers/'+encodeURIComponent(name), {
+    method:'PUT', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({config: pcfg})
+  });
+  btn.disabled=false; btn.textContent='保存修改';
+  if (r.error) { toast(r.error, false); return; }
+  toast(`✅ '${name}' 已更新 (base_url=${r.config?.base_url})`);
+  closeAddProvider();
+  await refreshProviders();
+  await refresh();
+  await renderRoutes();
+}
+
+function closeAddProvider(){
+    document.getElementById('addProviderModal').classList.remove('open');
+    // v3.6: 重置 submit handler 给 add 用
+    const btn=document.getElementById('addProviderBtn');
+    if(btn){ btn.textContent='添加'; btn.onclick=null; btn.onclick=submitAddProvider; }
+    const nameInput=document.getElementById('provName');
+    if(nameInput) nameInput.disabled=false;
+    document.getElementById('addProviderTitle').textContent='➕ 添加 Provider';
+    // 清空表单
+    ['provName','provUrl','provKeys','provPattern','provInclude','provExclude','provUrlPreset'].forEach(id=>{
+      const el=document.getElementById(id); if(el) el.value='';
+    });
+  }
 
 // ============================================================
 // Tier Bonus / Classifier 管理
@@ -552,39 +1511,117 @@ async function restoreConfigBackup(name){
 }
 </script>
 
-<!-- Add Provider Modal -->
-<div class="modal-bg" id="addProvModal">
-  <div class="modal">
-    <h3>➕ 添加自定义 Provider</h3>
+<!-- Add/Edit Provider Modal -->
+<div class="modal-bg" id="addProviderModal">
+  <div class="modal" style="max-width:600px">
+    <h3 id="addProviderTitle">➕ 添加自定义 Provider</h3>
     <div class="text-muted">支持任何 OpenAI 兼容 API (OpenAI / Azure / 自建 / 中转 / newapi 等)</div>
-    <label>Provider 名称 *</label>
+    <label>Provider 名称 * <span class="text-muted">(添加时必填, 编辑时禁用)</span></label>
     <input id="provName" placeholder="myopenai">
-    <label>Base URL * <span class="text-muted">(去掉 /v1 后缀, e.g. https://api.openai.com)</span></label>
-    <input id="provUrl" placeholder="https://api.openai.com">
-    <label>API Keys * <span class="text-muted">(一行一个, 自动轮询)</span></label>
+    <label>Base URL * <span class="text-muted">(选择平台或填自定义 URL, 知名 provider 自动补 https:// + /v1)</span></label>
+    <select id="provUrlPreset" onchange="onPresetUrlChange()" style="margin-bottom:6px">
+      <option value="">-- 选择平台 (可选) --</option>
+      <option value="https://api.openai.com/v1">OpenAI (官方)</option>
+      <option value="https://openrouter.ai/api/v1">OpenRouter</option>
+      <option value="https://api.deepseek.com/v1">DeepSeek</option>
+      <option value="https://generativelanguage.googleapis.com/v1beta/openai">Google Gemini (OpenAI 兼容)</option>
+      <option value="https://api.anthropic.com/v1">Anthropic Claude (OpenAI 兼容)</option>
+      <option value="https://api.mistral.ai/v1">Mistral AI</option>
+      <option value="https://api.groq.com/openai/v1">Groq</option>
+      <option value="https://api.together.xyz/v1">Together AI</option>
+      <option value="https://api.fireworks.ai/inference/v1">Fireworks AI</option>
+      <option value="https://api.perplexity.ai">Perplexity</option>
+      <option value="https://dashscope.aliyuncs.com/compatible-mode/v1">阿里云 DashScope (Qwen)</option>
+      <option value="https://ark.cn-beijing.volces.com/api/v3">字节火山方舟 (Ark)</option>
+      <option value="https://api.moonshot.cn/v1">月之暗面 Moonshot</option>
+      <option value="https://api.zhipuai.cn/v1">智谱 GLM</option>
+      <option value="https://api.baichuan-ai.com/v1">百川</option>
+      <option value="https://api.stepfun.com/v1">StepFun (阶跃星辰)</option>
+      <option value="https://api.x.ai/v1">xAI (Grok)</option>
+      <option value="https://api.cohere.ai/v1">Cohere</option>
+      <option value="https://api.replicate.com/v1">Replicate</option>
+      <option value="https://integrate.api.nvidia.com/v1">NVIDIA NIM</option>
+      <option value="https://api.siliconflow.cn/v1">硅基流动 (SiliconFlow)</option>
+      <option value="__custom__">⚙️ 自定义 URL (下面手动填)</option>
+    </select>
+    <input id="provUrl" placeholder="https://api.openai.com/v1" oninput="document.getElementById('provUrlPreset').value='__custom__'">
+    <label>API Keys * <span class="text-muted">(一行一个, 自动轮询. 编辑时留空 = 不修改)</span></label>
     <textarea id="provKeys" placeholder="sk-xxx&#10;sk-yyy"></textarea>
     <label>Model Filter Mode</label>
-    <select id="provMode" onchange="document.getElementById('patternField').style.display=this.value==='pattern'?'block':'none';document.getElementById('includeField').style.display=this.value==='include'?'block':'none'">
+    <select id="provMode" onchange="onModeChange()">
       <option value="all">all (全部模型)</option>
       <option value="pattern">pattern (正则匹配)</option>
       <option value="include">include (白名单)</option>
     </select>
     <div id="patternField" style="display:none">
       <label>Pattern (正则)</label>
-      <input id="provPattern" placeholder=".*-free$|.*free.*">
+      <div class="pattern-builder">
+        <div class="pattern-row">
+          <span class="pattern-op">包含</span>
+          <input id="patternHas" placeholder="gpt-4 或 -free" oninput="syncPattern()">
+        </div>
+        <div class="pattern-row">
+          <span class="pattern-op">不包含</span>
+          <input id="patternNot" placeholder="vision 或 embed" oninput="syncPattern()">
+        </div>
+        <div class="pattern-hint">生成的正则: <code id="patternPreview">(留空)</code></div>
+        <input id="provPattern" type="hidden">
+        <details class="pattern-raw">
+          <summary>编辑原始正则</summary>
+          <input id="provPatternRaw" placeholder=".*-free$|.*free.*" oninput="document.getElementById('provPattern').value=this.value">
+        </details>
+      </div>
     </div>
     <div id="includeField" style="display:none">
       <label>Include (白名单, 一行一个)</label>
       <textarea id="provInclude" placeholder="gpt-4o&#10;gpt-4-turbo"></textarea>
     </div>
+    <div id="excludeField" style="display:none">
+      <label>Exclude (黑名单, 一行一个) <span class="text-muted">(永远从结果中排除, 优先于 include)</span></label>
+      <textarea id="provExclude" placeholder="gpt-4-vision&#10;*-embed-*"></textarea>
+    </div>
     <label>Max Concurrent Slots</label>
     <input id="provMax" type="number" value="3" min="1" max="20">
     <div class="row">
-      <button class="btn" onclick="submitAddProvider()">添加</button>
+      <button class="btn" id="addProviderBtn" onclick="submitAddProvider()">添加</button>
       <button class="btn-sm" onclick="closeAddProvider()">取消</button>
     </div>
   </div>
 </div>
+
+<script>
+// v3.6: 正则表达式友好生成
+function syncPattern(){
+  const has = document.getElementById('patternHas').value.trim();
+  const not = document.getElementById('patternNot').value.trim();
+  const parts = [];
+  if(has) parts.push(has.split(/\s+/).filter(Boolean).map(s=>s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.*'));
+  if(not) parts.push(not.split(/\s+/).filter(Boolean).map(s=>'(?!.*'+s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')+').*').join(''));
+  const pat = parts.length ? parts.join('|') : '';
+  document.getElementById('provPattern').value = pat;
+  document.getElementById('patternPreview').textContent = pat || '(留空 = 匹配所有)';
+}
+function onModeChange(){
+  const m = document.getElementById('provMode').value;
+  document.getElementById('patternField').style.display = m==='pattern' ? 'block' : 'none';
+  document.getElementById('includeField').style.display = m==='include' ? 'block' : 'none';
+  // exclude 总是显示 (它跟所有模式配合)
+  document.getElementById('excludeField').style.display = m==='all' ? 'none' : 'block';
+}
+// v3.6.0: 打开 add modal (新的, 不带 edit)
+function openAddProvider(){
+  closeAddProvider();  // 重置
+  document.getElementById('addProviderModal').classList.add('open');
+}
+
+// v3.6.0: 选预设 base_url → 自动填到 provUrl
+function onPresetUrlChange(){
+  const v = document.getElementById('provUrlPreset').value;
+  if(v && v !== '__custom__'){
+    document.getElementById('provUrl').value = v;
+  }
+}
+</script>
 
 <!-- Classifier Modal -->
 <div class="modal-bg" id="classifierModal">

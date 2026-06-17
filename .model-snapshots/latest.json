@@ -1,4 +1,55 @@
 {
-  "ts": 1781706938.8899934,
-  "models": {}
+  "ts": 1781711770.2109044,
+  "models": {
+    "mock/gpt-4o": {
+      "provider": "mock",
+      "modality": "multimodal",
+      "capability_score": 85
+    },
+    "mock/gpt-4o-mini": {
+      "provider": "mock",
+      "modality": "text-only",
+      "capability_score": 35
+    },
+    "mock/gpt-4-turbo": {
+      "provider": "mock",
+      "modality": "multimodal",
+      "capability_score": 100
+    },
+    "mock/claude-3-opus-20240229": {
+      "provider": "mock",
+      "modality": "text-only",
+      "capability_score": 50
+    },
+    "mock/claude-3-sonnet-20240229": {
+      "provider": "mock",
+      "modality": "multimodal",
+      "capability_score": 85
+    },
+    "mock/qwen-2.5-72b-instruct": {
+      "provider": "mock",
+      "modality": "text-only",
+      "capability_score": 50
+    },
+    "mock/deepseek-v3": {
+      "provider": "mock",
+      "modality": "text-only",
+      "capability_score": 50
+    },
+    "mock/doubao-pro-256k": {
+      "provider": "mock",
+      "modality": "text-only",
+      "capability_score": 70
+    },
+    "mock/llama-3.1-405b-instruct": {
+      "provider": "mock",
+      "modality": "text-only",
+      "capability_score": 50
+    },
+    "mock/gemma-2-27b-it": {
+      "provider": "mock",
+      "modality": "text-only",
+      "capability_score": 50
+    }
+  }
 }
