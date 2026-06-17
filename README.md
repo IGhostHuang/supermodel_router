@@ -1,11 +1,11 @@
 # SMR (supermodel_router)
 
 > **SMR (前 FMR / free-model-router)** — OpenAI 兼容的多 provider LLM 路由网关
-> **v3.1.0** · 2026-06-17 · 独立运行模式（不集成到 Hermes）
+> **v3.3.0** · 2026-06-17 · 独立运行模式（不集成到 Hermes）
 
 ---
 
-## 🎉 v3.1.0 新增 (2026-06-17)
+## 🎉 v3.3.0 新增 (2026-06-17)
 
 - **轮询机制 v4**: 高分模型优先, 同 model 全部 key 失败再换下一 model (跨 provider); 失败时自动降分避免下次重复失败路径; 周期复测自动恢复分数
 - **多 key 真正轮询** (B1 修复): `/v1/models` 拉取阶段 401/403 自动换 key, 不再因第 1 个 key 失败而 0 模型
@@ -13,7 +13,7 @@
 - **错误消息干净** (B2 修复): 4xx/5xx 不再泄漏 raw HTTP status line + headers
 - **版本管理** (C): `/v1/admin/version` (当前+GitHub release) + `/v1/admin/upgrade` (生成 git/pip/docker/binary 升级命令)
 - **Penalty 管理**: `/v1/admin/penalty` GET 状态, `/reset` 清零, `/decay` (支持 `force:true` 立即复测)
-- **PyInstaller 单文件 21MB** + **Docker 镜像 v3.1.0** 一键部署
+- **PyInstaller 单文件 21MB** + **Docker 镜像 v3.3.0** 一键部署
 
 ## 🎯 设计目标
 

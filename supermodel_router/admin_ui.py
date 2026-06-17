@@ -72,6 +72,17 @@ tr:hover td{background:#1a1a24}
 .modal-bg.show{display:flex}
 .modal{background:#1a1a24;border-radius:10px;padding:20px;max-width:600px;width:90%;max-height:80vh;overflow:auto}
 .modal h3{margin-bottom:12px;font-size:16px}
+.modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:10000}
+.modal-overlay .modal{background:#1a1a24;border-radius:10px;padding:24px;max-width:650px;width:90%;max-height:85vh;overflow:auto;border:1px solid #333;box-shadow:0 8px 32px rgba(0,0,0,0.5)}
+.version-info{margin:16px 0}
+.version-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #222}
+.version-row:last-child{border-bottom:none}
+.version-row strong{font-size:14px}
+.version-release-notes{margin-top:16px;padding-top:12px;border-top:1px solid #333}
+.version-release-notes h3{font-size:14px;color:#888;margin-bottom:8px}
+.version-release-notes pre{background:#0d0d12;padding:12px;border-radius:6px;font-size:12px;white-space:pre-wrap;line-height:1.6;max-height:200px;overflow-y:auto}
+.version-upgrade{margin-top:16px;padding:12px;background:#1a1a24;border-radius:6px;border-left:3px solid #ff9800}
+.version-upgrade pre{font-size:12px}
 .modal label{display:block;font-size:12px;color:#888;margin-top:10px;margin-bottom:4px}
 .modal input,.modal select,.modal textarea{width:100%;background:#0f0f13;border:1px solid #333;color:#e0e0e0;padding:8px 10px;border-radius:4px;font-size:13px;font-family:inherit}
 .modal textarea{min-height:80px;font-family:ui-monospace,monospace;font-size:12px}
@@ -95,6 +106,7 @@ tr:hover td{background:#1a1a24}
   <button class="btn-sm" onclick="openClassifier()">⚙️ Tier Bonus</button>
   <button class="btn-sm" onclick="openServer()">🔧 修改配置</button>
   <button class="btn-sm" onclick="openConfigBackups()">📜 配置历史</button>
+  <button class="btn-sm" onclick="checkVersion()">🔔 检查更新</button>
 </div>
 
 <!-- 状态栏 -->
@@ -102,7 +114,7 @@ tr:hover td{background:#1a1a24}
   <div class="stat-card"><div class="label">Providers</div><div class="value" id="statProviders">-</div></div>
   <div class="stat-card"><div class="label">Models</div><div class="value" id="statModels">-</div></div>
   <div class="stat-card"><div class="label">Uptime</div><div class="value" id="statUptime">-</div></div>
-  <div class="stat-card"><div class="label">Route Mode</div><div class="value" id="statMode">多模态</div></div>
+  <div class="stat-card"><div class="label">Version</div><div class="value" id="statVersion" style="font-size:14px;cursor:pointer" onclick="checkVersion()" title="点击检查更新">-</div></div>
 </div>
 
 <!-- 模态分布 -->
@@ -163,6 +175,51 @@ async function loadModels(){
   const n=Object.values(r.providers||{}).reduce((a,b)=>a+(b.models||0),0);
   toast(`已获取 ${n} 个模型`);
   refresh();
+}
+async function checkVersion(forceCheck=false){
+  const v=await api('/v1/admin/version'+`?force_check=${forceCheck}`);
+  renderVersion(v);
+}
+function renderVersion(v){
+  const cur=v.current||{};
+  const latest=v.latest_release||null;
+  const verText=cur.version||v.current||'-';
+  document.getElementById('statVersion').innerHTML=v.has_update
+    ? `<span style="color:#ff9800">⬆ ${verText}</span>`
+    : `<span style="color:#4caf50">✓ ${verText}</span>`;
+  if(v.has_update && latest){
+    toast(`发现新版本 ${latest.tag||latest.name||''}`,true);
+  }
+  // 弹窗
+  let html=`<div class="modal-overlay" id="versionModal" onclick="this.remove()">
+    <div class="modal" onclick="event.stopPropagation()">
+      <h2>🔔 版本信息</h2>
+      <div class="version-info">
+        <div class="version-row"><span>当前版本</span><strong>${cur.version||'-'}</strong></div>
+        <div class="version-row"><span>构建日期</span><strong>${cur.build_date||v.build_date||'-'}</strong></div>
+        <div class="version-row"><span>最新版本</span><strong>${latest?latest.tag:'-'}</strong></div>
+        <div class="version-row"><span>发布日期</span><strong>${latest&&latest.published_at?new Date(latest.published_at).toLocaleDateString('zh-CN'):'-'}</strong></div>
+        <div class="version-row"><span>可更新</span><strong style="color:${v.has_update?'#ff9800':'#4caf50'}">${v.has_update?'是 ⬆':'否 ✓'}</strong></div>
+      </div>`;
+  if(latest && latest.body){
+    const desc=latest.body.length>500?latest.body.slice(0,500)+'...':latest.body;
+    html+=`<div class="version-release-notes"><h3>Release Notes</h3><pre>${desc}</pre></div>`;
+  }
+  if(v.has_update && latest){
+    html+=`<div class="version-upgrade">
+      <p style="color:#ff9800;margin-bottom:8px">⬆ 有新版本可用，升级命令：</p>
+      <pre style="background:#1a1a2e;padding:12px;border-radius:6px;overflow-x:auto">${latest.url?'<a href="'+latest.url+'" target="_blank" style="color:#60a5fa">查看 Release</a> 或运行: docker pull ghcr.io/IGhostHuang/supermodel_router:'+latest.tag+' && docker compose up -d':'pip install --upgrade supermodel_router'}</pre>
+    </div>`;
+  }
+  html+=`<div style="text-align:right;margin-top:16px">
+        <button class="btn-sm" onclick="checkVersion(true)">🔄 重新检查</button>
+        <button class="btn" onclick="document.getElementById('versionModal').remove()">关闭</button>
+      </div>
+    </div>
+  </div>`;
+  // remove old modal if exists
+  document.getElementById('versionModal')?.remove();
+  document.body.insertAdjacentHTML('beforeend',html);
 }
 function renderHealth(h){
   if(!h)return;
