@@ -29,10 +29,13 @@ LOG = logging.getLogger("public_api")
 
 
 def _hash_key(key: str) -> str:
-    """key 哈希 (前 16 字符, 用于显示和比较)
-    v3.7.0: SHA256[:16], 不存原 key, 只存哈希
+    """key 哈希 (完整 64 字符 SHA256, 用于显示和比较)
+
+    v3.7.1 (小星雲 review P0 BUG-001): 用完整 SHA256 避免 64bit 截断碰撞
+    之前 [:16] 只 16 hex 字符 = 64bit, 生日攻击 ~2^32 key 才碰撞,
+    但多租户 + 攻击者可控 key 名 → 风险升级, 改完整 64 字符
     """
-    return hashlib.sha256(key.encode()).hexdigest()[:16]
+    return hashlib.sha256(key.encode()).hexdigest()
 
 
 class PublicKeyManager:
@@ -196,7 +199,13 @@ class PublicKeyManager:
         return None
 
     def check_rate_limit(self, meta: Dict[str, Any]) -> bool:
-        """sliding window rate limit, True = 通过, False = 超限"""
+        """sliding window rate limit, True = 通过, False = 超限
+
+        v3.7.1 (小星雲 review P0 BUG-002): 显式声明 in-memory 不持久化
+        SMR 重启 → rate_window 清零 → 用户可瞬时打满 rpm 1 次
+        缓解建议 (不在 v3.7.1 范围): rate_window 走 public_keys_state.json
+        持久化 + 启动时按 now - window 过滤有效条目
+        """
         rpm = meta.get("rate_limit_rpm", 0)
         if rpm <= 0:  # 0 = 不限
             return True
@@ -205,7 +214,7 @@ class PublicKeyManager:
         with self._lock:
             u = self._usage.setdefault(key_hash, {})
             window = u.setdefault("rate_window", [])
-            # 清理 60s 之前的
+            # 清理 60s 之前的 (in-memory, 不持久化)
             window[:] = [t for t in window if now - t < 60]
             if len(window) >= rpm:
                 return False
