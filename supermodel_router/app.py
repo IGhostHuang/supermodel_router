@@ -149,6 +149,30 @@ except Exception:
 app = FastAPI(title=SMR_APP_TITLE, version=SMR_VERSION, lifespan=lifespan)
 
 
+# ============================================================
+# v3.7.1 (P0 BUG-001 fix): Public API 用量追踪 middleware
+# 拦截所有响应, 自动从 request.state.public_key_meta 读取 public_key 元数据
+# 根据 HTTP status 判断 success/fail, 自动调 pkm.record_usage()
+# 流式响应也能追踪 (status 200 = success)
+# ============================================================
+@app.middleware("http")
+async def public_usage_middleware(request: Request, call_next):
+    response = await call_next(request)
+    try:
+        from .public_api import public_key_manager, PublicKeyManager as _PKM
+        from typing import cast as _cast
+        pkm = _cast(_PKM, public_key_manager)
+        meta = getattr(request.state, 'public_key_meta', None)
+        if pkm is not None and meta is not None:
+            success = 200 <= response.status_code < 400
+            # 流式响应无法直接读 body 计 tokens, 暂时按 status 计数
+            tokens = 0
+            pkm.record_usage(meta["key_hash"], success=success, tokens=tokens)
+    except Exception as e:
+        LOG.warning("public_usage_middleware: %s", e)
+    return response
+
+
 
 # ---- v3.2.0: 拆分后装载 3 个子路由 ----
 from .openai_routes import router as openai_router, init as openai_init
