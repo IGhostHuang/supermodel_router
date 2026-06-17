@@ -126,9 +126,9 @@ try:
     from .version import BUILD_DATE as SMR_BUILD_DATE
     SMR_APP_TITLE = f"SuperModel Router v{SMR_VERSION}"
 except Exception:
-    SMR_VERSION = "3.0.0"
-    SMR_BUILD_DATE = "2026-06-16"
-    SMR_APP_TITLE = "Model Router v3 — Any-to-Any"
+    SMR_VERSION = "3.3.0"
+    SMR_BUILD_DATE = "2026-06-17"
+    SMR_APP_TITLE = "SuperModel Router v3.3.0"
 
 app = FastAPI(title=SMR_APP_TITLE, version=SMR_VERSION, lifespan=lifespan)
 
