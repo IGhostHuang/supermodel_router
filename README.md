@@ -1,7 +1,88 @@
 # SMR (supermodel_router)
 
 > **SMR (前 FMR / free-model-router)** — OpenAI 兼容的多 provider LLM 路由网关
-> **v3.3.0** · 2026-06-17 · 独立运行模式（不集成到 Hermes）
+> **v3.4.0** · 2026-06-17 · 独立运行模式（不集成到 Hermes）
+
+---
+
+## 🎉 v3.4.0 新增 (2026-06-17) — 上下文桥接 + 过期标记
+
+**痛点**: chain rotation 切换到新模型时, 新模型只看到原始 prompt, 不知道前面模型为什么失败/部分响应, 容易"对话断层"重复输出或答非所问; 同时如果请求耗时 > 30min, 新模型根本不知道信息可能已过期, 还在用"最新"的口吻回答过时的事实.
+
+**3 大机制**:
+
+1. **非流式切换注入 system prompt** — 切到新 candidate 前, 自动拼一份"上下文桥接"system message:
+   ```
+   [SMR 上下文桥接 v3.4.0]
+   你正在接续一个多模型对话. 前面有 N 次模型尝试 (都失败或部分响应):
+   [候选 A (mock-model-a) — 失败]
+     状态: http_401, 错误: Unauthorized
+   [候选 B (mock-model-b) — 失败]
+     状态: timeout, 错误: 连接超时
+
+   你的任务:
+   1. 直接基于**用户最后一条消息**和**已有对话历史**给一个完整回答
+   2. 不要重复前面模型已经成功输出的内容
+   3. 如果切到你的时间已经超过 30 分钟, 请明确提醒用户"信息可能已过期"
+   ```
+2. **流式切换发 sentinel** — 切到新 candidate 的第一个 chunk 前 yield 一条 `data: {"_smr_bridge": {...}}` SSE 事件, 客户端按 SSE 协议解析即可知道切换了 + 切了几次 + 当前是否过期
+3. **过期标记 stale** — 整个请求耗时 (time.time() - request_start_time) > `stale_threshold_seconds` (默认 1800s/30min) 时, 响应 `_router.stale=true`, 流式 sentinel 也带 `stale: true`. UI 可显示"⚠️ 信息可能已过期"
+
+**API 新增字段** (非流式响应 `_router`):
+```json
+{
+  "_router": {
+    "provider": "mock-b",
+    "model": "mock-model-b",
+    "chain_position": 1,
+    "switched_from": [
+      {
+        "from_provider": "mock-a",
+        "from_model": "mock-model-a",
+        "from_full_path": "mock-a/mock-model-a",
+        "status": "http_401",
+        "http_code": 401,
+        "error": "Unauthorized",
+        "partial_text": null,
+        "stale": false
+      }
+    ],
+    "stale": false,
+    "age_seconds": 0,
+    "stale_threshold_seconds": 1800
+  }
+}
+```
+
+**SSE Sentinel 协议** (流式首个 chunk):
+```
+data: {"_smr_bridge": {"version": "3.4.0", "switched_from_count": 1, "switched_from": [...], "stale": false, "age_seconds": 3, "stale_threshold_seconds": 1800}}
+
+data: {"id":"chatcmpl-xxx","object":"chat.completion.chunk",...}
+```
+
+**配置** (`config.yaml`):
+```yaml
+context_bridge:
+  enabled: true               # 全局开关
+  stale_threshold_seconds: 1800  # 30 min 过期阈值
+  max_history: 5              # 最多保留几次切换记录
+  sentinel_enabled: true      # 流式是否发 sentinel
+  inject_template: |          # 注入 system prompt 模板 (支持 {version}/{n_attempts}/{attempt_blocks}/{age_minutes})
+    [SMR 上下文桥接 v{version}]
+    你正在接续一个多模型对话...
+```
+
+**Admin API**:
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/v1/admin/context_bridge` | 查看 config + stats |
+| PUT | `/v1/admin/context_bridge` | 热更新 enabled/threshold/max_history/sentinel_enabled |
+| POST | `/v1/admin/context_bridge/reset` | 清零 stats (保留 enabled + threshold + history) |
+
+**端到端验证**: `tests/test_context_bridge_e2e.py` 3 场景 12/12 通过 (非流式切换 / 流式 sentinel / stale 过期标记).
+
+**PyInstaller 升级**: 入口 `run_smr_pyinstaller.py` 新增 `--host/--port/--config/--log-level` argparse, 跟 `run.py` 行为对齐.
 
 ---
 

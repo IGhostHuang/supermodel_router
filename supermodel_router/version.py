@@ -1,6 +1,22 @@
 """
 supermodel_router/version.py — 版本元数据 + GitHub release 检查
 
+v3.5.0 新增 (2026-06-17 22:25 老大拍):
+- 主动盘点: POST /v1/admin/context_review 拿 smr_request_id 聚合报告
+  (用户说"盘点上下文/重新审视/回顾上下文"时, mainbot 调该 endpoint)
+- 切链 race condition 防御: stream 模式切链时显式 aclose() 上游 httpx
+- smr_request_id 嵌入: response._router.smr_request_id + chain_id
+  (mainbot 收 response 时校验错配 → 丢弃)
+- per-request 跟踪: ContextBridge 维护 smr_request_id → SwitchRecord[] 映射
+  (bounded LRU 1000, 不持久化)
+
+v3.4.0 新增 (2026-06-17 22:00 老大拍):
+- 上下文桥接 (ContextBridge): 切换模型时, 注入 system message 同步上下文
+- 过期标记: 切到新 candidate 的时间距请求开始 > 30min → 标 stale=true
+- 流式 SSE sentinel: data: {"_smr_bridge": {...}} 标记切换 + stale
+- 非流式: response._router.switched_from + stale + age_seconds
+- /v1/admin/context_bridge endpoints (config/stats/reset)
+
 v3.1 新增: 老大 09:48 拍 C 项
 - 当前版本号 (SMR_VERSION)
 - 启动时打印版本 + 构建日期
@@ -22,7 +38,7 @@ from typing import Optional
 LOG = logging.getLogger("version")
 
 # 当前版本 (跟随 release tag)
-VERSION = "3.3.0"
+VERSION = "3.5.0"
 BUILD_DATE = "2026-06-17"
 GITHUB_REPO = "IGhostHuang/supermodel_router"  # 默认值, 可被 config.version_check.repo 覆盖
 RELEASE_CHECK_INTERVAL = 3600  # 1 小时检查一次
