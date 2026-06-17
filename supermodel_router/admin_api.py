@@ -1,7 +1,11 @@
 """
 supermodel_router/admin_api.py — 管理 API 端点 (v3.2.0 拆分)
 
-18 个 endpoint (v3.2.0):
+v3.4.0 新增 (2026-06-17):
+- /v1/admin/context_bridge (config + stats)
+- /v1/admin/context_bridge/reset (清零 stats)
+
+endpoint 列表:
 - /v1/health
 - /v1/admin/modalities /routes /stats /refresh
 - /v1/admin/config (reload)
@@ -13,32 +17,38 @@ supermodel_router/admin_api.py — 管理 API 端点 (v3.2.0 拆分)
 - /v1/admin/version /upgrade
 - /v1/admin/config/backups (v3.2.0 新增)
 - /v1/admin/config/restore (v3.2.0 新增)
+- /v1/admin/context_bridge (v3.4.0 新增)
 """
 import time
 import copy
 import logging
+from typing import Any
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
 from .config import config
+from .context_bridge import ContextBridge  # v3.4.0
 from .version import VERSION as SMR_VERSION, BUILD_DATE as SMR_BUILD_DATE
 SMR_APP_TITLE = f"SuperModel Router v{SMR_VERSION}"
 
 LOG = logging.getLogger("admin_api")
 router = APIRouter()
 
-registry = None
-engine = None
-model_manager = None
+registry: Any = None
+engine: Any = None
+model_manager: Any = None
+# v3.4.0: ContextBridge 单例
+context_bridge: ContextBridge | None = None
 _start_time = 0
 
 
-def init(app_registry, app_engine, app_model_manager, start_time):
-    global registry, engine, model_manager, _start_time
+def init(app_registry, app_engine, app_model_manager, start_time, app_bridge: ContextBridge | None = None):
+    global registry, engine, model_manager, _start_time, context_bridge
     registry = app_registry
     engine = app_engine
     model_manager = app_model_manager
     _start_time = start_time
+    context_bridge = app_bridge
 
 
 @router.get("/v1/health")
@@ -644,3 +654,139 @@ async def admin_models_notify_test():
         "ok": True,
         "diff": diff.to_dict() if diff else None,
     })
+
+
+# ============================================================
+# v3.4.0: Context Bridge (上下文桥接 + 过期标记) 管理 — 老大 22:00 拍
+# ============================================================
+
+@router.get("/v1/admin/context_bridge")
+async def admin_context_bridge_get():
+    """查看 ContextBridge 当前配置 + 统计
+
+    返回: {
+        "config": {enabled, stale_threshold_seconds, max_history, sentinel_enabled, ...},
+        "stats": {injections_total, stale_marks_total, switch_records_total, sentinels_sent_total, ...}
+    }
+    """
+    if context_bridge is None:
+        return JSONResponse({"error": "context_bridge not initialized"}, status_code=503)
+    return JSONResponse({
+        "config": context_bridge.get_config(),
+        "stats": context_bridge.get_stats(),
+    })
+
+
+@router.put("/v1/admin/context_bridge")
+async def admin_context_bridge_update(payload: dict | None = None):
+    """热更新 ContextBridge 配置
+
+    payload: {"enabled": bool?, "stale_threshold_seconds": int?, "max_history": int?, "sentinel_enabled": bool?, "inject_template": str?}
+
+    注: 改 inject_template 不持久化, 重启后从 config.yaml 重新读
+    """
+    if context_bridge is None:
+        return JSONResponse({"error": "context_bridge not initialized"}, status_code=503)
+    payload = payload or {}
+    context_bridge.update_config(payload)
+    return JSONResponse({
+        "ok": True,
+        "updated_fields": list(payload.keys()),
+        "config": context_bridge.get_config(),
+    })
+
+
+@router.post("/v1/admin/context_bridge/reset")
+async def admin_context_bridge_reset():
+    """清零 ContextBridge 统计 (不影响配置)"""
+    if context_bridge is None:
+        return JSONResponse({"error": "context_bridge not initialized"}, status_code=503)
+    context_bridge.reset_stats()
+    return JSONResponse({
+        "ok": True,
+        "stats": context_bridge.get_stats(),
+    })
+
+
+# ============================================================
+# v3.5.0: 主动盘点 (Context Review) — 老大 22:25 拍
+# ============================================================
+# 触发链路: 飞书用户说"盘点上下文/重新审视/回顾上下文"
+#         → mainbot 调本 endpoint (smr_request_id)
+#         → 返回 SwitchRecord 聚合报告
+#         → mainbot 拼成自然语言回复给用户
+#
+# 4 编码原则:
+# - 边界: 盘点是 admin 操作, 不是每次 chat completion 都跑
+# - 成本: 仅在用户主动说盘点时跑, 默认不消耗 LLM token
+# - 异常: smr_request_id 未找到 → 200 + {not_found: true, hint}
+# - 可观测性: reviews_total stat + e2e 测试覆盖
+
+@router.post("/v1/admin/context_review")
+async def admin_context_review(payload: dict | None = None):
+    """v3.5.0 主动盘点: 拿指定 smr_request_id 的 SwitchRecord 聚合报告
+
+    payload: {
+        "smr_request_id": str,       # 必填, mainbot 发的 _smr_request_id
+    }
+
+    响应: 见 context_bridge.get_review_report docstring
+    失败: 200 {ok: false, error: "...", smr_request_id: "..."}
+    """
+    if context_bridge is None:
+        return JSONResponse({"ok": False, "error": "context_bridge not initialized"}, status_code=503)
+    payload = payload or {}
+    smr_request_id = payload.get("smr_request_id", "").strip()
+    if not smr_request_id:
+        return JSONResponse({
+            "ok": False,
+            "error": "smr_request_id is required",
+            "hint": "mainbot 发的 chat completions body 应含 _smr_request_id (SMR 自动生成也支持, 从 response._router.smr_request_id 拿)",
+        }, status_code=400)
+    context_bridge.record_review()
+    report = context_bridge.get_review_report(smr_request_id)
+    if report is None:
+        return JSONResponse({
+            "ok": False,
+            "smr_request_id": smr_request_id,
+            "error": "not_found",
+            "hint": "smr_request_id 未在 SMR 跟踪 (可能已淘汰/重启/错的 ID). 重启后所有跟踪清零.",
+        }, status_code=404)
+    return JSONResponse({
+        "ok": True,
+        "report": report,
+    })
+
+
+@router.get("/v1/admin/context_review/list")
+async def admin_context_review_list(limit: int = 50):
+    """v3.5.0: 列出当前在跟踪的 smr_request_id (给 admin UI / debug 用)
+
+    ?limit=50 (默认)
+    """
+    if context_bridge is None:
+        return JSONResponse({"error": "context_bridge not initialized"}, status_code=503)
+    limit = max(1, min(limit, 200))
+    tracked = context_bridge.list_tracked_requests(limit=limit)
+    return JSONResponse({
+        "count": len(tracked),
+        "tracked": tracked,
+    })
+
+
+@router.get("/v1/admin/context_review/{smr_request_id}")
+async def admin_context_review_get(smr_request_id: str):
+    """v3.5.0: GET 版本盘点 (跟 POST 一样, 方便 curl 调试)"""
+    if context_bridge is None:
+        return JSONResponse({"ok": False, "error": "context_bridge not initialized"}, status_code=503)
+    if not smr_request_id:
+        return JSONResponse({"ok": False, "error": "smr_request_id is required"}, status_code=400)
+    context_bridge.record_review()
+    report = context_bridge.get_review_report(smr_request_id)
+    if report is None:
+        return JSONResponse({
+            "ok": False,
+            "smr_request_id": smr_request_id,
+            "error": "not_found",
+        }, status_code=404)
+    return JSONResponse({"ok": True, "report": report})

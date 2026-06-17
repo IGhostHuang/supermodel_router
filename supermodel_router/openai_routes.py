@@ -1,18 +1,34 @@
 """
 supermodel_router/openai_routes.py — OpenAI 兼容 API 路由 (v3.2.0 拆分)
 
-- /v1/chat/completions (含 stream + chain rotation v4)
+- /v1/chat/completions (含 stream + chain rotation v4 + context bridge v3.5.0)
 - /v1/images/generations
 - /v1/images/edits
 - /v1/embeddings
 - /v1/models
 - /v1/models/{model_id:path}
+
+v3.4.0 新增 (2026-06-17):
+- 切换模型时, 通过 ContextBridge 注入 system message 让新模型接续对话
+- 流式响应: 切到新 candidate 时, 发 SSE sentinel `data: {"_smr_bridge": {...}}` 标记
+- 非流式: response._router 加 switched_from + stale + age_seconds
+- 整个请求超过 stale_threshold_seconds 才标 stale (默认 30min)
+
+v3.5.0 新增 (2026-06-17 22:25 老大拍):
+- smr_request_id 嵌入: 每个请求生成/透传唯一 ID, 嵌到 response._router.smr_request_id
+  + chain_id 跨 candidate 一致. mainbot 收 response 时校验错配 → 丢弃
+- 切链 race condition 防御 (stream 模式): 切到下一 candidate 时, 显式
+  await current_agen.aclose() 关上游 httpx 连接, 防止旧模型的迟缓 reply
+  晚到错配新请求 (或飞书侧)
+- 主动盘点: body._smr_context_review=true → 调 SMR /v1/admin/context_review
+  拿 SwitchRecord 聚合 (v3.5.0)
 """
 import json
 import time
 import asyncio
 import logging
-from typing import cast, AsyncGenerator
+import uuid
+from typing import Any, cast, AsyncGenerator
 
 import httpx
 from fastapi import APIRouter, Request
@@ -28,18 +44,22 @@ from .detector import (
     detect_image_gen_params,
 )
 from .classifier import TEXT_ONLY, IMAGE_GEN
+from .context_bridge import ContextBridge, SwitchRecord
 
 LOG = logging.getLogger("openai_routes")
 router = APIRouter()
 
-registry = None
-engine = None
+registry: Any = None
+engine: Any = None
+# v3.4.0: 全局 ContextBridge 单例 (app.py 启动时 init 注入)
+context_bridge: ContextBridge | None = None
 
 
-def init(app_registry, app_engine):
-    global registry, engine
+def init(app_registry, app_engine, app_bridge: ContextBridge | None = None):
+    global registry, engine, context_bridge
     registry = app_registry
     engine = app_engine
+    context_bridge = app_bridge or ContextBridge()
 
 
 # ============================================================
@@ -48,10 +68,21 @@ def init(app_registry, app_engine):
 
 @router.post("/v1/chat/completions")
 async def chat_completions(request: Request):
-    """OpenAI-compatible chat completions — 自动检测输入/输出类型, 按模态路由"""
+    """OpenAI-compatible chat completions — 自动检测输入/输出类型, 按模态路由
+
+    v3.4.0: 切换模型时, ContextBridge 注入 system message 同步上下文 + 任务
+    v3.5.0: smr_request_id 嵌入 + 切链 abort + 主动盘点
+    """
     body = await request.json()
     requested_model = body.get("model", "auto")
     stream = detect_streaming(body)
+
+    # ── v3.5.0: smr_request_id + chain_id (防 race condition 错配) ──
+    # 透传优先: mainbot 发的请求已经有 _smr_request_id, 用它的; 否则生成
+    # chain_id 默认 = smr_request_id (单一请求一个 chain, 跨 candidate 不变)
+    smr_request_id = body.get("_smr_request_id") or str(uuid.uuid4())
+    chain_id = body.get("_smr_chain_id") or smr_request_id
+    request_start_time = time.time()
 
     # 鉴权
     api_key = config.server.get("api_key", "")
@@ -68,8 +99,8 @@ async def chat_completions(request: Request):
     output_mod = detect_chat_output_modality(body)
     preferred_modalities = match_modality_for_request(input_mod, output_mod)
 
-    LOG.debug("request: input=%s output=%s → modalities=%s model=%s",
-              input_mod, output_mod, preferred_modalities, requested_model)
+    LOG.debug("request: input=%s output=%s → modalities=%s model=%s smr_req_id=%s",
+              input_mod, output_mod, preferred_modalities, requested_model, smr_request_id[:8])
 
     # 路由 (v4: pick_chain traverse — 失败时自动切下一个候选)
     max_retry = config.routing.get("max_retry", 2)
@@ -83,6 +114,18 @@ async def chat_completions(request: Request):
             status_code=503,
         )
 
+    # v3.4.0: per-request 切换历史 + 请求起始时间
+    # v3.5.0: 也注册到 context_bridge (per-request 跟踪 + 主动盘点)
+    switch_history: list[SwitchRecord] = []
+    current_body = body  # 可能被 ContextBridge 注入改写
+    if context_bridge:
+        context_bridge.register_request(smr_request_id, {
+            "chain_id": chain_id,
+            "requested_model": requested_model,
+            "stream": stream,
+            "request_start_time": request_start_time,
+        })
+
     chain_idx = 0
     candidate = chain[0]
     route = candidate.materialize(registry)
@@ -92,6 +135,48 @@ async def chat_completions(request: Request):
             status_code=503,
         )
     route = route  # type: ignore[assignment]  # LSP narrowing fix
+
+    def _advance_to_next_chain(failure_status: str, failure_code: int,
+                                failure_msg: str, partial_text: str = "") -> tuple | None:
+        """切到下一个 candidate + 记录 SwitchRecord + inject body
+        返回 (新 candidate, 新 route, 新 body) 或 None (链耗尽)
+
+        v3.5.0: 同步到 context_bridge.per-request tracking
+        """
+        nonlocal chain_idx, route, candidate, current_body, switch_history
+        if chain_idx + 1 >= len(chain):
+            return None
+        # 记录这次失败
+        rec = SwitchRecord(
+            from_provider=route.provider_name,
+            from_model=route.model_id,
+            from_full_path=route.full_model_path,
+            partial_text=partial_text,
+            switch_time=time.time(),
+            request_start_time=request_start_time,
+            response_status=failure_status,
+            http_code=failure_code,
+            error_message=failure_msg[:500],
+            attempt_index=chain_idx,
+        )
+        switch_history.append(rec)
+        if context_bridge:
+            context_bridge.record_switch(rec)  # 全局 stats
+            context_bridge.append_switch_to_request(smr_request_id, rec)  # v3.5.0 per-request
+        # 切链
+        chain_idx += 1
+        candidate = chain[chain_idx]
+        new_route = candidate.materialize(registry)
+        if not new_route:
+            return None
+        route = new_route  # type: ignore[assignment]
+        # v3.4.0: inject 上下文到下一 candidate 的 body
+        if context_bridge and context_bridge.enabled and switch_history:
+            current_body = context_bridge.inject_into_body(current_body, switch_history)
+        LOG.info("v4 rotate (bridge): → %s (key_idx=%d, attempt=%d/%d, history=%d, smr_req_id=%s)",
+                 route.full_model_path, candidate.key_index,
+                 chain_idx + 1, len(chain), len(switch_history), smr_request_id[:8])
+        return (candidate, route, current_body)
 
     # v4: traverse 候选链 — 5xx/timeout/429 (短) 自动切下一个候选
     attempts = 0
@@ -107,35 +192,100 @@ async def chat_completions(request: Request):
         t0 = time.time()
         try:
             if stream:
-                # v4 修复 B6: stream 路径加 pre-flight check
-                # 用 GET /models 探针 (已有 key rotation 逻辑) — 失败抛异常让 outer while 切链
-                pf_url = f"{route.base_url.rstrip('/')}/models"
-                pf_headers = {"Authorization": f"Bearer {route.api_key}"}
-                async with httpx.AsyncClient(timeout=5.0) as pf_client:
-                    pf_resp = await pf_client.get(pf_url, headers=pf_headers)
-                if pf_resp.status_code != 200:
-                    raise httpx.HTTPStatusError(
-                        f"preflight HTTP {pf_resp.status_code}",
-                        request=pf_resp.request, response=pf_resp,
-                    )
-                # pre-flight OK, 真正 stream
-                agen = cast(AsyncGenerator, await proxy_chat_request(route, body, stream=True))
-                async def _stream_generator(route=route, t0=t0, candidate=candidate,
-                                            chain=chain, chain_idx=chain_idx):
-                    try:
-                        async for chunk in agen:
-                            yield chunk
-                        engine.record_success(route.provider_name, time.time() - t0)
-                    except Exception as e:
-                        engine.record_failure(route.provider_name, route.model_id, 0, str(e))
-                        LOG.exception("stream error to %s", route.full_model_path)
-                        yield f'data: {json.dumps({"error": str(e)})}\n\n'
+                # v3.4.0: 流式支持链切换
+                # v3.5.0: 切到下一 candidate 时, 显式 abort 上游 httpx (race condition 防御)
+                # 切到下一 candidate 时, 累积 partial_text + 发 sentinel
+                async def _stream_generator():
+                    nonlocal chain_idx, route, candidate, switch_history, current_body
+                    accumulated_text = ""
+                    current_agen: AsyncGenerator | None = None  # v3.5.0: 跟踪当前上游 gen
+                    while True:
+                        # v3.5.0: 切链时 abort 旧 gen (关上游 httpx 连接)
+                        if current_agen is not None and context_bridge and context_bridge.abort_on_switch:
+                            try:
+                                await current_agen.aclose()
+                                context_bridge.record_abort()
+                                LOG.info("v3.5.0 aborted upstream httpx on switch: smr_req_id=%s", smr_request_id[:8])
+                            except Exception as ae:
+                                LOG.warning("aclose() failed (best-effort): %s", ae)
+                        agen = cast(AsyncGenerator, await proxy_chat_request(route, current_body, stream=True))
+                        current_agen = agen  # v3.5.0: 跟踪
+                        try:
+                            # v3.4.0: 如果是切到的新 candidate, 在第一个 chunk 前发 sentinel
+                            is_continuation = chain_idx > 0 and bool(switch_history)
+                            sent_sentinel = False
+                            async for chunk in agen:
+                                if is_continuation and not sent_sentinel:
+                                    if context_bridge:
+                                        sentinel = context_bridge.build_sse_sentinel(switch_history)
+                                        if sentinel:
+                                            yield sentinel
+                                            context_bridge.record_sentinel_sent()
+                                sent_sentinel = True
+                                # 累积 chunk text (粗略提取 delta content)
+                                if chunk.startswith("data: ") and chunk.endswith("\n\n"):
+                                    payload = chunk[6:].strip()
+                                    if payload and payload != "[DONE]":
+                                        try:
+                                            obj = json.loads(payload)
+                                            delta = obj.get("choices", [{}])[0].get("delta", {})
+                                            content = delta.get("content", "")
+                                            if content:
+                                                accumulated_text += content
+                                        except Exception:
+                                            pass
+                                yield chunk
+                            # 流成功结束
+                            engine.record_success(route.provider_name, time.time() - t0)
+                            # v3.5.0: 流式 response 末尾发 _router meta chunk
+                            # 注: OpenAI 流协议无 _router 字段, 我们用 chunk 形式发出
+                            if context_bridge:
+                                bridge_meta = context_bridge.build_switched_from_metadata(switch_history)
+                                if bridge_meta:
+                                    router_chunk = {
+                                        "id": f"smr-finalize-{smr_request_id[:8]}",
+                                        "object": "chat.completion.chunk",
+                                        "created": int(time.time()),
+                                        "model": route.model_id,
+                                        "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+                                        "_smr_router": {
+                                            "smr_request_id": smr_request_id,  # v3.5.0
+                                            "chain_id": chain_id,  # v3.5.0
+                                            "provider": route.provider_name,
+                                            "model": route.model_id,
+                                            "full_path": route.full_model_path,
+                                            "latency_ms": round((time.time() - request_start_time) * 1000, 1),
+                                            "chain_position": chain_idx,
+                                            "chain_size": len(chain),
+                                            "request_age_seconds": int(time.time() - request_start_time),
+                                            **bridge_meta,
+                                        },
+                                    }
+                                    yield f"data: {json.dumps(router_chunk, ensure_ascii=False)}\n\n"
+                            return
+                        except Exception as e:
+                            LOG.warning("stream error to %s: %s (chain_idx=%d, history=%d)",
+                                        route.full_model_path, e, chain_idx, len(switch_history))
+                            engine.record_failure(route.provider_name, route.model_id, 0, str(e))
+                            # v3.4.0: 切到下一 candidate
+                            advance = _advance_to_next_chain(
+                                failure_status="stream_error",
+                                failure_code=0,
+                                failure_msg=f"stream interrupted: {e}",
+                                partial_text=accumulated_text,
+                            )
+                            if advance is None:
+                                # 链耗尽
+                                yield f'data: {json.dumps({"error": str(e)})}\n\n'
+                                return
+                            # 继续 while True 循环, 切到下一个 candidate 续流
+                            continue
                 return StreamingResponse(
                     _stream_generator(),
                     media_type="text/event-stream",
                 )
             else:
-                result = await proxy_chat_request(route, body, stream=False, timeout=300)
+                result = await proxy_chat_request(route, current_body, stream=False, timeout=300)
                 assert isinstance(result, dict), f"expected dict, got {type(result)}"
                 latency = time.time() - t0
                 if "error" in result:
@@ -143,27 +293,28 @@ async def chat_completions(request: Request):
                     error_msg = result.get("error", {}).get("message", "")
                     engine.record_failure(route.provider_name, route.model_id, http_code, error_msg)
                     last_error = result
-                    # v4: 切下一个候选 (key 或 model)
-                    chain_idx += 1
-                    if chain_idx >= len(chain):
+                    # v3.4.0: 切下一个 candidate, 记录 switch + inject
+                    advance = _advance_to_next_chain(
+                        failure_status=f"http_{http_code}" if http_code else "proxy_error",
+                        failure_code=http_code,
+                        failure_msg=error_msg,
+                    )
+                    if advance is None:
                         return JSONResponse(
                             last_error or {"error": {"message": "All candidates exhausted"}},
                             status_code=502,
                         )
-                    candidate = chain[chain_idx]
-                    route = candidate.materialize(registry)
-                    if not route:
-                        continue
-                    LOG.info("v4 rotate: → %s (key_idx=%d, score=%.1f, penalty=%.2f)",
-                             route.full_model_path, candidate.key_index,
-                             candidate.score, candidate.penalty)
+                    # 等待 backoff
                     if attempts <= max_retry:
                         ms = backoff_ms[min(attempts - 1, len(backoff_ms) - 1)]
                         if ms > 0:
                             await asyncio.sleep(ms / 1000)
                     continue
+                # 成功
                 engine.record_success(route.provider_name, latency)
-                result["_router"] = {
+                router_meta = {
+                    "smr_request_id": smr_request_id,  # v3.5.0: 错配检测
+                    "chain_id": chain_id,  # v3.5.0: 跨 candidate 一致
                     "provider": route.provider_name,
                     "model": route.model_id,
                     "full_path": route.full_model_path,
@@ -173,7 +324,13 @@ async def chat_completions(request: Request):
                     "key_index": candidate.key_index,
                     "chain_position": chain_idx,
                     "chain_size": len(chain),
+                    "request_age_seconds": int(time.time() - request_start_time),
                 }
+                # v3.4.0: 切换历史 + 过期标记
+                if context_bridge and switch_history:
+                    bridge_meta = context_bridge.build_switched_from_metadata(switch_history)
+                    router_meta.update(bridge_meta)
+                result["_router"] = router_meta
                 return JSONResponse(result)
         except httpx.TimeoutException:
             latency = time.time() - t0
@@ -181,24 +338,34 @@ async def chat_completions(request: Request):
                         route.full_model_path, attempts, latency)
             engine.record_failure(route.provider_name, route.model_id, 0, "timeout")
             last_error = {"error": {"message": "Upstream timeout", "type": "timeout"}}
+            # v3.4.0: 切链 + 记录
+            advance = _advance_to_next_chain(
+                failure_status="timeout",
+                failure_code=0,
+                failure_msg=f"upstream timeout after {latency:.1f}s",
+            )
+            if advance is None:
+                return JSONResponse(
+                    last_error or {"error": {"message": "All candidates exhausted"}},
+                    status_code=502,
+                )
         except Exception as e:
             LOG.exception("proxy error %s (attempt %d)", route.full_model_path, attempts)
             engine.record_failure(route.provider_name, route.model_id, 0, str(e))
             last_error = {"error": {"message": str(e), "type": "proxy_error"}}
-
-        # 失败 — 切下一个候选
-        chain_idx += 1
-        if chain_idx >= len(chain):
-            return JSONResponse(
-                last_error or {"error": {"message": "All candidates exhausted"}},
-                status_code=502,
+            # v3.4.0: 切链 + 记录
+            advance = _advance_to_next_chain(
+                failure_status="exception",
+                failure_code=0,
+                failure_msg=str(e),
             )
-        candidate = chain[chain_idx]
-        route = candidate.materialize(registry)
-        if not route:
-            continue
-        LOG.info("v4 rotate (exception): → %s (key_idx=%d)",
-                 route.full_model_path, candidate.key_index)
+            if advance is None:
+                return JSONResponse(
+                    last_error or {"error": {"message": "All candidates exhausted"}},
+                    status_code=502,
+                )
+
+        # 失败 — 等待 backoff
         if attempts <= max_retry:
             ms = backoff_ms[min(attempts - 1, len(backoff_ms) - 1)]
             if ms > 0:
@@ -339,4 +506,3 @@ async def get_model(model_id: str):
                 "capability_score": m.capability_score,
             })
     return JSONResponse({"error": "Model not found"}, status_code=404)
-

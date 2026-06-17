@@ -1,7 +1,14 @@
 """
 supermodel_router PyInstaller 入口
 打包时 PyInstaller 从这启动 Uvicorn
+
+支持的命令行参数 (跟 run.py 对齐):
+  --config PATH   配置文件路径
+  --host ADDR     监听地址
+  --port N        监听端口
+  --log-level LVL 日志级别 DEBUG/INFO/WARNING/ERROR
 """
+import argparse
 import os
 import sys
 import uvicorn
@@ -32,25 +39,45 @@ def find_config():
     return target
 
 
-if __name__ == "__main__":
-    config_path = find_config()
+def main():
+    parser = argparse.ArgumentParser(description="SuperModel Router v3.4.0")
+    parser.add_argument("--config", default=None, help="配置文件路径 (默认自动搜索)")
+    parser.add_argument("--host", default=None, help="监听地址 (覆盖 config)")
+    parser.add_argument("--port", type=int, default=None, help="监听端口 (覆盖 config)")
+    parser.add_argument(
+        "--log-level",
+        default="INFO",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+    )
+    args = parser.parse_args()
+
+    # 找配置
+    if args.config:
+        config_path = args.config
+        if not os.path.isabs(config_path):
+            config_path = os.path.abspath(config_path)
+    else:
+        config_path = find_config()
+
     os.environ["SUPERMODEL_CONFIG"] = config_path or ""
-    print(f"⚡ SuperModel Router v1.0")
+    print(f"⚡ SuperModel Router v3.4.0")
     print(f"📄 Config: {config_path or '(bundled default)'}")
 
-    # 从 config 读 host/port
-    host = "0.0.0.0"
-    port = 6473
+    # 从 config 读 host/port (命令行未给时)
+    host = args.host or "0.0.0.0"
+    port = args.port or 6473
     if config_path:
         try:
             import yaml
             with open(config_path) as f:
                 cfg = yaml.safe_load(f)
             server_cfg = cfg.get("server", {})
-            host = server_cfg.get("host", host)
-            port = server_cfg.get("port", port)
-        except Exception:
-            pass
+            if not args.host:
+                host = server_cfg.get("host", host)
+            if not args.port:
+                port = server_cfg.get("port", port)
+        except Exception as e:
+            print(f"⚠️  读 config 失败: {e}, 用默认值")
 
     print(f"🌐 Listening: http://{host}:{port}")
     print(f"📊 Dashboard: http://{host}:{port}/admin")
@@ -60,6 +87,10 @@ if __name__ == "__main__":
         "supermodel_router.app:app",
         host=host,
         port=port,
-        log_level="info",
+        log_level=args.log_level.lower(),
         reload=False,      # 生产模式禁止热重载
     )
+
+
+if __name__ == "__main__":
+    main()

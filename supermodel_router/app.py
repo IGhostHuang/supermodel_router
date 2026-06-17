@@ -27,6 +27,7 @@ from .classifier import (
     TEXT_ONLY, MULTIMODAL, IMAGE_GEN, VIDEO_GEN, AUDIO_GEN,
     get_modality_display,
 )
+from .context_bridge import ContextBridge  # v3.4.0
 
 LOG = logging.getLogger("app")
 
@@ -54,6 +55,8 @@ def _refresh_async(registry, *, tag: str = "refresh"):
 registry: ModelRegistry = None
 engine: RouteEngine = None
 model_manager: Any = None
+# v3.4.0: 上下文桥接 + 过期标记引擎
+context_bridge: ContextBridge | None = None
 _start_time: float = 0
 
 
@@ -66,6 +69,14 @@ async def lifespan(app: FastAPI):
     registry.build()
     registry.refresh_all()
     engine = RouteEngine(config, registry)
+
+    # v3.4.0: ContextBridge — 上下文桥接 + 过期标记 (老大 22:00 拍)
+    global context_bridge
+    bridge_cfg = config.data.get("context_bridge", {}) or {}
+    context_bridge = ContextBridge(bridge_cfg)
+    LOG.info("ContextBridge v%s initialized: enabled=%s threshold=%ds max_history=%d",
+             context_bridge.version, context_bridge.enabled,
+             context_bridge.stale_threshold_s, context_bridge.max_history)
 
     # v3.3: ModelManager — 模型管理 (Discovery + Notifier + Lists + AutoRules)
     from .model_manager import ModelManager
@@ -113,8 +124,9 @@ async def lifespan(app: FastAPI):
                  len(registry.get_model_ids()), len(registry._providers))
 
     # v3.2.0: 把 registry/engine/_start_time 注入到子路由模块 (on_event deprecated)
-    openai_init(registry, engine)
-    admin_api_init(registry, engine, model_manager, _start_time)
+    # v3.4.0: 同时注入 context_bridge
+    openai_init(registry, engine, context_bridge)
+    admin_api_init(registry, engine, model_manager, _start_time, context_bridge)
 
     yield
     config.stop_watcher()
@@ -126,9 +138,9 @@ try:
     from .version import BUILD_DATE as SMR_BUILD_DATE
     SMR_APP_TITLE = f"SuperModel Router v{SMR_VERSION}"
 except Exception:
-    SMR_VERSION = "3.3.0"
+    SMR_VERSION = "3.4.0"
     SMR_BUILD_DATE = "2026-06-17"
-    SMR_APP_TITLE = "SuperModel Router v3.3.0"
+    SMR_APP_TITLE = "SuperModel Router v3.4.0"
 
 app = FastAPI(title=SMR_APP_TITLE, version=SMR_VERSION, lifespan=lifespan)
 
