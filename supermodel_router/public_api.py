@@ -222,20 +222,52 @@ class PublicKeyManager:
             return True
 
     def check_model_filter(self, meta: Dict[str, Any], model: str) -> bool:
-        """model_filter 白名单, True = 允许, False = 拒绝"""
+        """model_filter 白名单, True = 允许, False = 拒绝
+
+        支持三类匹配方式:
+        1. 完全相等 ``pattern == model``
+        2. 前缀通配 ``prefix*`` → ``model.startswith(prefix)`` (原有行为)
+        3. 后缀通配 ``*suffix`` → ``model.endswith(suffix)``
+        4. 包含匹配 ``*sub*`` 或 ``sub`` → ``sub in model``
+
+        这保持向后兼容, 并满足用户对 ``*:free`` 或 ``gpt-4*`` 等需求。
+        """
         flt = meta.get("model_filter", [])
-        if not flt:  # 空 = 全部允许
+        if not flt:
+            # 空白名单 = 所有模型均可用
             return True
-        # 兼容: gpt-4 也匹配 gpt-4*
         for pattern in flt:
+            # Exact match
             if pattern == model:
                 return True
-            if pattern.endswith("*") and model.startswith(pattern[:-1]):
+            # Prefix wildcard, e.g. "gpt-4*"
+            if pattern.endswith("*") and not pattern.startswith("*"):
+                if model.startswith(pattern[:-1]):
+                    return True
+                continue
+            # Suffix wildcard, e.g. "*free"
+            if pattern.startswith("*") and pattern.endswith("*") and len(pattern) > 2:
+                # "*sub*" pattern – treat as containment
+                sub = pattern.strip("*")
+                if sub in model:
+                    return True
+                continue
+            if pattern.startswith("*"):
+                # "*suffix" pattern
+                suffix = pattern[1:]
+                if model.endswith(suffix):
+                    return True
+                continue
+            # Simple containment without wildcards
+            if pattern and pattern in model:
                 return True
         return False
 
     def record_usage(self, key_hash: str, success: bool, tokens: int = 0):
-        """请求完成时记录 (success/fail + tokens)"""
+        """请求完成时记录 (success/fail + tokens)
+
+        v3.7.1 (P0 BUG-006 fix): 加 _dirty + _flush, 容器重启不丢 per-tenant 用量
+        """
         with self._lock:
             u = self._usage.setdefault(key_hash, {})
             u["total_calls"] = u.get("total_calls", 0) + 1
@@ -245,6 +277,7 @@ class PublicKeyManager:
                 u["fail_calls"] = u.get("fail_calls", 0) + 1
             u["tokens"] = u.get("tokens", 0) + tokens
             u["last_used"] = time.time()
+            self._save_async()  # 标 dirty + 触发 debounce flush
 
     def get_all_usage(self) -> Dict[str, Any]:
         """全局用量汇总 (admin 用)"""

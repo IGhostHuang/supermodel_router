@@ -55,7 +55,7 @@ providers:
     enabled: true
     base_url: https://openrouter.ai/api/v1
     api_keys:
-    - ''
+    - <OPENROUTER_API_KEY_PLACEHOLDER>
     model_rules:
       mode: pattern
       pattern: .*-free$|.*free.*
@@ -63,7 +63,7 @@ providers:
     max_concurrent: 2
     health_check_interval: 300
   newapi:
-    enabled: true
+    enabled: false
     base_url: https://your-newapi-endpoint/v1
     api_keys:
     - ''
@@ -88,25 +88,16 @@ providers:
     max_concurrent: 3
     health_check_interval: 600
   volc_ark:
-    # 火山引擎 ARK — coding plan + agent plan (OpenAI 兼容)
-    # 端点: https://ark.cn-beijing.volces.com/api/v3
-    # Key 获取: 火山引擎控制台 → 在线推理 → API Key 管理
-    # 模型说明:
-    #   - doubao-seed-code / doubao-seed-coder = coding plan 主力 (编程任务)
-    #   - doubao-1-5-pro-32k/256k = agent plan 主力 (智能体通用)
-    #   - doubao-pro-32k/256k = 老款 pro (便宜)
-    #   - doubao-lite-32k = 最便宜 (简单任务)
-    # 完整指南: hot-cache/2026-06-17-1410-volc-ark-coding-plan-接入方案+使用说明.md
-    enabled: false                                  # 填完 api_keys 后改成 true
+    enabled: false
     base_url: https://ark.cn-beijing.volces.com/api/v3
     api_keys:
-    - ''                                            # ← 在这里填 ARK_API_KEY
+    - ''
     model_rules:
       mode: include
       include:
-      - doubao-seed-code                            # coding plan
+      - doubao-seed-code
       - doubao-seed-coder
-      - doubao-1-5-pro-32k                          # agent plan
+      - doubao-1-5-pro-32k
       - doubao-1-5-pro-256k
       - doubao-pro-32k
       - doubao-pro-256k
@@ -116,34 +107,21 @@ providers:
     health_check_interval: 300
 model_management:
   enabled: true
-  state_dir: /root/projects/supermodel_router
+  state_dir: /app/state
   discovery:
     schedule: 600
     notify_on_change: true
   webhook:
-    url: ""
+    url: ''
     headers: {}
 classifier:
   tier_bonus:
     pro: 35
-
-# v3.4.0 (2026-06-17 22:00 老大拍): 上下文桥接 + 过期标记
-# - 切换模型时, 在新 candidate 的 body.messages 头部注入 system message
-#   (含前面失败的 model + 错误 + 已流出 partial text)
-# - 切到新 candidate 的时间距请求开始 > stale_threshold_seconds → 标 stale
-# - 流式响应: 在新流首 chunk 前发 SSE sentinel `data: {"_smr_bridge": {...}}`
-# - 非流式: response._router.switched_from + stale + age_seconds
-# v3.5.0 (2026-06-17 22:25 老大拍): 主动盘点 + 切链 abort + smr_request_id
-# - 主动盘点: POST /v1/admin/context_review 拿 smr_request_id 聚合报告
-# - 切链 abort: stream 模式切链时显式 aclose() 上游 httpx, 防 race condition
-# - smr_request_id: response._router.smr_request_id + chain_id 嵌入, 防错配
 context_bridge:
   enabled: true
-  stale_threshold_seconds: 1800   # 30 分钟 (默认)
-  max_history: 5                   # 最多保留 5 次切换历史
-  sentinel_enabled: true          # 流式 sentinel 开关
-  abort_on_switch: true           # v3.5.0: 切链 abort (默认开, 关 = 老模型慢回复会晚到)
-  max_tracked_requests: 1000      # v3.5.0: per-request 跟踪最大数 (FIFO 淘汰)
-  version: "3.5.0"
-  # inject_template: 可自定义, 留空用默认模板
-  # (默认模板含 [SMR 上下文桥接 v{version}] 标识 + 切换列表 + 任务指令)
+  stale_threshold_seconds: 1800
+  max_history: 5
+  sentinel_enabled: true
+  abort_on_switch: true
+  max_tracked_requests: 1000
+  version: 3.5.0

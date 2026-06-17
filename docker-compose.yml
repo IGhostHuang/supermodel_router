@@ -16,6 +16,9 @@ services:
       - ./config.yaml:/app/config.yaml:ro
       # 可选: 日志持久化
       - ./logs:/app/logs
+      # v3.7.1 (P2 BUG-006 fix): 持久化 state (public_keys_state.json + model_rules_state.json)
+      # 容器重启 = 不丢 per-tenant key + 用量统计
+      - ./state:/app/state
     environment:
       - LOG_LEVEL=INFO
       - HOST=0.0.0.0

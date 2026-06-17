@@ -14,3 +14,12 @@ dist/
 .backups/
 pip-cache/
 dist_windows/
+
+# Secrets & state (避免 push protection 拦截)
+config.local.yaml
+**/keys.json
+**/key_vault/
+**/secrets/
+state/
+*.state.json
+.env.local
