@@ -23,6 +23,55 @@ VIDEO_GEN = "video-gen"
 AUDIO_GEN = "audio-gen"
 EMBEDDING = "embedding"
 
+# v3.6: 模型收费类型 (provider 层面 + 模型名关键词)
+PRICING_FREE = "free"
+PRICING_PAID = "paid"
+PRICING_UNKNOWN = "unknown"
+
+# 已知免费 provider (整 provider 都是免费模型)
+FREE_PROVIDERS: set[str] = {
+    "ollama",            # 本地部署, 永远免费
+    "lm-studio",         # 本地
+    "vllm",              # 本地
+    "nvidia-nim-local",  # 本地 NIM
+}
+
+# 已知付费 provider (默认都是付费, 除非模型名带 free 关键词)
+PAID_PROVIDERS: set[str] = {
+    "openai",
+    "anthropic",
+    "google",
+    "mistral",
+    "cohere",
+    "deepseek",
+    "moonshot",
+    "zhipu",
+    "yi",
+    "openrouter",        # 多数付费, 但有 free 关键词的免费
+    "newapi",            # 转发, 看模型名判断
+    "siliconflow",       # 多数付费
+    "dashscope",         # 多数付费
+    "volcengine",        # 付费
+    "freemodel",         # 看名字
+}
+
+# 混和 (NVIDIA NIM 多数免费, 部分付费; openrouter 多数付费, 部分免费)
+MIXED_PROVIDERS: set[str] = {
+    "nvidia",            # NVIDIA NIM 有 free + paid
+}
+
+# 免费模型名关键词 (大小写不敏感)
+FREE_KEYWORDS: tuple[str, ...] = (
+    ":free",             # openrouter 命名: xxx:free
+    "-free",             # 部分: deepseek-v3:free
+    "_free",             # 部分
+    "free-",             # 部分
+    "/free/",            # 部分
+    "llama-3",           # nvidia nim 多数免费
+    "nemotron",          # nvidia nim 多数免费
+    "llama-3.1-405b-instruct",  # nvidia nim 免费
+)
+
 # 所有模态
 ALL_MODALITIES = [TEXT_ONLY, MULTIMODAL, IMAGE_GEN, VIDEO_GEN, AUDIO_GEN, EMBEDDING]
 
@@ -94,6 +143,33 @@ def get_modality_base_score(config_obj=None) -> dict[str, int]:
     merged = dict(MODALITY_BASE_SCORE)
     merged.update(user_score)
     return merged
+
+
+# ── v3.6: 模型收费类型分类 ───────────────────────────────
+
+def classify_pricing(provider_name: str, model_id: str) -> str:
+    """v3.6: 判断模型收费类型
+    规则:
+    1. provider 在 FREE_PROVIDERS → free
+    2. provider 在 PAID_PROVIDERS:
+       - 模型名含 free 关键词 → free
+       - 其他 → paid
+    3. provider 在 MIXED_PROVIDERS (nvidia):
+       - 模型名含 free 关键词 → free
+       - 其他 → paid (默认保守)
+    4. 其他 (未知 provider) → unknown
+    """
+    pn = (provider_name or "").lower()
+    mid = (model_id or "").lower()
+    if pn in FREE_PROVIDERS:
+        return PRICING_FREE
+    # 任何 provider 只要模型名带 free 关键词 → free
+    for kw in FREE_KEYWORDS:
+        if kw in mid:
+            return PRICING_FREE
+    if pn in PAID_PROVIDERS or pn in MIXED_PROVIDERS:
+        return PRICING_PAID
+    return PRICING_UNKNOWN
 
 # ── 分类规则: (pattern, modality) ──────────────────────────
 

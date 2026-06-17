@@ -51,6 +51,24 @@ def init(app_registry, app_engine, app_model_manager, start_time, app_bridge: Co
     context_bridge = app_bridge
 
 
+def _refresh_async(reg, tag: str = "manual", only: str | None = None):
+    """v3.6: 异步刷新 model registry (不阻塞 HTTP 响应)
+    tag: 日志标记 (add:openai / delete:anthropic / refresh:openrouter)
+    only: 只刷一个 provider name, 走 reg.refresh_provider(name) (待实现, 暂走 refresh_all)
+    """
+    import threading
+    def _do():
+        try:
+            if only and hasattr(reg, "refresh_provider"):
+                reg.refresh_provider(only)
+            else:
+                reg.refresh_all()
+        except Exception as e:
+            import logging
+            logging.getLogger("admin").exception("background refresh failed (%s): %s", tag, e)
+    threading.Thread(target=_do, daemon=True, name=f"refresh-{tag}").start()
+
+
 @router.get("/v1/health")
 async def health():
     from .version import VERSION as CURRENT_VERSION, BUILD_DATE
@@ -81,10 +99,69 @@ async def admin_modalities():
 
 @router.get("/v1/admin/routes")
 async def admin_routes():
-    return JSONResponse({
-        "routes": registry.all_routes(),
-        "total": len(registry.all_routes()),
-    })
+    """v3.6: 路由列表 + 模型详情 (含 pricing_type)"""
+    from .classifier import classify_pricing
+    out = []
+    for r in registry.all_routes():
+        # r 格式: "provider/model_id"
+        if "/" in r:
+            p, mid = r.split("/", 1)
+            pricing = classify_pricing(p, mid)
+            out.append({"route": r, "provider": p, "model": mid, "pricing": pricing})
+        else:
+            out.append({"route": r, "provider": "?", "model": r, "pricing": "unknown"})
+    return JSONResponse({"routes": out, "total": len(out)})
+
+
+@router.get("/v1/admin/models")
+async def admin_models(provider: str | None = None, pricing: str | None = None):
+    """v3.6: 详细模型列表 (含 pricing_type, capability_score, modality)
+    query: ?provider=openrouter 过滤 provider
+           ?pricing=free       过滤收费类型
+    """
+    from .classifier import classify_pricing, PRICING_FREE
+    out = []
+    for ps in registry._providers.values():
+        if provider and ps.name != provider:
+            continue
+        for m in ps.models:
+            p = classify_pricing(ps.name, m.id)
+            if pricing and p != pricing:
+                continue
+            out.append({
+                "id": m.id,
+                "provider": ps.name,
+                "modality": m.modality,
+                "modality_display": m.modality_display,
+                "capability_score": m.capability_score,
+                "pricing": p,
+                "is_free": p == PRICING_FREE,
+                "base_url": ps.base_url,
+            })
+    return JSONResponse({"models": out, "total": len(out)})
+
+
+@router.get("/v1/admin/providers")
+async def admin_providers_list(include_disabled: bool = True):
+    """v3.6: provider 列表 (含 enabled 状态)"""
+    from .models import KNOWN_BASE_URLS
+    out = []
+    for pname, pcfg in (config.get("providers") or {}).items():
+        enabled = pcfg.get("enabled", True)
+        if not include_disabled and not enabled:
+            continue
+        keys = pcfg.get("api_keys", [])
+        out.append({
+            "name": pname,
+            "enabled": enabled,
+            "base_url": pcfg.get("base_url", ""),
+            "is_known": pname.lower() in KNOWN_BASE_URLS,
+            "key_count": len(keys),
+            "key_fingerprint": keys[0][:8] + "..." + keys[0][-4:] if keys and len(keys[0]) > 12 else ("***" if keys else ""),
+            "model_rules": pcfg.get("model_rules", {"mode": "all"}),
+            "max_concurrent": pcfg.get("max_concurrent", 3),
+        })
+    return JSONResponse({"providers": out, "total": len(out)})
 
 
 @router.get("/v1/admin/stats")
@@ -102,11 +179,23 @@ async def admin_refresh():
 
 
 @router.post("/v1/admin/config/reload")
-async def admin_config_reload():
-    config.load()
+async def admin_config_reload(mode: str = "memory"):
+    """v3.6: 重新加载配置
+    - mode=memory (default): 只 rebuild registry + refresh, 不重读 yaml
+      适用: UI 上 add/update/delete provider 后, 想立即刷新路由
+    - mode=disk: 强制从 yaml 重读 (用户手动改 yaml 后)
+      注意: 会用 yaml 内容覆盖 in-memory (如果有未 persist 的改动会丢)
+    """
+    if mode == "disk":
+        config.load()
+    # memory 模式不动 config.data, add/update/delete 已经改 in-memory 了
     registry.build()
     registry.refresh_all()
-    return JSONResponse({"ok": True})
+    return JSONResponse({
+        "ok": True,
+        "mode": mode,
+        "providers": registry.get_state(),
+    })
 
 
 @router.get("/v1/admin/config")
@@ -149,7 +238,9 @@ async def admin_providers_add(payload: dict):
     pcfg.setdefault("enabled", True)
     pcfg.setdefault("max_concurrent", 3)
     pcfg.setdefault("model_rules", {"mode": "all"})
-    pcfg["base_url"] = pcfg["base_url"].rstrip("/")
+    # v3.6 自动补全 base_url (用户填 openrouter.ai/api → https://openrouter.ai/api/v1)
+    from .models import normalize_base_url
+    pcfg["base_url"] = normalize_base_url(name, pcfg["base_url"])
 
     ok = config.add_provider(name, pcfg)
     if not ok:
@@ -171,17 +262,274 @@ async def admin_providers_add(payload: dict):
 
 
 @router.delete("/v1/admin/providers/{name}")
-async def admin_providers_delete(name: str):
-    """删除自定义 provider"""
-    ok = config.remove_provider(name)
-    if not ok:
-        return JSONResponse(
-            {"error": f"provider '{name}' not found"},
-            status_code=404,
-        )
+async def admin_providers_delete(name: str, force: bool = False):
+    """v3.6: 删除 provider
+    - force=false (默认): 软删除 = enabled=False, 可恢复
+    - force=true: 硬删除 (仅对已停用的 provider 允许, 防止误删)
+    """
+    if force:
+        ok = config.hard_remove_provider(name)
+        if not ok:
+            return JSONResponse(
+                {"error": f"provider '{name}' not found or still enabled, disable first"},
+                status_code=400,
+            )
+    else:
+        ok = config.remove_provider(name)
+        if not ok:
+            return JSONResponse(
+                {"error": f"provider '{name}' not found"},
+                status_code=404,
+            )
     registry.build()
-    registry.refresh_all()
-    return JSONResponse({"ok": True, "name": name})
+    _refresh_async(registry, tag=f"delete:{name}")
+    return JSONResponse({"ok": True, "name": name, "soft": not force})
+
+
+@router.post("/v1/admin/providers/{name}/enable")
+async def admin_providers_enable(name: str):
+    """v3.6: 启用 provider"""
+    ok = config.set_provider_enabled(name, True)
+    if not ok:
+        return JSONResponse({"error": f"provider '{name}' not found"}, status_code=404)
+    registry.build()
+    _refresh_async(registry, tag=f"enable:{name}")
+    return JSONResponse({"ok": True, "name": name, "enabled": True})
+
+
+@router.post("/v1/admin/providers/{name}/disable")
+async def admin_providers_disable(name: str):
+    """v3.6: 停用 provider"""
+    ok = config.set_provider_enabled(name, False)
+    if not ok:
+        return JSONResponse({"error": f"provider '{name}' not found"}, status_code=404)
+    registry.build()
+    return JSONResponse({"ok": True, "name": name, "enabled": False})
+
+
+# v3.6.0: API Key 独立管理 (Phase G)
+import hashlib
+def _fingerprint_key(key: str) -> str:
+    """生成 key 指纹 (sha256 前 12 字符, 脱敏但能识别)"""
+    if not key:
+        return ""
+    h = hashlib.sha256(key.encode("utf-8")).hexdigest()
+    return f"sha256:{h[:12]}"
+
+
+@router.get("/v1/admin/api-keys")
+async def admin_api_keys_list(provider: str | None = None):
+    """列出所有 provider 的 API key 摘要 (脱敏指纹 + 数量, 不含真实 key)."""
+    providers = config.data.get("providers", {})
+    items = []
+    for name, pcfg in providers.items():
+        if provider and name != provider:
+            continue
+        keys = pcfg.get("api_keys", [])
+        # 算联合 fingerprint (所有 key 拼一起的 sha256)
+        joined = "|".join(keys)
+        items.append({
+            "provider": name,
+            "count": len(keys),
+            "fingerprint": _fingerprint_key(joined) if keys else None,
+            "preview": [
+                (k[:8] + "..." + k[-4:]) if len(k) > 12 else "***"
+                for k in keys
+            ],
+            "enabled": pcfg.get("enabled", True),
+        })
+    return JSONResponse({"version": "3.6.0", "count": len(items), "keys": items})
+
+
+@router.post("/v1/admin/api-keys")
+async def admin_api_keys_add(payload: dict):
+    """为某个 provider 添加新的 API key (追加到现有 keys 列表).
+    payload = {"provider": "myopenai", "api_key": "sk-xxx"}
+    """
+    provider = (payload.get("provider") or "").strip()
+    api_key = (payload.get("api_key") or "").strip()
+    if not provider or not api_key:
+        return JSONResponse({"error": "provider and api_key required"}, status_code=400)
+    pcfg = config.get("providers", provider)
+    if not pcfg:
+        return JSONResponse({"error": f"provider '{provider}' not found"}, status_code=404)
+    existing = list(pcfg.get("api_keys", []))
+    if api_key in existing:
+        return JSONResponse({"error": "api_key already exists for this provider"}, status_code=409)
+    existing.append(api_key)
+    ok = config.update_provider(provider, {"api_keys": existing})
+    if not ok:
+        return JSONResponse({"error": "update_provider failed"}, status_code=500)
+    # 触发一次 refresh (新 key 可能解锁新 model)
+    _refresh_async(registry, tag=f"addkey:{provider}")
+    return JSONResponse({
+        "ok": True,
+        "provider": provider,
+        "count": len(existing),
+        "added_fingerprint": _fingerprint_key(api_key),
+    })
+
+
+@router.delete("/v1/admin/api-keys/{provider}")
+async def admin_api_keys_clear(provider: str, key_index: int | None = None):
+    """清空 provider 的所有 API key (或指定 index 删除一个).
+    query: ?key_index=N 删除第 N 个 (0-based)
+    """
+    pcfg = config.get("providers", provider)
+    if not pcfg:
+        return JSONResponse({"error": f"provider '{provider}' not found"}, status_code=404)
+    existing = list(pcfg.get("api_keys", []))
+    if not existing:
+        return JSONResponse({"error": "no keys to remove"}, status_code=400)
+    if key_index is not None:
+        if key_index < 0 or key_index >= len(existing):
+            return JSONResponse({"error": f"key_index {key_index} out of range (0-{len(existing)-1})"}, status_code=400)
+        removed = existing.pop(key_index)
+        ok = config.update_provider(provider, {"api_keys": existing})
+        if not ok:
+            return JSONResponse({"error": "update_provider failed"}, status_code=500)
+        return JSONResponse({
+            "ok": True,
+            "provider": provider,
+            "removed_fingerprint": _fingerprint_key(removed),
+            "remaining": len(existing),
+        })
+    # 全清
+    ok = config.update_provider(provider, {"api_keys": []})
+    if not ok:
+        return JSONResponse({"error": "update_provider failed"}, status_code=500)
+    return JSONResponse({"ok": True, "provider": provider, "cleared": True, "remaining": 0})
+
+
+# v3.6.0: 复制 provider (Phase F)
+@router.post("/v1/admin/providers/{name}/clone")
+async def admin_providers_clone(name: str, payload: dict | None = None):
+    """复制一个 provider 为新名称.
+    payload = {"new_name": "myopenai_copy"}
+    api_keys 不复制 (用占位 key, 防止 key 泄露到配置历史)
+    """
+    pcfg = config.get("providers", name)
+    if not pcfg:
+        return JSONResponse({"error": f"provider '{name}' not found"}, status_code=404)
+    payload = payload or {}
+    new_name = payload.get("new_name", "").strip()
+    if not new_name:
+        return JSONResponse({"error": "new_name required"}, status_code=400)
+    if new_name == name:
+        return JSONResponse({"error": "new_name must differ from original"}, status_code=400)
+    if config.get("providers", new_name):
+        return JSONResponse({"error": f"provider '{new_name}' already exists"}, status_code=409)
+    import copy
+    new_cfg = copy.deepcopy(pcfg)
+    new_cfg["api_keys"] = [f"REPLACE_ME_{name}"]
+    new_cfg["enabled"] = True
+    from .models import normalize_base_url
+    new_cfg["base_url"] = normalize_base_url(new_name, new_cfg.get("base_url", ""))
+    ok = config.add_provider(new_name, new_cfg)
+    if not ok:
+        return JSONResponse({"error": "add_provider failed"}, status_code=500)
+    registry.build()
+    _refresh_async(registry, tag=f"clone:{name}->{new_name}")
+    return JSONResponse({
+        "ok": True,
+        "name": new_name,
+        "cloned_from": name,
+        "config": new_cfg,
+        "hint": f"api_keys 用占位 'REPLACE_ME_{name}', 真实 key 需用 UI / API 重新填入",
+    })
+
+
+# v3.6.0: 导出所有 provider 配置 (Phase F)
+@router.get("/v1/admin/providers/export")
+async def admin_providers_export(include_disabled: bool = True, include_keys: bool = False):
+    """导出 provider 配置为 JSON.
+    include_keys=False (默认): api_keys 替换为占位, 防止 secret 泄露
+    include_keys=True: 真实 api_keys 一起导出 (高风险, 仅本机使用)
+    """
+    providers = config.data.get("providers", {})
+    out = []
+    for name, pcfg in providers.items():
+        if not include_disabled and not pcfg.get("enabled", True):
+            continue
+        import copy
+        item = {"name": name, "config": copy.deepcopy(pcfg)}
+        if not include_keys:
+            item["config"]["api_keys"] = [f"REDACTED_{i}" for i in range(len(pcfg.get("api_keys", [])))]
+        out.append(item)
+    return JSONResponse({
+        "version": "3.6.0",
+        "exported_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "include_keys": include_keys,
+        "providers": out,
+    })
+
+
+# v3.6.0: 导入 provider 配置 (Phase F)
+@router.post("/v1/admin/providers/import")
+async def admin_providers_import(payload: dict):
+    """导入 provider 配置 (来自 /v1/admin/providers/export).
+    payload = {"providers": [{"name": "x", "config": {...}}, ...]}
+    - 已存在的 provider: 跳过 (skip), 避免覆盖
+    - 新 provider: 添加
+    - api_keys 是 REDACTED 占位的: 拒绝 (必须填真 key)
+    - 失败的: 返回 failed 列表
+    """
+    items = payload.get("providers", [])
+    if not isinstance(items, list) or not items:
+        return JSONResponse({"error": "providers list required"}, status_code=400)
+    added, skipped, failed = [], [], []
+    from .models import normalize_base_url
+    for it in items:
+        name = it.get("name", "").strip()
+        pcfg = it.get("config", {})
+        if not name or not pcfg.get("base_url"):
+            failed.append({"name": name or "?", "reason": "missing name or base_url"})
+            continue
+        keys = pcfg.get("api_keys", [])
+        if any(k.startswith("REDACTED_") for k in keys):
+            failed.append({"name": name, "reason": "api_keys are REDACTED placeholders, fill real keys first"})
+            continue
+        pcfg.setdefault("enabled", True)
+        pcfg.setdefault("max_concurrent", 3)
+        pcfg.setdefault("model_rules", {"mode": "all"})
+        pcfg["base_url"] = normalize_base_url(name, pcfg["base_url"])
+        if config.get("providers", name):
+            skipped.append(name)
+            continue
+        ok = config.add_provider(name, pcfg)
+        if ok:
+            added.append(name)
+        else:
+            failed.append({"name": name, "reason": "add_provider returned False"})
+    if added:
+        registry.build()
+        for name in added:
+            _refresh_async(registry, tag=f"import:{name}", only=name)
+    return JSONResponse({
+        "ok": True,
+        "added": added,
+        "skipped": skipped,
+        "failed": failed,
+        "summary": f"added={len(added)} skipped={len(skipped)} failed={len(failed)}",
+    })
+
+
+@router.post("/v1/admin/providers/{name}/refresh")
+async def admin_providers_refresh(name: str):
+    """v3.6: 单独刷新一个 provider 的模型列表 (针对性获取)"""
+    pcfg = config.get("providers", name)
+    if not pcfg:
+        return JSONResponse({"error": f"provider '{name}' not found"}, status_code=404)
+    if not pcfg.get("enabled", True):
+        return JSONResponse({"error": f"provider '{name}' is disabled"}, status_code=400)
+    # 触发单 provider refresh (异步)
+    _refresh_async(registry, tag=f"refresh:{name}", only=name)
+    return JSONResponse({
+        "ok": True,
+        "name": name,
+        "refreshing": True,
+        "hint": f"fetching models from {pcfg.get('base_url')}",
+    })
 
 
 @router.put("/v1/admin/providers/{name}")
@@ -190,6 +538,10 @@ async def admin_providers_update(name: str, payload: dict):
     pcfg = payload.get("config", {})
     if not pcfg:
         return JSONResponse({"error": "config required"}, status_code=400)
+    # v3.6: 如果更新了 base_url, 自动 normalize
+    if "base_url" in pcfg:
+        from .models import normalize_base_url
+        pcfg["base_url"] = normalize_base_url(name, pcfg["base_url"])
     ok = config.update_provider(name, pcfg)
     if not ok:
         return JSONResponse(
@@ -197,8 +549,8 @@ async def admin_providers_update(name: str, payload: dict):
             status_code=404,
         )
     registry.build()
-    registry.refresh_all()
-    return JSONResponse({"ok": True, "name": name})
+    _refresh_async(registry, tag=f"update:{name}")
+    return JSONResponse({"ok": True, "name": name, "config": pcfg})
 
 
 # ============================================================

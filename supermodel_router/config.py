@@ -112,6 +112,8 @@ class Config:
             if name in self._data["providers"]:
                 LOG.warning("add_provider: '%s' already exists, use update", name)
                 return False
+            # v3.6: 默认 enabled=True
+            pcfg.setdefault("enabled", True)
             self._data["providers"][name] = pcfg
             if persist:
                 self._save_yaml()
@@ -120,16 +122,47 @@ class Config:
             return True
 
     def remove_provider(self, name: str, persist: bool = True) -> bool:
-        """删除 provider"""
+        """v3.6: 软删除 = enabled=False, 不真删 (UI 可恢复)
+        真删用 hard_remove_provider, 仅对已软删的 provider 允许
+        """
         with self._lock:
             providers = self._data.get("providers", {})
             if name not in providers:
+                return False
+            providers[name]["enabled"] = False
+            if persist:
+                self._save_yaml()
+            self._notify_change()
+            LOG.info("Provider soft-removed (disabled): %s", name)
+            return True
+
+    def hard_remove_provider(self, name: str, persist: bool = True) -> bool:
+        """v3.6: 真删 provider, 只有 enabled=False 才允许"""
+        with self._lock:
+            providers = self._data.get("providers", {})
+            if name not in providers:
+                return False
+            if providers[name].get("enabled", True):
+                LOG.warning("hard_remove_provider: '%s' still enabled, must disable first", name)
                 return False
             del providers[name]
             if persist:
                 self._save_yaml()
             self._notify_change()
-            LOG.info("Provider removed: %s", name)
+            LOG.info("Provider hard-removed: %s", name)
+            return True
+
+    def set_provider_enabled(self, name: str, enabled: bool, persist: bool = True) -> bool:
+        """v3.6: 启/停 provider (toggle)"""
+        with self._lock:
+            providers = self._data.get("providers", {})
+            if name not in providers:
+                return False
+            providers[name]["enabled"] = bool(enabled)
+            if persist:
+                self._save_yaml()
+            self._notify_change()
+            LOG.info("Provider '%s' enabled=%s", name, enabled)
             return True
 
     def update_provider(self, name: str, pcfg: dict, persist: bool = True) -> bool:

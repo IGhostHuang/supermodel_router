@@ -1,6 +1,14 @@
 """
 supermodel_router/version.py — 版本元数据 + GitHub release 检查
 
+v3.6.0 新增 (2026-06-17 23:56 老大拍):
+- UI/UX 全面改版: 顶部 toolbar → 左侧 sidebar nav (Dashboard/Providers/Models/Keys/Stats/Config/Classifier/Version)
+- 模型列表分页 (每页 20 + 前/后/跳转)
+- 真实使用量统计卡片: 总请求 / 成功率 / 平均延迟 / 今日 token
+- import_time / export_time / import_keys 单独 export+import
+- API key 独立管理页 (/v1/admin/api-keys)
+- 持久化复盘文档 (PERSISTENCE.md) + 启动时自动迁移
+
 v3.5.0 新增 (2026-06-17 22:25 老大拍):
 - 主动盘点: POST /v1/admin/context_review 拿 smr_request_id 聚合报告
   (用户说"盘点上下文/重新审视/回顾上下文"时, mainbot 调该 endpoint)
@@ -38,7 +46,7 @@ from typing import Optional
 LOG = logging.getLogger("version")
 
 # 当前版本 (跟随 release tag)
-VERSION = "3.5.0"
+VERSION = "3.6.0"
 BUILD_DATE = "2026-06-17"
 GITHUB_REPO = "IGhostHuang/supermodel_router"  # 默认值, 可被 config.version_check.repo 覆盖
 RELEASE_CHECK_INTERVAL = 3600  # 1 小时检查一次
