@@ -114,6 +114,15 @@ providers:
       exclude: []
     max_concurrent: 5
     health_check_interval: 300
+model_management:
+  enabled: true
+  state_dir: /root/projects/supermodel_router
+  discovery:
+    schedule: 600
+    notify_on_change: true
+  webhook:
+    url: ""
+    headers: {}
 classifier:
   tier_bonus:
     pro: 35
