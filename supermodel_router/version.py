@@ -7,6 +7,11 @@ v3.1 新增: 老大 09:48 拍 C 项
 - 后台定期检查 GitHub release, 有新版本时通知
 - /v1/admin/version endpoint 暴露版本信息
 - /v1/admin/upgrade endpoint 触发升级 (拉新 binary + 重启)
+
+v3.2 新增: 老大 14:40 拍 🅲
+- 配置版本管理: 自动备份 .backups/config-*.yaml (保留 50 个)
+- /v1/admin/config/backups + /v1/admin/config/restore
+- penalty state 持久化 (penalty_state.json) — SMR 重启不丢
 """
 import json
 import logging
@@ -17,7 +22,7 @@ from typing import Optional
 LOG = logging.getLogger("version")
 
 # 当前版本 (跟随 release tag)
-VERSION = "3.1.0"
+VERSION = "3.3.0"
 BUILD_DATE = "2026-06-17"
 GITHUB_REPO = "IGhostHuang/supermodel_router"  # 默认值, 可被 config.version_check.repo 覆盖
 RELEASE_CHECK_INTERVAL = 3600  # 1 小时检查一次

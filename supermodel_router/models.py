@@ -14,6 +14,7 @@ from .classifier import (
     classify_model, compute_capability_score,
     get_modality_display, TEXT_ONLY,
 )
+from .model_rules import ModelRuleEngine
 
 LOG = logging.getLogger("models")
 
@@ -54,7 +55,7 @@ class ProviderState:
 
 
 class ModelRegistry:
-    """模型注册中心: 发现 + 过滤 + 健康跟踪"""
+    """模型注册中心: 发现 + 过滤 + 健康跟踪 + v3.3 规则引擎集成"""
 
     def __init__(self, cfg: Config):
         self.cfg = cfg
@@ -62,6 +63,17 @@ class ModelRegistry:
         self._lock = threading.RLock()
         # model_id → ProviderState 的快速路由表 (带 provider 前缀如 "openrouter/xxx")
         self._route_map: dict[str, ProviderState] = {}
+        # v3.3: 模型管理规则引擎
+        import os
+        self.rule_engine = ModelRuleEngine(rules_dir=cfg.data.get("model_management", {}).get("state_dir", os.path.dirname(cfg._path) if hasattr(cfg, "_path") else "."))
+        # v3.3: 上一次每个 provider 的模型 ID 快照 (用于 diff)
+        self._prev_model_ids: dict[str, list[str]] = {}
+        # v3.3: refresh 完成回调列表 (model_manager 注册到此)
+        self._refresh_callbacks: list = []
+
+    def register_refresh_callback(self, fn):
+        """注册 refresh 完成后的回调: fn()"""
+        self._refresh_callbacks.append(fn)
 
     # ---- 初始化 ----
 
@@ -87,14 +99,34 @@ class ModelRegistry:
             )
 
     def refresh_all(self, timeout: float = 15.0):
-        """发现所有 provider 的模型并应用过滤规则"""
+        """发现所有 provider 的模型并应用过滤规则 + v3.3 规则引擎"""
         with self._lock:
             for ps in self._providers.values():
+                # v3.3: 保存 old model IDs
+                old_ids = list(self._prev_model_ids.get(ps.name, []))
                 try:
                     self._refresh_provider(ps, timeout)
                 except Exception:
                     LOG.exception("refresh %s failed", ps.name)
+
+                # v3.3: 应用管理规则过滤
+                raw_models = [{"id": m.id, **m.extra} for m in ps.models]
+                filtered = self.rule_engine.apply_to_model_list(raw_models, ps.name)
+                filtered_ids = [m["id"] for m in filtered]
+                ps.models = [m for m in ps.models if m.id in filtered_ids]
+                ps.model_ids = [m.id for m in ps.models]
+
+                # v3.3: 记录 discovery diff
+                self._prev_model_ids[ps.name] = list(ps.model_ids)
+                self.rule_engine.record_discovery(ps.name, old_ids, list(ps.model_ids))
+
             self._rebuild_route_map()
+        # v3.3: 触发 refresh 完成回调
+        for cb in self._refresh_callbacks:
+            try:
+                cb()
+            except Exception:
+                LOG.exception("refresh callback failed")
 
     def _refresh_provider(self, ps: ProviderState, timeout: float):
         """拉 /v1/models 并按规则过滤"""

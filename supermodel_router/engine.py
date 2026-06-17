@@ -21,6 +21,7 @@ LOG = logging.getLogger("engine")
 
 # ── 常量 ──────────────────────────────────────────────────
 STATS_FILE = "engine_stats.json"
+PENALTY_FILE = "penalty_state.json"  # v3.2.0: 独立存储 penalty
 EWMA_ALPHA = 0.5
 DEFAULT_RECOVERY_INTERVAL = 300  # 5min 自动恢复
 FIRST_TOKEN_TIMEOUT_DEFAULT = 15  # 15s
@@ -580,27 +581,48 @@ class RouteEngine:
                 json.dump(data, f)
         except Exception:
             pass
+        # v3.2.0: 独立持久化 penalty state (跟 engine_stats.json 分离, 避免大文件频繁重写)
+        try:
+            penalty_path = os.path.join(self._stats_dir, PENALTY_FILE)
+            with open(penalty_path, "w") as f:
+                json.dump({
+                    "penalties": dict(self._model_penalty),
+                    "last_failures": dict(self._model_last_failure),
+                }, f)
+        except Exception:
+            pass
 
     def _load_stats(self):
+        # v3.2.0: 读 ProviderStats (含 daily_reset_date 跨日重置)
         path = os.path.join(self._stats_dir, STATS_FILE)
-        if not os.path.exists(path):
-            return
-        try:
-            with open(path) as f:
-                data = json.load(f)
-            for name, vals in data.items():
-                s = ProviderStats(**vals)
-                self._stats[name] = s
+        if os.path.exists(path):
+            try:
+                with open(path) as f:
+                    data = json.load(f)
                 today = time.strftime("%Y-%m-%d")
-                if s.daily_reset_date != today:
-                    s.daily_calls = 0
-                    s.daily_tokens = 0
-                    s.daily_failures = 0
-                    s.daily_total_latency = 0
-                    s.daily_reset_date = today
-            LOG.info("Loaded stats for %d providers", len(data))
-        except Exception as e:
-            LOG.warning("Failed to load stats: %s", e)
+                for name, vals in data.items():
+                    s = ProviderStats(**vals)
+                    if s.daily_reset_date != today:
+                        s.daily_calls = 0
+                        s.daily_tokens = 0
+                        s.daily_failures = 0
+                        s.daily_total_latency = 0
+                        s.daily_reset_date = today
+                    self._stats[name] = s
+                LOG.info("Loaded stats for %d providers", len(data))
+            except Exception as e:
+                LOG.warning("Failed to load stats: %s", e)
+        # v3.2.0: 读 penalty state (失败 → 保留空 dict, 不影响启动)
+        penalty_path = os.path.join(self._stats_dir, PENALTY_FILE)
+        if os.path.exists(penalty_path):
+            try:
+                with open(penalty_path) as f:
+                    data = json.load(f)
+                self._model_penalty.update(data.get("penalties", {}))
+                self._model_last_failure.update(data.get("last_failures", {}))
+                LOG.info("Loaded penalty state: %d entries", len(self._model_penalty))
+            except Exception:
+                LOG.exception("penalty state load failed")
 
 
 # ── v3: 模态感知的 proxy 转发 ──────────────────────────────

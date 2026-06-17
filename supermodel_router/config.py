@@ -187,9 +187,82 @@ class Config:
             LOG.info("Routing config updated: %s", list(rt.keys()))
             return True
 
-    def _save_yaml(self):
-        """写回 yaml 文件"""
+    # ---- 配置版本管理 (v3.2.0) ----
+
+    def _backup(self) -> Path | None:
+        """写盘前自动备份到 .backups/config-YYYYMMDD-HHMMSS.yaml
+        只保留最近 50 个备份, 超出按 mtime 删除最旧
+        """
         try:
+            if not self._path.exists():
+                return None
+            backup_dir = self._path.parent / ".backups"
+            backup_dir.mkdir(parents=True, exist_ok=True)
+            timestamp = time.strftime("%Y%m%d-%H%M%S")
+            backup_path = backup_dir / f"config-{timestamp}.yaml"
+            import shutil
+            # 用 shutil.copy 不 copy2 → 不保留源 mtime, 备份 mtime = 当前时间
+            shutil.copy(self._path, backup_path)
+            # 清理: 保留最近 50 个
+            backups = sorted(backup_dir.glob("config-*.yaml"), key=lambda p: p.stat().st_mtime, reverse=True)
+            for old in backups[50:]:
+                try:
+                    old.unlink()
+                except OSError:
+                    pass
+            LOG.debug("Config backup created: %s", backup_path.name)
+            return backup_path
+        except Exception:
+            LOG.exception("_backup failed")
+            return None
+
+    def list_backups(self) -> list[dict]:
+        """列出所有备份 (按 mtime 倒序)"""
+        backup_dir = self._path.parent / ".backups"
+        if not backup_dir.exists():
+            return []
+        backups = sorted(backup_dir.glob("config-*.yaml"), key=lambda p: p.stat().st_mtime, reverse=True)
+        result = []
+        for p in backups:
+            st = p.stat()
+            result.append({
+                "name": p.name,
+                "size_bytes": st.st_size,
+                "mtime": st.st_mtime,
+                "mtime_iso": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(st.st_mtime)),
+                "age_seconds": round(time.time() - st.st_mtime, 1),
+            })
+        return result
+
+    def restore_backup(self, backup_name: str) -> bool:
+        """从指定备份恢复 (覆盖当前 config.yaml + reload)"""
+        backup_dir = self._path.parent / ".backups"
+        # 防止路径穿越: 只接受 .yaml 后缀 + 简单文件名
+        if "/" in backup_name or "\\" in backup_name or not backup_name.endswith(".yaml"):
+            LOG.warning("restore_backup: invalid name '%s'", backup_name)
+            return False
+        backup_path = backup_dir / backup_name
+        if not backup_path.exists():
+            LOG.warning("restore_backup: '%s' not found", backup_name)
+            return False
+        with self._lock:
+            import shutil
+            # 先备份当前 (再回滚时能再来一次)
+            self._backup()
+            # copy 不 copy2 → 回滚后的 config mtime 是当前时间
+            shutil.copy(backup_path, self._path)
+            # 重新 load
+            self._data = _load_config(self._path)
+            self._last_mtime = self._path.stat().st_mtime
+            self._notify_change()
+        LOG.info("Config restored from %s", backup_name)
+        return True
+
+    def _save_yaml(self):
+        """写回 yaml 文件 (v3.2: 写前自动备份)"""
+        try:
+            # v3.2: 自动备份
+            self._backup()
             with open(self._path, "w", encoding="utf-8") as f:
                 yaml.safe_dump(self._data, f, allow_unicode=True, sort_keys=False, default_flow_style=False)
             self._last_mtime = self._path.stat().st_mtime
