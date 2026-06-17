@@ -338,7 +338,7 @@ async def admin_api_keys_list(provider: str | None = None):
             ],
             "enabled": pcfg.get("enabled", True),
         })
-    return JSONResponse({"version": "3.6.0", "count": len(items), "keys": items})
+    return JSONResponse({"version": "3.7.0", "count": len(items), "keys": items})
 
 
 @router.post("/v1/admin/api-keys")
@@ -457,7 +457,7 @@ async def admin_providers_export(include_disabled: bool = True, include_keys: bo
             item["config"]["api_keys"] = [f"REDACTED_{i}" for i in range(len(pcfg.get("api_keys", [])))]
         out.append(item)
     return JSONResponse({
-        "version": "3.6.0",
+        "version": "3.7.0",
         "exported_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "include_keys": include_keys,
         "providers": out,
@@ -573,7 +573,10 @@ async def admin_classifier_get():
 
 @router.put("/v1/admin/classifier")
 async def admin_classifier_update(payload: dict):
-    """更新 classifier 配置 (tier_bonus / custom_keywords / modality_base_score)"""
+    """更新 classifier 配置 (tier_bonus / custom_keywords / modality_base_score)
+
+    v3.7.0: 自动备份当前 config 到 .backups/, 24h 内可恢复 (config.py:_backup 已实现)
+    """
     allowed = {"tier_bonus", "custom_keywords", "modality_base_score"}
     cfg = {k: v for k, v in payload.items() if k in allowed}
     if not cfg:
@@ -581,10 +584,21 @@ async def admin_classifier_update(payload: dict):
             {"error": f"no valid keys. allowed: {sorted(allowed)}"},
             status_code=400,
         )
+    # v3.7.0: 触发备份 (返回 backup_id 让 UI 显示)
+    backup_path = None
+    try:
+        backup_path = config._backup()
+    except Exception as e:
+        LOG.warning("backup before classifier update failed: %s", e)
     config.update_classifier(cfg)
     # 重算所有模型 capability_score
     registry.refresh_all()
-    return JSONResponse({"ok": True, "updated": list(cfg.keys())})
+    return JSONResponse({
+        "ok": True,
+        "updated": list(cfg.keys()),
+        "backup_id": backup_path.name if backup_path else None,  # v3.7.0
+        "backup_recover_hint": "PUT /v1/admin/config/restore {backup_id}",  # v3.7.0
+    })
 
 
 # ============================================================
@@ -715,18 +729,27 @@ async def admin_penalty_decay(payload: dict | None = None):
 
 @router.get("/v1/admin/version")
 async def admin_version_get(force_check: bool = False):
-    """返回当前版本 + 最新 GitHub release + 升级建议"""
+    """返回当前版本 + 最新 GitHub release + 升级建议
+
+    v3.7.0: GitHub fetch 失败不再阻塞, 始终返回 current 版本元数据
+    """
     from .version import (
         VERSION as CURRENT_VERSION, BUILD_DATE, GITHUB_REPO,
         get_cached_release, is_newer_version,
     )
 
     release = None
-    if force_check:
-        from .version import fetch_latest_release
-        release = fetch_latest_release()
-    else:
-        release = get_cached_release()
+    fetch_error = None
+    try:
+        if force_check:
+            from .version import fetch_latest_release
+            release = fetch_latest_release()
+        else:
+            release = get_cached_release()
+    except Exception as e:
+        # v3.7.0: 不抛错, 只记录, UI 显示 "未配置"
+        fetch_error = str(e)
+        LOG.warning("version endpoint: GitHub fetch failed: %s", e)
 
     has_update = False
     latest_tag = None
@@ -745,6 +768,7 @@ async def admin_version_get(force_check: bool = False):
         "has_update": has_update,
         "upgrade_methods": ["git", "pip", "docker", "binary"],
         "checked_at": time.time(),
+        "fetch_error": fetch_error,  # v3.7.0: 告知 UI 是否有错 (不阻塞)
     })
 
 
@@ -1142,3 +1166,114 @@ async def admin_context_review_get(smr_request_id: str):
             "error": "not_found",
         }, status_code=404)
     return JSONResponse({"ok": True, "report": report})
+
+# ============================================================
+# 对外 API (per-tenant key) 管理 — v3.7.0
+# ============================================================
+# 老大 2026-06-18 拍: 中转 router 不对外就丧失核心功能, 需要多 key 体系
+# 设计: name / key_hash (前16) / rate_limit_rpm / model_filter / enabled
+# 用量: total / success / fail / tokens / last_used
+# ============================================================
+
+@router.get("/v1/admin/public-keys")
+async def admin_public_keys_list():
+    """列出所有对外 API key (不含原 key, 只哈希 + 元数据 + 用量)"""
+    from .public_api import public_key_manager
+    if not public_key_manager:
+        return JSONResponse({"error": "public_key_manager not initialized"}, status_code=503)
+    return JSONResponse({"keys": public_key_manager.list_keys()})
+
+
+@router.post("/v1/admin/public-keys")
+async def admin_public_keys_create(payload: dict):
+    """创建新对外 key (返回原 key 一次, 之后只存哈希)
+
+    body: {name: str, rate_limit_rpm?: int=60, model_filter?: [str], note?: str}
+    """
+    from .public_api import public_key_manager
+    if not public_key_manager:
+        return JSONResponse({"error": "public_key_manager not initialized"}, status_code=503)
+    name = (payload.get("name") or "").strip()
+    if not name:
+        return JSONResponse({"error": "name required"}, status_code=400)
+    if not all(c.isalnum() or c in "-_" for c in name):
+        return JSONResponse(
+            {"error": "name must be alphanumeric / dash / underscore"},
+            status_code=400,
+        )
+    try:
+        result = public_key_manager.create_key(
+            name=name,
+            rate_limit_rpm=int(payload.get("rate_limit_rpm", 60)),
+            model_filter=payload.get("model_filter"),
+            note=payload.get("note", ""),
+        )
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=409)
+    # v3.7.0: 一次性返回原 key, 提醒用户复制保存
+    return JSONResponse({
+        "ok": True,
+        "key": result["key"],  # ⚠️ 唯一一次返回原 key!
+        "key_hash": result["key_hash"],
+        "name": result["name"],
+        "rate_limit_rpm": result["rate_limit_rpm"],
+        "model_filter": result["model_filter"],
+        "note": result["note"],
+        "_warning": "原 key 只返回这一次, 之后只能重新生成",
+    })
+
+
+@router.put("/v1/admin/public-keys/{name}")
+async def admin_public_keys_update(name: str, payload: dict):
+    """更新 key 元数据 (rate_limit / model_filter / enabled / note)"""
+    from .public_api import public_key_manager
+    if not public_key_manager:
+        return JSONResponse({"error": "public_key_manager not initialized"}, status_code=503)
+    try:
+        meta = public_key_manager.update_key(name, **payload)
+    except KeyError as e:
+        return JSONResponse({"error": str(e)}, status_code=404)
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    return JSONResponse({"ok": True, "meta": meta})
+
+
+@router.delete("/v1/admin/public-keys/{name}")
+async def admin_public_keys_delete(name: str):
+    """删除对外 key (硬删)"""
+    from .public_api import public_key_manager
+    if not public_key_manager:
+        return JSONResponse({"error": "public_key_manager not initialized"}, status_code=503)
+    ok = public_key_manager.delete_key(name)
+    if not ok:
+        return JSONResponse({"error": f"key '{name}' not found"}, status_code=404)
+    return JSONResponse({"ok": True, "deleted": name})
+
+
+@router.get("/v1/admin/public-keys/usage")
+async def admin_public_keys_usage():
+    """对外 API 全局用量 (per-key + 汇总)"""
+    from .public_api import public_key_manager
+    if not public_key_manager:
+        return JSONResponse({"error": "public_key_manager not initialized"}, status_code=503)
+    return JSONResponse(public_key_manager.get_all_usage())
+
+
+@router.post("/v1/admin/public-keys/{name}/reset")
+async def admin_public_keys_reset_usage(name: str):
+    """重置某 key 的用量计数 (不改 key 本身)"""
+    from .public_api import public_key_manager
+    if not public_key_manager:
+        return JSONResponse({"error": "public_key_manager not initialized"}, status_code=503)
+    meta = public_key_manager.get_key(name)
+    if not meta:
+        return JSONResponse({"error": f"key '{name}' not found"}, status_code=404)
+    key_hash = meta["key_hash"]
+    with public_key_manager._lock:
+        public_key_manager._usage[key_hash] = {
+            "total_calls": 0, "success_calls": 0, "fail_calls": 0,
+            "tokens": 0, "last_used": 0.0, "rate_window": [],
+        }
+        public_key_manager._save_async()
+        public_key_manager._flush()
+    return JSONResponse({"ok": True, "reset": name})

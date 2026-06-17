@@ -85,14 +85,39 @@ async def chat_completions(request: Request):
     request_start_time = time.time()
 
     # 鉴权
-    api_key = config.server.get("api_key", "")
-    if api_key:
-        auth = request.headers.get("Authorization", "")
-        if not auth.startswith("Bearer ") or auth[7:] != api_key:
+    # v3.7.0: 多 key 体系 — 先查 public_key_manager (per-tenant), 退到 config.server.api_key (单 key)
+    from .public_api import public_key_manager, PublicKeyManager
+    from typing import cast as _cast
+    pkm = _cast(PublicKeyManager, public_key_manager)
+    auth_header = request.headers.get("Authorization", "")
+    bearer = auth_header[7:] if auth_header.startswith("Bearer ") else ""
+    public_meta = pkm.authenticate(bearer) if pkm is not None else None
+    if public_meta is not None:
+        # v3.7.0: per-tenant key 鉴权通过
+        if not pkm.check_rate_limit(public_meta):
             return JSONResponse(
-                {"error": {"message": "Invalid API key", "type": "auth_error"}},
-                status_code=401,
+                {"error": {"message": "Rate limit exceeded", "type": "rate_limit_error",
+                          "rpm_limit": public_meta.get("rate_limit_rpm", 0)}},
+                status_code=429,
             )
+        requested_model = body.get("model", "")
+        if not pkm.check_model_filter(public_meta, requested_model):
+            return JSONResponse(
+                {"error": {"message": f"Model '{requested_model}' not allowed for this key",
+                          "type": "model_filter_error"}},
+                status_code=403,
+            )
+        # 标记到 request.state (后续 record_usage 用)
+        request.state.public_key_meta = public_meta
+    else:
+        # 退到老的单 key 模式
+        api_key = config.server.get("api_key", "")
+        if api_key:
+            if not auth_header.startswith("Bearer ") or bearer != api_key:
+                return JSONResponse(
+                    {"error": {"message": "Invalid API key", "type": "auth_error"}},
+                    status_code=401,
+                )
 
     # ── v3: 自动检测输入/输出类型 ──
     input_mod = detect_chat_input_modality(body)
