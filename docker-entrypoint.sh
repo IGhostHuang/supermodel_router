@@ -52,21 +52,37 @@ import json, os, sys
 state_dir = '$STATE_DIR'
 migrated = []
 
-# model_metadata.json: 加 metadata_source 字段 (v3.10.0 Phase I)
+# v3.9.0: model_metadata.json: 老 schema 兼容 (老 v3.9.0 写 {version, updated_at, models: {...}})
+#                          + 新 schema 平铺 {model_id: metadata, _version: "3.10.0"}
 mm_path = os.path.join(state_dir, 'model_metadata.json')
 if os.path.exists(mm_path):
     try:
         with open(mm_path) as f:
             mm = json.load(f)
-        if isinstance(mm, dict) and '_version' not in mm:
-            mm['_version'] = '3.10.0'
+        migrated_any = False
+        # 老 schema 检测: 有 'version' + 'models' 嵌套
+        if isinstance(mm, dict) and 'version' in mm and 'models' in mm and isinstance(mm.get('models'), dict):
+            old_models = mm['models']
+            mm_flat = {'_version': '3.10.0'}
+            for mid, m in old_models.items():
+                if isinstance(m, dict):
+                    m.setdefault('metadata_source', 'migrated_from_v390')
+                mm_flat[mid] = m
+            with open(mm_path, 'w') as f:
+                json.dump(mm_flat, f, indent=2, ensure_ascii=False)
+            migrated.append(f'model_metadata.json:migrated v3.9.0 schema -> v3.10.0 flat ({len(old_models)} entries)')
+            migrated_any = True
+        # 新 schema 字段补全
+        if isinstance(mm, dict) and '_version' in mm:
             for mid, m in mm.items():
                 if mid.startswith('_'): continue
                 if isinstance(m, dict) and 'metadata_source' not in m:
                     m['metadata_source'] = 'seed'
-            with open(mm_path, 'w') as f:
-                json.dump(mm, f, indent=2)
-            migrated.append('model_metadata.json:added _version + metadata_source')
+                    migrated_any = True
+            if migrated_any:
+                with open(mm_path, 'w') as f:
+                    json.dump(mm, f, indent=2, ensure_ascii=False)
+                migrated.append('model_metadata.json:filled metadata_source for flat entries')
     except Exception as e:
         print(f'[migration] model_metadata.json skipped: {e}', file=sys.stderr)
 
@@ -99,7 +115,8 @@ matches = set(pattern.findall(content))
 rendered = 0
 for var in matches:
     # 兼容多种命名风格
-    candidates = [var, var.replace('_API_KEY', ''), var.lower(), var.lower().replace('_api_key', '')]
+    candidates = [var, var.lower(), var.replace('_API_KEY', ''), var.lower().replace('_api_key', ''),
+                  var.lower().replace('_api_key_placeholder', '')]  # also try without _PLACEHOLDER suffix
     secret_value = None
     for cand in candidates:
         secret_path = os.path.join(secret_dir, cand)

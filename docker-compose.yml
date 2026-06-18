@@ -12,8 +12,9 @@ services:
       # 2026-06-18 23:55 升级: v3.10.0 同端口升级 v3.9.0 → v3.10.0, 客户端 0 改动
       - "6473:6473"
     volumes:
-      # 配置 (热重载, :ro 只读防误改)
-      - ./config.yaml:/app/config.yaml:ro
+      # 配置 (entrypoint 需 :rw 写入占位符渲染的真 key, 改文件热重载生效, 无需重启容器)
+      # 注意: 必须 :rw, 不然 entrypoint 渲染 secret 时 write 失败 (ro 会 silent skip)
+      - ./config.yaml:/app/config.yaml
       # 💾 State 持久化 (老大拍 🅰️+💾 持久化优先)
       # 容器重建/升级 = state 不丢
       - ./state:/app/state
