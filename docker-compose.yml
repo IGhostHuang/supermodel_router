@@ -9,8 +9,8 @@ services:
     container_name: supermodel_router
     restart: unless-stopped
     ports:
-      # 用 6474 避开主机 6473 (老大真 SMR 实例占用)
-      - "6474:6473"
+      # 用 6475 避开主机 6473 (老大真 SMR 实例占用)
+      - "6475:6473"
     volumes:
       # 映射外部 config.yaml (改文件热重载生效, 无需重启容器)
       - ./config.yaml:/app/config.yaml:ro
