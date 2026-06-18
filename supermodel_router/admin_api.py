@@ -672,12 +672,33 @@ async def admin_routing_get():
 
 @router.put("/v1/admin/routing")
 async def admin_routing_update(payload: dict):
-    """更新 routing 段配置 (strategy / failover_threshold / recovery_interval / max_retry / first_token_timeout_ms / retry_backoff_ms / quality_weights)"""
+    """更新 routing 段配置 (strategy / failover_threshold / recovery_interval / max_retry / first_token_timeout_ms / retry_backoff_ms / quality_weights / group_strategy / group_weights)
+
+    v3.9.0 (Phase H): 加 group_strategy + group_weights (4 策略轮询)
+    """
     allowed = {
         "strategy", "failover_threshold", "recovery_interval",
         "max_retry", "first_token_timeout_ms", "retry_backoff_ms",
         "quality_weights",
+        # v3.9.0 (Phase H): group-based 轮询
+        "group_strategy", "group_weights",
     }
+    # v3.9.0 (Phase H): group_strategy 校验
+    if "group_strategy" in payload:
+        gs = payload["group_strategy"]
+        if gs not in ("flat", "round-robin-group", "group-failover", "group-weighted"):
+            return JSONResponse(
+                {"error": f"group_strategy must be one of: flat / round-robin-group / group-failover / group-weighted, got '{gs}'"},
+                status_code=400,
+            )
+    # v3.9.0 (Phase H): group_weights 校验 (Dict[str, float])
+    if "group_weights" in payload:
+        gw = payload["group_weights"]
+        if not isinstance(gw, dict):
+            return JSONResponse(
+                {"error": "group_weights must be Dict[str, float]"},
+                status_code=400,
+            )
     rt = {k: v for k, v in payload.items() if k in allowed}
     if not rt:
         return JSONResponse(
@@ -1264,6 +1285,475 @@ async def admin_public_keys_delete(name: str):
     if not ok:
         return JSONResponse({"error": f"key '{name}' not found"}, status_code=404)
     return JSONResponse({"ok": True, "deleted": name})
+
+
+# ============================================================
+# v3.9.0 (Phase G): 按 model 分组的用量端点
+# 设计: 复用 PublicKeyManager.get_usage_by_model (按 count 降序)
+# 用量按 model 分组统计 (来自 record_usage 的 model_name 参数)
+# ============================================================
+
+@router.get("/v1/admin/public-keys/{name}/usage-by-model")
+async def admin_public_keys_usage_by_model(name: str):
+    """按 model 分组的用量统计 (v3.9.0 Phase G)
+
+    返回: {name, total_calls, by_model: {model: count, ...}, last_used}
+    """
+    from .public_api import public_key_manager
+    if not public_key_manager:
+        return JSONResponse({"error": "public_key_manager not initialized"}, status_code=503)
+    meta = public_key_manager.get_key(name)
+    if not meta:
+        return JSONResponse({"error": f"key '{name}' not found"}, status_code=404)
+    key_hash = meta.get("key_hash", "")
+    by_model = public_key_manager.get_usage_by_model(key_hash)
+    # 拿该 key 总用量
+    with public_key_manager._lock:
+        u = public_key_manager._usage.get(key_hash, {})
+        total_calls = u.get("total_calls", 0)
+        last_used = u.get("last_used", 0)
+    return JSONResponse({
+        "name": name,
+        "key_hash": key_hash,
+        "total_calls": total_calls,
+        "by_model": by_model,
+        "last_used": last_used,
+    })
+
+
+# ============================================================
+# v3.9.0: Model Groups 管理 (老大 16:55 拍)
+# 设计: name / patterns(List[regex str]) / description / enabled
+# 跨 provider 解析: set_known_models 注入 registry model 列表
+# ============================================================
+
+@router.get("/v1/admin/model-groups")
+async def admin_model_groups_list():
+    """列出所有模型分组 (按 name 排序)"""
+    from .model_groups import get_model_group_manager
+    mgm = get_model_group_manager()
+    if not mgm:
+        return JSONResponse({"error": "model_group_manager not initialized"}, status_code=503)
+    return JSONResponse({"groups": mgm.list_groups()})
+
+
+@router.post("/v1/admin/model-groups")
+async def admin_model_groups_create(payload: dict):
+    """创建模型分组
+
+    body: {name: str, patterns: [regex_str], description?: str, enabled?: bool=true}
+    """
+    from .model_groups import get_model_group_manager
+    mgm = get_model_group_manager()
+    if not mgm:
+        return JSONResponse({"error": "model_group_manager not initialized"}, status_code=503)
+    name = (payload.get("name") or "").strip()
+    patterns = payload.get("patterns", [])
+    if not name:
+        return JSONResponse({"error": "name required"}, status_code=400)
+    if not isinstance(patterns, list) or not patterns:
+        return JSONResponse({"error": "patterns must be non-empty list"}, status_code=400)
+    try:
+        group = mgm.create_group(
+            name=name,
+            patterns=patterns,
+            description=payload.get("description", ""),
+            enabled=payload.get("enabled", True),
+        )
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    return JSONResponse({"ok": True, "group": group.to_dict()})
+
+
+@router.get("/v1/admin/model-groups/stats")
+async def admin_model_groups_stats():
+    """分组统计: 跨 provider 分布 + 总览"""
+    from .model_groups import get_model_group_manager
+    mgm = get_model_group_manager()
+    if not mgm:
+        return JSONResponse({"error": "model_group_manager not initialized"}, status_code=503)
+    return JSONResponse(mgm.get_stats())
+
+
+@router.get("/v1/admin/model-groups/{name}")
+async def admin_model_groups_get(name: str):
+    """获取单个分组详情 (含 resolve 后的 model 列表)"""
+    from .model_groups import get_model_group_manager
+    mgm = get_model_group_manager()
+    if not mgm:
+        return JSONResponse({"error": "model_group_manager not initialized"}, status_code=503)
+    g = mgm.get_group(name)
+    if not g:
+        return JSONResponse({"error": f"group '{name}' not found"}, status_code=404)
+    resolved = mgm.resolve_group(name)
+    return JSONResponse({"group": g, "resolved_models": resolved})
+
+
+@router.put("/v1/admin/model-groups/{name}")
+async def admin_model_groups_update(name: str, payload: dict):
+    """更新分组 (不允许改 name)"""
+    from .model_groups import get_model_group_manager
+    mgm = get_model_group_manager()
+    if not mgm:
+        return JSONResponse({"error": "model_group_manager not initialized"}, status_code=503)
+    try:
+        g = mgm.update_group(name, **payload)
+    except KeyError as e:
+        return JSONResponse({"error": str(e)}, status_code=404)
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    return JSONResponse({"ok": True, "group": g})
+
+
+@router.delete("/v1/admin/model-groups/{name}")
+async def admin_model_groups_delete(name: str):
+    """删除分组 (硬删)"""
+    from .model_groups import get_model_group_manager
+    mgm = get_model_group_manager()
+    if not mgm:
+        return JSONResponse({"error": "model_group_manager not initialized"}, status_code=503)
+    ok = mgm.delete_group(name)
+    if not ok:
+        return JSONResponse({"error": f"group '{name}' not found"}, status_code=404)
+    return JSONResponse({"ok": True, "deleted": name})
+
+
+@router.get("/v1/admin/model-groups/{name}/resolve")
+async def admin_model_groups_resolve(name: str):
+    """解析 group 实际匹配的 model 列表 (跨 provider 实时拉)"""
+    from .model_groups import get_model_group_manager
+    mgm = get_model_group_manager()
+    if not mgm:
+        return JSONResponse({"error": "model_group_manager not initialized"}, status_code=503)
+    if name not in mgm._groups:
+        return JSONResponse({"error": f"group '{name}' not found"}, status_code=404)
+    resolved = mgm.resolve_group(name)
+    return JSONResponse({"name": name, "resolved_models": resolved, "count": len(resolved)})
+
+
+# ============================================================
+# v3.10.0 (Phase J + K): 模型筛选引擎 + 场景化向导
+# 设计:
+# - GET /v1/admin/models/filter: 多维度筛选 (provider/context/quality/speed/reasoning/modality/tags)
+# - POST /v1/admin/model-groups/from-filter: 把 filter 结果自动创建 group + 可选 API key
+# - GET /v1/admin/model-groups/wizard/presets: 列出 13 个预设场景 + 当前匹配数
+# - POST /v1/admin/model-groups/from-wizard: preset → filter → 创建 group
+# ============================================================
+
+@router.get("/v1/admin/models/filter")
+async def admin_models_filter(
+    providers: str = "",          # 逗号分隔 "openrouter,newapi"
+    context_min: int = 0,
+    context_max: int = 0,
+    quality_min: float = 0,
+    speed_min: float = 0,
+    reasoning_min: float = 0,
+    modality: str = "",
+    tags_any: str = "",           # 逗号分隔 "vision,coding"
+    tags_all: str = "",
+    exclude_tags: str = "",
+    limit: int = 200,
+):
+    """v3.10.0 (Phase J): 多维度筛选模型
+
+    Query params:
+    - providers: 逗号分隔, 空 = 全部
+    - context_min/max: 上下文范围 (0 = 不限)
+    - quality_min/speed_min/reasoning_min: 评分下限 (0 = 不限)
+    - modality: 子串匹配 (text/multimodal/image-gen)
+    - tags_any: OR (含任一)
+    - tags_all: AND (必须全含)
+    - exclude_tags: 排除含任一
+    - limit: 返回数量上限 (默认 200)
+
+    返回: {models: [{path, ...metadata}, ...], total, filter: {...}}
+    """
+    from .model_filter import ModelFilter, apply_filter, model_to_dict
+    f = ModelFilter(
+        providers=[p.strip() for p in providers.split(",") if p.strip()] or None,
+        context_min=context_min or None,
+        context_max=context_max or None,
+        quality_min=quality_min or None,
+        speed_min=speed_min or None,
+        reasoning_min=reasoning_min or None,
+        modality=modality or None,
+        tags_any=[t.strip() for t in tags_any.split(",") if t.strip()] or None,
+        tags_all=[t.strip() for t in tags_all.split(",") if t.strip()] or None,
+        exclude_tags=[t.strip() for t in exclude_tags.split(",") if t.strip()] or None,
+    )
+    all_models = registry.get_models()  # List[ModelInfo]
+    matched = apply_filter(f, all_models)
+    models_dict = [model_to_dict(m) for m in matched[:limit]]
+    return JSONResponse({
+        "models": models_dict,
+        "total": len(matched),
+        "returned": len(models_dict),
+        "filter": f.to_dict(),
+    })
+
+
+@router.post("/v1/admin/model-groups/from-filter")
+async def admin_model_groups_from_filter(payload: dict):
+    """v3.10.0 (Phase J): 把 filter 匹配的 model 自动创建 group + 可选 API key
+
+    body: {
+      name: str,                    # group name (必填)
+      filter: {...},                # ModelFilter dict
+      patterns?: [str],             # 自定义 regex patterns (不传则自动从匹配 model 推断)
+      description?: str,
+      strategy?: str,               # round-robin-group / flat / group-failover / group-weighted
+      create_api_key?: bool=true,   # 是否生成 API key
+      api_key_name?: str,           # API key name (默认 = group name + "-key")
+      api_key_rate_limit_rpm?: int=60,
+    }
+
+    返回: {ok, group: {...}, resolved_count, api_key?: {key, key_hash, name}}
+    """
+    from .model_groups import get_model_group_manager
+    from .model_filter import ModelFilter, apply_filter, model_to_dict
+
+    mgm = get_model_group_manager()
+    if not mgm:
+        return JSONResponse({"error": "model_group_manager not initialized"}, status_code=503)
+
+    name = (payload.get("name") or "").strip()
+    if not name:
+        return JSONResponse({"error": "name required"}, status_code=400)
+    if name in mgm._groups:
+        return JSONResponse({"error": f"group '{name}' already exists"}, status_code=409)
+
+    filter_data = payload.get("filter") or {}
+    f = ModelFilter.from_dict(filter_data)
+    all_models = registry.get_models()
+    matched = apply_filter(f, all_models)
+    if not matched:
+        return JSONResponse({
+            "error": "no models matched filter",
+            "filter": f.to_dict(),
+            "hint": "放宽条件 (降低 quality_min / context_min) 或先用 GET /v1/admin/models/filter 试",
+        }, status_code=400)
+
+    # patterns 推断: 从匹配 model id 提公共前缀 regex
+    patterns = payload.get("patterns")
+    if not patterns:
+        import re as _re_for_filter
+        # 自动: 每个匹配 model 1 个 regex
+        patterns = [f".*{_re_for_filter.escape(m.id)}.*" for m in matched]
+        # 去重
+        patterns = list(dict.fromkeys(patterns))
+
+    # 创建 group
+    try:
+        group = mgm.create_group(
+            name=name,
+            patterns=patterns,
+            description=payload.get("description", f"Auto-created from filter (matched {len(matched)} models)"),
+            enabled=True,
+        )
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+
+    # 写 strategy 到 config
+    strategy = payload.get("strategy")
+    if strategy:
+        if strategy not in ("flat", "round-robin-group", "group-failover", "group-weighted"):
+            mgm.delete_group(name)
+            return JSONResponse({
+                "error": f"strategy must be: flat / round-robin-group / group-failover / group-weighted, got '{strategy}'",
+            }, status_code=400)
+        config.update_routing({"group_strategy": strategy})
+
+    result = {
+        "ok": True,
+        "group": {
+            "name": group.name,
+            "patterns": group.patterns,
+            "description": group.description,
+            "enabled": group.enabled,
+            "model_count": len(matched),
+            "auto_generated_patterns": len(patterns),
+        },
+        "resolved_count": len(matched),
+        "matched_samples": [m.id for m in matched[:5]],
+        "filter": f.to_dict(),
+    }
+
+    # 可选生成 API key
+    if payload.get("create_api_key", True):
+        from .public_api import public_key_manager
+        if public_key_manager is None:
+            mgm.delete_group(name)
+            return JSONResponse({"error": "public_key_manager not initialized"}, status_code=503)
+        key_name = (payload.get("api_key_name") or f"{name}-key").strip()
+        if not all(c.isalnum() or c in "-_" for c in key_name):
+            mgm.delete_group(name)
+            return JSONResponse({"error": "api_key_name must be alphanumeric/dash/underscore"}, status_code=400)
+        try:
+            key_result = public_key_manager.create_key(
+                name=key_name,
+                rate_limit_rpm=int(payload.get("api_key_rate_limit_rpm", 60)),
+                model_filter=[f"group:{name}"],  # 自动绑定到 group
+                note=f"Auto-generated from filter (group={name}, matched={len(matched)})",
+            )
+        except ValueError as e:
+            mgm.delete_group(name)
+            return JSONResponse({"error": f"key creation failed: {e}"}, status_code=409)
+        result["api_key"] = {
+            "key": key_result["key"],
+            "key_hash": key_result["key_hash"],
+            "name": key_result["name"],
+            "model_filter": key_result["model_filter"],
+            "_warning": "原 key 只返回这一次, 之后只能重新生成",
+        }
+
+    return JSONResponse(result)
+
+
+@router.get("/v1/admin/model-groups/wizard/presets")
+async def admin_wizard_presets():
+    """v3.10.0 (Phase K): 列出 13 个预设场景 + 当前每个匹配的 model 数
+
+    返回: {presets: [{id, name, icon, description, filter, current_match_count, sample_models}], total: 13}
+    """
+    from .group_wizard import list_presets, preset_to_filter
+    from .model_filter import apply_filter, model_to_dict
+
+    all_models = registry.get_models()
+    presets_out = []
+    for p in list_presets():
+        f = preset_to_filter(p["id"])
+        matched = apply_filter(f, all_models)
+        presets_out.append({
+            "id": p["id"],
+            "name": p["name"],
+            "icon": p["icon"],
+            "description": p["description"],
+            "filter": p["filter"],
+            "current_match_count": len(matched),
+            "sample_models": [m.id for m in matched[:3]],
+        })
+    return JSONResponse({
+        "presets": presets_out,
+        "total": len(presets_out),
+        "total_models_available": len(all_models),
+    })
+
+
+@router.post("/v1/admin/model-groups/from-wizard")
+async def admin_model_groups_from_wizard(payload: dict):
+    """v3.10.0 (Phase K): preset → filter → 创建 group (Phase J 端点的快捷版)
+
+    body: {
+      preset: str,                  # preset id (必填)
+      name?: str,                   # group name (默认 = preset + "-{timestamp}")
+      strategy?: str,               # round-robin-group (默认) / flat / group-failover / group-weighted
+      create_api_key?: bool=true,
+      api_key_name?: str,
+      api_key_rate_limit_rpm?: int=60,
+    }
+
+    返回: 同 from-filter
+    """
+    from .group_wizard import get_preset, preset_to_filter
+
+    preset_id = (payload.get("preset") or "").strip()
+    try:
+        preset = get_preset(preset_id)
+    except KeyError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+
+    name = (payload.get("name") or f"{preset_id}-wizard").strip()
+    strategy = payload.get("strategy") or "round-robin-group"
+
+    # 复用 from-filter 端点逻辑
+    from .model_filter import ModelFilter
+    filter_dict = preset["filter"]
+    f = ModelFilter.from_dict(filter_dict)
+
+    # 直接复用 from-filter 的实现 (避免重复逻辑)
+    # 内部调用 create_group + 可选 key
+    from .model_groups import get_model_group_manager
+    from .model_filter import apply_filter
+    mgm = get_model_group_manager()
+    if not mgm:
+        return JSONResponse({"error": "model_group_manager not initialized"}, status_code=503)
+    if name in mgm._groups:
+        return JSONResponse({"error": f"group '{name}' already exists"}, status_code=409)
+
+    all_models = registry.get_models()
+    matched = apply_filter(f, all_models)
+    if not matched:
+        return JSONResponse({
+            "error": f"preset '{preset_id}' matched 0 models",
+            "filter": f.to_dict(),
+        }, status_code=400)
+
+    import re as _re
+    patterns = [_re.escape(m.id) for m in matched]
+    patterns = [f".*{p}.*" for p in patterns]
+    patterns = list(dict.fromkeys(patterns))
+
+    try:
+        group = mgm.create_group(
+            name=name,
+            patterns=patterns,
+            description=f"Wizard preset: {preset['name']} (matched {len(matched)})",
+            enabled=True,
+        )
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+
+    if strategy not in ("flat", "round-robin-group", "group-failover", "group-weighted"):
+        mgm.delete_group(name)
+        return JSONResponse({
+            "error": f"strategy must be: flat / round-robin-group / group-failover / group-weighted, got '{strategy}'",
+        }, status_code=400)
+    config.update_routing({"group_strategy": strategy})
+
+    result = {
+        "ok": True,
+        "preset": preset_id,
+        "preset_name": preset["name"],
+        "group": {
+            "name": group.name,
+            "patterns": len(patterns),
+            "description": group.description,
+            "model_count": len(matched),
+        },
+        "resolved_count": len(matched),
+        "matched_samples": [m.id for m in matched[:5]],
+        "strategy": strategy,
+        "filter": f.to_dict(),
+    }
+
+    if payload.get("create_api_key", True):
+        from .public_api import public_key_manager
+        if public_key_manager is None:
+            mgm.delete_group(name)
+            return JSONResponse({"error": "public_key_manager not initialized"}, status_code=503)
+        key_name = (payload.get("api_key_name") or f"{name}-key").strip()
+        if not all(c.isalnum() or c in "-_" for c in key_name):
+            mgm.delete_group(name)
+            return JSONResponse({"error": "api_key_name must be alphanumeric/dash/underscore"}, status_code=400)
+        try:
+            key_result = public_key_manager.create_key(
+                name=key_name,
+                rate_limit_rpm=int(payload.get("api_key_rate_limit_rpm", 60)),
+                model_filter=[f"group:{name}"],
+                note=f"Auto-generated by wizard preset '{preset_id}'",
+            )
+        except ValueError as e:
+            mgm.delete_group(name)
+            return JSONResponse({"error": f"key creation failed: {e}"}, status_code=409)
+        result["api_key"] = {
+            "key": key_result["key"],
+            "key_hash": key_result["key_hash"],
+            "name": key_result["name"],
+            "model_filter": key_result["model_filter"],
+            "_warning": "原 key 只返回这一次, 之后只能重新生成",
+        }
+
+    return JSONResponse(result)
 
 
 @router.get("/v1/admin/public-keys/usage")

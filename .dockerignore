@@ -1,12 +1,50 @@
+# v3.10.0 Docker build context exclusion
+# 避免 state/secrets/backups 进 image (这些用卷挂载)
+
+# Git
+.git/
+.gitignore
+
+# Python
 venv/
 __pycache__/
 *.pyc
 *.pyo
-.DS_Store
-.git/
+*.spec
+build/
+dist/
+dist_windows/
+
+# State & secrets (用卷挂载, 不进 image)
+state/
+**/keys.json
+**/key_vault/
+**/secrets/
+config.local.yaml
+.env.local
+*.state.json
+
+# Backups & runtime
+.backups/
 logs/
 test_config.yaml
 test_models.py
+
+# Dev artifacts
 *.tar.gz
-supermodel_router.service
+pip-cache/
+hot-cache/
 README.md
+docs/sandbox-reports/
+
+# Editor
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# Docker
+Dockerfile
+docker-compose.yml
+.dockerignore
+docker-entrypoint.sh

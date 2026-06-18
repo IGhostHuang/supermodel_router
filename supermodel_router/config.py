@@ -7,7 +7,7 @@ import time
 import threading
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict
 
 import yaml
 
@@ -88,6 +88,19 @@ class Config:
     @property
     def routing(self) -> dict:
         return self._data.get("routing", {})
+
+    def group_strategy(self) -> str:
+        """v3.9.0 (Phase H): 4 种轮询策略
+        - flat: 老 v4 全局降序
+        - round-robin-group: 桶间轮询 (默认)
+        - group-failover: group 优先级 failover
+        - group-weighted: 加权随机
+        """
+        return self._data.get("routing", {}).get("group_strategy", "round-robin-group")
+
+    def group_weights(self) -> Dict[str, float]:
+        """v3.9.0 (Phase H): group-weighted 策略专用, group_name → weight"""
+        return self._data.get("routing", {}).get("group_weights", {})
 
     @property
     def providers(self) -> dict:

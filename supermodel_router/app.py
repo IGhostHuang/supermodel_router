@@ -7,7 +7,7 @@ import logging
 import asyncio
 import threading
 from contextlib import asynccontextmanager
-from typing import Any, AsyncGenerator, cast
+from typing import Any, AsyncGenerator, Dict, List, cast
 
 import httpx
 from fastapi import FastAPI, Request, Response
@@ -68,6 +68,13 @@ async def lifespan(app: FastAPI):
     registry = ModelRegistry(config)
     registry.build()
     registry.refresh_all()
+    # v3.10.0 (Phase I): refresh 后 merge metadata 到 ModelInfo
+    from .model_metadata import get_model_metadata_store
+    _mms = get_model_metadata_store()
+    if _mms is not None:
+        all_models = registry.get_models()  # List[ModelInfo]
+        merged = _mms.merge_bulk(all_models)
+        LOG.info("Phase I: merged metadata into %d models", merged)
     engine = RouteEngine(config, registry)
 
     # v3.4.0: ContextBridge — 上下文桥接 + 过期标记 (老大 22:00 拍)
@@ -85,6 +92,29 @@ async def lifespan(app: FastAPI):
     # v3.3: model_manager 注册到 refresh 完成回调 (覆盖 periodic_refresh + admin API 全部 refresh_all 调用)
     registry.register_refresh_callback(model_manager.on_refresh)
 
+    # v3.9.0: ModelGroupManager 同步 registry model 列表 (跨 provider 解析)
+    from .model_groups import get_model_group_manager
+    def _sync_mgm():
+        try:
+            mgm = get_model_group_manager()
+            if mgm is None:
+                return
+            provider_models: Dict[str, List[str]] = {}
+            for pname, ps in registry._providers.items():
+                mids = []
+                for m in ps.models:
+                    mids.append(m.id)
+                provider_models[pname] = mids
+            mgm.set_known_models(provider_models)
+            LOG.info("ModelGroupManager: synced %d providers / %d total models",
+                     len(provider_models), sum(len(v) for v in provider_models.values()))
+        except Exception:
+            LOG.exception("ModelGroupManager sync failed")
+    registry.register_refresh_callback(_sync_mgm)
+    # v3.10.0 (Phase I+J bug fix): register 时 callback 已注册, 但 startup refresh 之前已完成.
+    # 立即手动调一次 sync, 确保 _known_models_provider 不空 (resolve_group 依赖)
+    _sync_mgm()
+
     config.start_watcher()
     config.on_change(lambda data: model_manager.on_config_reload())
 
@@ -95,6 +125,11 @@ async def lifespan(app: FastAPI):
             await asyncio.sleep(refresh_interval)
             try:
                 registry.refresh_all()
+                # v3.10.0 (Phase I): periodic refresh 后也 merge metadata
+                from .model_metadata import get_model_metadata_store
+                _mms = get_model_metadata_store()
+                if _mms is not None:
+                    _mms.merge_bulk(registry.get_models())
             except Exception:
                 LOG.exception("periodic refresh failed")
     asyncio.create_task(_periodic_refresh())
@@ -132,6 +167,16 @@ async def lifespan(app: FastAPI):
     state_dir = config.data.get("model_management", {}).get("state_dir", ".")
     init_public_key_manager(state_dir=state_dir)
 
+    # v3.9.0: Model Groups 管理 (跨 provider 解析 + 轮询规则)
+    from .model_groups import init_model_group_manager
+    init_model_group_manager(state_dir=state_dir)
+    LOG.info("ModelGroupManager v3.9.0 initialized (state_dir=%s)", state_dir)
+
+    # v3.10.0 (Phase I): Model Metadata Store (quality/speed/reasoning/tags 元数据)
+    from .model_metadata import init_model_metadata_store, get_model_metadata_store
+    init_model_metadata_store(state_dir=state_dir)
+    LOG.info("ModelMetadataStore v3.10.0 initialized (state_dir=%s)", state_dir)
+
     yield
     config.stop_watcher()
 
@@ -167,7 +212,9 @@ async def public_usage_middleware(request: Request, call_next):
             success = 200 <= response.status_code < 400
             # 流式响应无法直接读 body 计 tokens, 暂时按 status 计数
             tokens = 0
-            pkm.record_usage(meta["key_hash"], success=success, tokens=tokens)
+            # v3.9.0 (Phase G): 读 request.state.requested_model (per-tenant key 鉴权时存进去的), 缺省 None
+            model_name = getattr(request.state, "requested_model", None)
+            pkm.record_usage(meta["key_hash"], success=success, tokens=tokens, model_name=model_name)
     except Exception as e:
         LOG.warning("public_usage_middleware: %s", e)
     return response
