@@ -9,8 +9,10 @@ services:
     container_name: supermodel_router
     restart: unless-stopped
     ports:
-      # 用 6475 避开主机 6473 (老大真 SMR 实例占用)
-      - "6475:6473"
+      # 2026-06-18 15:53 升级: 改回 6473:6473 (老大拍 🅰️, 同端口升级, 客户端 0 改动)
+      # 老 v3.7.1 (PID 205779, host 模式) 已被 stop, 端口空出
+      # 新 v3.8.1 接 :6473, 5b SOP 端到端验真后 commit
+      - "6473:6473"
     volumes:
       # 映射外部 config.yaml (改文件热重载生效, 无需重启容器)
       - ./config.yaml:/app/config.yaml:ro
