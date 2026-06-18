@@ -183,3 +183,48 @@ from .admin_api import router as admin_api_router, init as admin_api_init
 app.include_router(openai_router)
 app.include_router(admin_ui_router)
 app.include_router(admin_api_router)
+
+# ---- v3.8.1: mount /design 端点, 暴露 SMR-design.html 设计文档 ----
+# 让老大和 reviewer 通过 http://localhost:6473/design 看完整功能设计
+# build-time 由 scripts/sync_design_to_admin.py 同步 docs/SMR-design.html → /app/docs/SMR-design.html
+import os
+from fastapi.responses import FileResponse
+from pathlib import Path
+
+_DESIGN_HTML_CANDIDATES = [
+    Path("/app/docs/SMR-design.html"),                          # docker 部署 (build-time sync 目标)
+    Path(__file__).parent / "static" / "SMR-design.html",       # dev 模式 (build-time sync 默认目标)
+    Path(__file__).parent.parent / "docs" / "SMR-design.html",  # 仓库 docs/ 源文件 (兜底)
+]
+
+
+@app.get("/design", include_in_schema=False)
+@app.get("/design/", include_in_schema=False)
+async def smr_design_page():
+    """v3.8.1: 暴露 docs/SMR-design.html 设计文档
+    路径探测顺序: /app/docs/ → 仓库 docs/
+    """
+    for p in _DESIGN_HTML_CANDIDATES:
+        if p.exists():
+            return FileResponse(p, media_type="text/html")
+    return Response(
+        content="<h1>Design doc not found</h1><p>Expected at: "
+                + "<br>".join(str(p) for p in _DESIGN_HTML_CANDIDATES)
+                + "</p>",
+        status_code=404,
+        media_type="text/html",
+    )
+
+
+@app.get("/v1/admin/design", include_in_schema=False)
+async def smr_design_meta():
+    """v3.8.1: 设计文档元数据 (供 admin UI 校验是否同步)"""
+    for p in _DESIGN_HTML_CANDIDATES:
+        if p.exists():
+            return {
+                "ok": True,
+                "path": str(p),
+                "size_bytes": p.stat().st_size,
+                "mtime": p.stat().st_mtime,
+            }
+    return {"ok": False, "candidates": [str(p) for p in _DESIGN_HTML_CANDIDATES]}

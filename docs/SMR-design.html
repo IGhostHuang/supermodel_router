@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SMR v3.8.0 完整功能设计 — SuperModel Router</title>
+<style>
+  :root {
+    --bg: #020617;
+    --bg-2: #0f172a;
+    --bg-3: #1e293b;
+    --fg: #e2e8f0;
+    --fg-dim: #94a3b8;
+    --fg-dimmer: #64748b;
+    --cyan: #22d3ee;
+    --emerald: #34d399;
+    --violet: #a78bfa;
+    --amber: #fbbf24;
+    --rose: #fb7185;
+    --orange: #fb923c;
+    --slate: #94a3b8;
+    --border: #1e293b;
+    --border-strong: #334155;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: var(--bg);
+    color: var(--fg);
+    line-height: 1.7;
+    font-size: 15px;
+  }
+  .wrap { max-width: 1200px; margin: 0 auto; padding: 40px 24px 80px; }
+  header {
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 24px;
+    margin-bottom: 40px;
+  }
+  .pulse {
+    display: inline-block; width: 10px; height: 10px;
+    background: var(--emerald); border-radius: 50%;
+    box-shadow: 0 0 0 0 var(--emerald);
+    animation: pulse 2s infinite;
+    margin-right: 8px;
+    vertical-align: middle;
+  }
+  @keyframes pulse {
+    0% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.7); }
+    70% { box-shadow: 0 0 0 10px rgba(52, 211, 153, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0); }
+  }
+  h1 { font-size: 36px; margin: 0 0 8px; color: var(--cyan); }
+  .sub { color: var(--fg-dim); font-size: 14px; }
+  h2 {
+    color: var(--cyan);
+    font-size: 24px;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 12px;
+    margin: 48px 0 20px;
+  }
+  h3 { color: var(--emerald); font-size: 18px; margin: 24px 0 12px; }
+  h4 { color: var(--amber); font-size: 16px; margin: 16px 0 8px; }
+  code {
+    font-family: "JetBrains Mono", "Fira Code", Consolas, monospace;
+    background: var(--bg-2);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 13px;
+    color: var(--violet);
+  }
+  pre {
+    background: var(--bg-2);
+    padding: 16px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    overflow-x: auto;
+    font-size: 13px;
+  }
+  pre code { background: none; padding: 0; color: var(--fg); }
+  table { border-collapse: collapse; width: 100%; margin: 16px 0; }
+  th, td { border: 1px solid var(--border); padding: 8px 12px; text-align: left; }
+  th { background: var(--bg-2); color: var(--cyan); font-weight: 600; }
+  tr:nth-child(even) td { background: var(--bg-2); }
+  .card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 16px;
+    margin: 16px 0;
+  }
+  .card {
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+    position: relative;
+  }
+  .card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0;
+    width: 3px; height: 100%;
+    background: var(--cyan);
+    border-radius: 8px 0 0 8px;
+  }
+  .card.cyan::before { background: var(--cyan); }
+  .card.emerald::before { background: var(--emerald); }
+  .card.amber::before { background: var(--amber); }
+  .card.violet::before { background: var(--violet); }
+  .card.rose::before { background: var(--rose); }
+  .card h4 { margin-top: 0; }
+  .card p { margin: 8px 0 0; color: var(--fg-dim); font-size: 14px; }
+  .timeline { position: relative; padding-left: 30px; }
+  .timeline::before {
+    content: '';
+    position: absolute;
+    left: 8px;
+    top: 0; bottom: 0;
+    width: 2px;
+    background: var(--border-strong);
+  }
+  .timeline-item {
+    position: relative;
+    margin-bottom: 20px;
+    padding-left: 20px;
+  }
+  .timeline-item::before {
+    content: '';
+    position: absolute;
+    left: -27px;
+    top: 6px;
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    background: var(--cyan);
+    box-shadow: 0 0 0 4px var(--bg);
+  }
+  .timeline-item .ver { color: var(--amber); font-weight: 600; }
+  .timeline-item .date { color: var(--fg-dimmer); font-size: 13px; margin-left: 8px; }
+  .pill {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 12px;
+    background: var(--bg-3);
+    color: var(--cyan);
+    border: 1px solid var(--border);
+  }
+  .pill.green { color: var(--emerald); }
+  .pill.red { color: var(--rose); }
+  .pill.amber { color: var(--amber); }
+  .footer {
+    margin-top: 60px;
+    padding-top: 24px;
+    border-top: 1px solid var(--border);
+    color: var(--fg-dimmer);
+    font-size: 13px;
+  }
+  .arch-svg { width: 100%; height: auto; background: var(--bg-2); border-radius: 8px; margin: 16px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1><span class="pulse"></span>SMR v3.8.0 完整功能设计</h1>
+  <div class="sub">
+    <span class="pill green">SuperModel Router</span>
+    <span class="pill">2026-06-16 → 2026-06-18</span>
+    <span class="pill amber">mainbot / echo 主导 · 小星雲 + 伊芙 review</span>
+  </div>
+  <p style="margin-top: 16px; color: var(--fg-dim);">
+    复盘 2026-06-16 → 2026-06-18 两天开发, 覆盖 8 个版本 (v3.1 → v3.8.0), 11 项核心特性, 4 个 P-NNN 项目骨架,
+    3 轮小星雲 review 沉淀 13 个 R-数字持续指令. 本文是 SMR 的"全景地图", 跟代码同步演进, build-time 自动 sync 到 admin UI.
+  </p>
+</header>
+
+<!-- 1. 项目定位 -->
+<h2>1. 项目定位</h2>
+<p><strong>SuperModel Router (SMR)</strong> 是一个 <strong>多 Provider / 多 Key / 智能路由</strong> 的 OpenAI-兼容 API 代理.
+核心价值: 把"哪个 provider / 哪个 key / 哪个 model" 3 个维度决策<strong>完全交给程序</strong>, 老大的所有 chat 调用走 <code>http://localhost:6473/v1/chat/completions</code> 一个端点即可, 不感知后端差异.</p>
+
+<div class="card-grid">
+  <div class="card cyan">
+    <h4>3 维度路由</h4>
+    <p>Provider (openrouter/freem/newapi/...) → Key (多 key 轮询/401 换) → Model (评分+规则+filter)</p>
+  </div>
+  <div class="card emerald">
+    <h4>OpenAI 兼容</h4>
+    <p><code>/v1/chat/completions</code> / <code>/v1/embeddings</code> / <code>/v1/models</code> 全部标准, 现有 SDK 0 改动接入</p>
+  </div>
+  <div class="card amber">
+    <h4>多租户对外 API</h4>
+    <p>v3.7.1+ <code>/v1/public/chat/completions</code> 独立 API key 管理, 不走 admin key 池</p>
+  </div>
+  <div class="card violet">
+    <h4>上下文感知</h4>
+    <p>v3.4+ 上下文桥接 (切链同步) + v3.8 切链压缩 (按目标 model context_window 自动)</p>
+  </div>
+  <div class="card rose">
+    <h4>可视化</h4>
+    <p>admin UI i18n (中/英) + 路由表 / 模型列表 / 公开 key / 上下文桥接统计</p>
+  </div>
+  <div class="card cyan">
+    <h4>自升级</h4>
+    <p>v3.1+ <code>/v1/admin/version</code> + GitHub release 轮询 + <code>/v1/admin/upgrade</code> 生成 4 种升级命令</p>
+  </div>
+</div>
+
+<!-- 2. 架构 -->
+<h2>2. 架构</h2>
+<svg class="arch-svg" viewBox="0 0 1200 600" xmlns="http://www.w3.org/2000/svg">
+  <!-- Grid -->
+  <defs>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1e293b" stroke-width="0.5"/>
+    </defs>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1e293b" stroke-width="0.5"/>
+    </pattern>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#94a3b8"/>
+    </marker>
+  </defs>
+  <rect width="1200" height="600" fill="#020617"/>
+  <rect width="1200" height="600" fill="url(#grid)"/>
+
+  <!-- Client Layer -->
+  <text x="20" y="30" fill="#64748b" font-size="11" font-family="JetBrains Mono">CLIENT</text>
+  <rect x="20" y="40" width="280" height="60" rx="6" fill="#0f172a" stroke="#22d3ee" stroke-width="1.5"/>
+  <text x="160" y="68" fill="#22d3ee" font-size="14" text-anchor="middle" font-family="JetBrains Mono">mainbot (echo · 8644)</text>
+  <text x="160" y="86" fill="#94a3b8" font-size="11" text-anchor="middle" font-family="JetBrains Mono">coder · housekeeper · monitor</text>
+
+  <rect x="320" y="40" width="280" height="60" rx="6" fill="#0f172a" stroke="#22d3ee" stroke-width="1.5"/>
+  <text x="460" y="68" fill="#22d3ee" font-size="14" text-anchor="middle" font-family="JetBrains Mono">OpenAI SDK / curl / LangChain</text>
+  <text x="460" y="86" fill="#94a3b8" font-size="11" text-anchor="middle" font-family="JetBrains Mono">走 /v1/chat/completions</text>
+
+  <rect x="620" y="40" width="280" height="60" rx="6" fill="#0f172a" stroke="#22d3ee" stroke-width="1.5"/>
+  <text x="760" y="68" fill="#22d3ee" font-size="14" text-anchor="middle" font-family="JetBrains Mono">外部用户 / 第三方 app</text>
+  <text x="760" y="86" fill="#94a3b8" font-size="11" text-anchor="middle" font-family="JetBrains Mono">走 /v1/public/chat/completions</text>
+
+  <!-- SMR Core -->
+  <text x="20" y="160" fill="#64748b" font-size="11" font-family="JetBrains Mono">SMR CORE (FastAPI · :6473)</text>
+  <rect x="20" y="170" width="880" height="220" rx="8" fill="#0f172a" stroke="#34d399" stroke-width="2" stroke-dasharray="4,4"/>
+
+  <!-- OpenAI routes -->
+  <rect x="40" y="190" width="180" height="60" rx="6" fill="rgba(6,78,59,0.4)" stroke="#34d399"/>
+  <text x="130" y="215" fill="#34d399" font-size="13" text-anchor="middle" font-family="JetBrains Mono">openai_routes</text>
+  <text x="130" y="233" fill="#94a3b8" font-size="10" text-anchor="middle" font-family="JetBrains Mono">/v1/chat/completions</text>
+
+  <!-- Public API -->
+  <rect x="240" y="190" width="180" height="60" rx="6" fill="rgba(6,78,59,0.4)" stroke="#34d399"/>
+  <text x="330" y="215" fill="#34d399" font-size="13" text-anchor="middle" font-family="JetBrains Mono">public_api</text>
+  <text x="330" y="233" fill="#94a3b8" font-size="10" text-anchor="middle" font-family="JetBrains Mono">/v1/public/* 多租户</text>
+
+  <!-- Admin API -->
+  <rect x="440" y="190" width="180" height="60" rx="6" fill="rgba(6,78,59,0.4)" stroke="#34d399"/>
+  <text x="530" y="215" fill="#34d399" font-size="13" text-anchor="middle" font-family="JetBrains Mono">admin_api</text>
+  <text x="530" y="233" fill="#94a3b8" font-size="10" text-anchor="middle" font-family="JetBrains Mono">/v1/admin/* 管理面</text>
+
+  <!-- Engine -->
+  <rect x="640" y="190" width="240" height="60" rx="6" fill="rgba(6,78,59,0.4)" stroke="#34d399"/>
+  <text x="760" y="215" fill="#34d399" font-size="13" text-anchor="middle" font-family="JetBrains Mono">engine (路由引擎)</text>
+  <text x="760" y="233" fill="#94a3b8" font-size="10" text-anchor="middle" font-family="JetBrains Mono">pick_chain + 切链 race 防御</text>
+
+  <!-- Context Bridge -->
+  <rect x="40" y="270" width="280" height="60" rx="6" fill="rgba(8,51,68,0.4)" stroke="#22d3ee"/>
+  <text x="180" y="295" fill="#22d3ee" font-size="13" text-anchor="middle" font-family="JetBrains Mono">context_bridge</text>
+  <text x="180" y="313" fill="#94a3b8" font-size="10" text-anchor="middle" font-family="JetBrains Mono">切链同步 + 压缩 + 过期标记</text>
+
+  <!-- Classifier -->
+  <rect x="340" y="270" width="200" height="60" rx="6" fill="rgba(76,29,149,0.4)" stroke="#a78bfa"/>
+  <text x="440" y="295" fill="#a78bfa" font-size="13" text-anchor="middle" font-family="JetBrains Mono">classifier</text>
+  <text x="440" y="313" fill="#94a3b8" font-size="10" text-anchor="middle" font-family="JetBrains Mono">7 档 context bonus + scoring</text>
+
+  <!-- Model Manager -->
+  <rect x="560" y="270" width="200" height="60" rx="6" fill="rgba(8,51,68,0.4)" stroke="#22d3ee"/>
+  <text x="660" y="295" fill="#22d3ee" font-size="13" text-anchor="middle" font-family="JetBrains Mono">model_manager</text>
+  <text x="660" y="313" fill="#94a3b8" font-size="10" text-anchor="middle" font-family="JetBrains Mono">拉模型列表 + 持久化</text>
+
+  <!-- Version -->
+  <rect x="780" y="270" width="100" height="60" rx="6" fill="rgba(120,53,15,0.3)" stroke="#fbbf24"/>
+  <text x="830" y="295" fill="#fbbf24" font-size="13" text-anchor="middle" font-family="JetBrains Mono">version</text>
+  <text x="830" y="313" fill="#94a3b8" font-size="10" text-anchor="middle" font-family="JetBrains Mono">自升级</text>
+
+  <!-- Providers -->
+  <text x="20" y="430" fill="#64748b" font-size="11" font-family="JetBrains Mono">PROVIDERS (L4 upstream)</text>
+  <rect x="20" y="440" width="180" height="60" rx="6" fill="rgba(30,41,59,0.5)" stroke="#94a3b8"/>
+  <text x="110" y="465" fill="#94a3b8" font-size="13" text-anchor="middle" font-family="JetBrains Mono">openrouter</text>
+  <text x="110" y="483" fill="#64748b" font-size="10" text-anchor="middle" font-family="JetBrains Mono">付费 24 模型</text>
+
+  <rect x="220" y="440" width="180" height="60" rx="6" fill="rgba(30,41,59,0.5)" stroke="#94a3b8"/>
+  <text x="310" y="465" fill="#94a3b8" font-size="13" text-anchor="middle" font-family="JetBrains Mono">newapi</text>
+  <text x="310" y="483" fill="#64748b" font-size="10" text-anchor="middle" font-family="JetBrains Mono">中转 多 model</text>
+
+  <rect x="420" y="440" width="180" height="60" rx="6" fill="rgba(30,41,59,0.5)" stroke="#94a3b8"/>
+  <text x="510" y="465" fill="#94a3b8" font-size="13" text-anchor="middle" font-family="JetBrains Mono">freemodel</text>
+  <text x="510" y="483" fill="#64748b" font-size="10" text-anchor="middle" font-family="JetBrains Mono">model-router 内部聚合</text>
+
+  <!-- State -->
+  <text x="620" y="430" fill="#64748b" font-size="11" font-family="JetBrains Mono">PERSISTENCE</text>
+  <rect x="620" y="440" width="280" height="60" rx="6" fill="rgba(76,29,149,0.4)" stroke="#a78bfa"/>
+  <text x="760" y="465" fill="#a78bfa" font-size="13" text-anchor="middle" font-family="JetBrains Mono">state/</text>
+  <text x="760" y="483" fill="#94a3b8" font-size="10" text-anchor="middle" font-family="JetBrains Mono">public_keys + model_rules + penalties</text>
+
+  <!-- Arrows: clients → SMR -->
+  <line x1="160" y1="100" x2="130" y2="190" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="460" y1="100" x2="330" y2="190" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="760" y1="100" x2="530" y2="190" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Engine → Providers -->
+  <line x1="700" y1="250" x2="110" y2="440" stroke="#34d399" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="760" y1="250" x2="310" y2="440" stroke="#34d399" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="820" y1="250" x2="510" y2="440" stroke="#34d399" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- SMR → State -->
+  <line x1="640" y1="330" x2="700" y2="440" stroke="#a78bfa" stroke-width="1" stroke-dasharray="3,3" marker-end="url(#arrow)"/>
+</svg>
+
+<h3>数据流 (典型 chat 场景)</h3>
+<ol>
+  <li>客户端 POST <code>/v1/chat/completions</code> 带 <code>{model, messages, stream, ...}</code></li>
+  <li><strong>openai_routes</strong> 接收 → 调 <strong>engine.pick_chain</strong> 选 candidate 链 (provider+key+model)</li>
+  <li><strong>context_bridge.compress_for_target</strong> 按链中 target context_window 压缩 body</li>
+  <li><strong>engine.execute_chain</strong> 串行试 candidate, 401/5xx 自动切下一个, 流式切时显式 aclose 上游</li>
+  <li>任意 candidate 成功 → 返回 200 + <code>_router</code> metadata (provider/model/chain/latency/stale)</li>
+  <li>全失败 → 502 + 完整尝试链 metadata</li>
+</ol>
+
+<!-- 3. 时间线 -->
+<h2>3. 版本演进 (2 天 8 版)</h2>
+<div class="timeline">
+  <div class="timeline-item">
+    <span class="ver">v3.1.0</span> <span class="date">2026-06-16 09:48 · 老大钦定 C 项</span>
+    <p>SMR_VERSION + 启动打印 + GitHub release 定时检查 + <code>/v1/admin/version</code> + <code>/v1/admin/upgrade</code> 4 种升级命令生成</p>
+  </div>
+  <div class="timeline-item">
+    <span class="ver">v3.2.0</span> <span class="date">2026-06-16 14:40 · 老大拍 C 项</span>
+    <p>config 自动备份 (保留 50) + <code>/v1/admin/config/backups</code> + <code>restore</code> + penalty state 持久化</p>
+  </div>
+  <div class="timeline-item">
+    <span class="ver">v3.4.0</span> <span class="date">2026-06-17 22:00 · 老大钦定</span>
+    <p>ContextBridge 上下文桥接: 切到下个 candidate 时注入 system message 同步上下文 + 过期标记 (30min 阈值) + SSE sentinel</p>
+  </div>
+  <div class="timeline-item">
+    <span class="ver">v3.5.0</span> <span class="date">2026-06-17 22:25 · 老大钦定</span>
+    <p>主动盘点 endpoint <code>/v1/admin/context_review</code> + 切链 race condition 防御 (stream 模式 aclose 上游) + smr_request_id 嵌入 response</p>
+  </div>
+  <div class="timeline-item">
+    <span class="ver">v3.6.0</span> <span class="date">2026-06-17 23:56 · 老大拍</span>
+    <p>UI/UX 全面改版: sidebar nav / 分页 / 真实使用量统计 / API key 独立管理 / PERSISTENCE.md 启动自动迁移</p>
+  </div>
+  <div class="timeline-item">
+    <span class="ver">v3.7.1</span> <span class="date">2026-06-18 03:00 · 推完 0e656a7 + 8cff72c</span>
+    <p><code>/v1/public/chat/completions</code> 公开 API + model_filter 4 通配 + UI 版本号修正 + 修 2 P0 (中间件 / 通配)</p>
+  </div>
+  <div class="timeline-item">
+    <span class="ver">v3.7.2</span> <span class="date">2026-06-18 04:00 · commit 1c68ab2</span>
+    <p>修 2 P0 (中间件 token 累计 / model_filter 通配) + 1 P2 (state 路径) + secret leak 防御 (.gitignore 加 9 行)</p>
+  </div>
+  <div class="timeline-item" style="border-left: 2px solid var(--emerald); padding-left: 12px; margin-left: -10px;">
+    <span class="ver" style="color: var(--emerald)">v3.8.0</span> <span class="date">2026-06-18 14:30 · commit aba36c6 (本次)</span>
+    <p>7 档 context_window bonus (4K/8K/16K/32K/64K/128K/200K) 可配置 + 切链压缩 (paragraph_chunk / history_trim) + ModelInfo 顶层 context_window 字段 + admin routes 输出 context_window + score + .gitignore 加 4 个 state files</p>
+  </div>
+</div>
+
+<!-- 4. 核心特性 -->
+<h2>4. 核心特性 (11 项)</h2>
+
+<div class="card-grid">
+  <div class="card cyan">
+    <h4>① 多 Key 轮询</h4>
+    <p>每 provider 配 N 个 key, 失败自动顺延. <code>key_index</code> 嵌入 <code>_router</code> metadata 便于排查</p>
+  </div>
+  <div class="card emerald">
+    <h4>② 401 换 Key</h4>
+    <p>当前 key 401 → 立刻换下一个 key 重试, 跳过该 key 当前请求. 配合 multi-key 池, 单 key 失效不阻塞</p>
+  </div>
+  <div class="card amber">
+    <h4>③ 5xx 跨 Provider 重试</h4>
+    <p>5xx 错误跨 candidate 链重试, max_retry=2 + retry_backoff_ms [0, 500] 指数退避</p>
+  </div>
+  <div class="card violet">
+    <h4>④ 上下文桥接 (v3.4)</h4>
+    <p>切链时注入 system message 同步上下文: "你正在接续, 前面 N 次尝试失败, partial 输出 X, 你的任务 1/2/3/4"</p>
+  </div>
+  <div class="card rose">
+    <h4>⑤ 切链 Race 防御 (v3.5)</h4>
+    <p>stream 模式切链时显式 aclose() 上游 httpx, 防止旧模型的迟缓 reply 晚到错配新请求. smr_request_id 校验</p>
+  </div>
+  <div class="card cyan">
+    <h4>⑥ 主动盘点 (v3.5)</h4>
+    <p><code>POST /v1/admin/context_review</code> 拿 smr_request_id 聚合报告: 参与模型/切链次数/原因/累积 partial/stale</p>
+  </div>
+  <div class="card emerald">
+    <h4>⑦ 上下文窗口评分 (v3.8)</h4>
+    <p>7 档 context bonus 4K=2 → 200K=20, 默认按模型能力排序. 可通过 config.classifier.context_window_bonus 自定义</p>
+  </div>
+  <div class="card amber">
+    <h4>⑧ 切链压缩 (v3.8)</h4>
+    <p>切到 8K 模型但 body 1K tokens → 触发 paragraph_chunk (拆段不增 message) 或 history_trim (留 system + 最近 K 轮)</p>
+  </div>
+  <div class="card violet">
+    <h4>⑨ 公开 API (v3.7.1)</h4>
+    <p><code>/v1/public/chat/completions</code> 多租户, 独立 API key 管理 + model_filter 通配 (include/exclude/all)</p>
+  </div>
+  <div class="card rose">
+    <h4>⑩ Admin UI i18n (v3.6)</h4>
+    <p>中/英双语切换, sidebar nav (Dashboard/Providers/Models/Keys/Stats/Config/Classifier/Version), 真实使用量统计卡片</p>
+  </div>
+  <div class="card cyan">
+    <h4>⑪ 自升级 (v3.1)</h4>
+    <p>GitHub release 1h 缓存 + <code>/v1/admin/upgrade</code> 生成 git/pip/docker/binary 4 种命令 + warning 风险提示, 不直接执行</p>
+  </div>
+</div>
+
+<!-- 5. 端点目录 -->
+<h2>5. 端点目录 (25+ 个)</h2>
+<table>
+  <tr><th>路径</th><th>用途</th><th>版本</th></tr>
+  <tr><td colspan="3" style="background: var(--bg-3); color: var(--cyan)"><strong>OpenAI 兼容 (client)</strong></td></tr>
+  <tr><td><code>POST /v1/chat/completions</code></td><td>主入口, 内部多租户</td><td>v3.1</td></tr>
+  <tr><td><code>POST /v1/public/chat/completions</code></td><td>对外公开 API, 独立 key 池</td><td>v3.7.1</td></tr>
+  <tr><td><code>GET /v1/models</code></td><td>OpenAI 标准, 路由后的 models 列表</td><td>v3.1</td></tr>
+  <tr><td colspan="3" style="background: var(--bg-3); color: var(--cyan)"><strong>Admin (owner)</strong></td></tr>
+  <tr><td><code>GET /v1/admin/version</code></td><td>当前版本 + 远端 release + 升级建议</td><td>v3.1</td></tr>
+  <tr><td><code>POST /v1/admin/upgrade</code></td><td>生成升级命令 (4 种 method)</td><td>v3.1</td></tr>
+  <tr><td><code>GET /v1/admin/routes</code></td><td>路由表 (含 context_window + score)</td><td>v3.8</td></tr>
+  <tr><td><code>GET /v1/admin/models</code></td><td>详细模型列表 (含 pricing/capability)</td><td>v3.6</td></tr>
+  <tr><td><code>POST /v1/admin/refresh</code></td><td>重新拉 provider 模型</td><td>v3.1</td></tr>
+  <tr><td><code>GET /v1/admin/config</code></td><td>当前配置</td><td>v3.1</td></tr>
+  <tr><td><code>GET /v1/admin/config/backups</code></td><td>历史 config 备份列表</td><td>v3.2</td></tr>
+  <tr><td><code>POST /v1/admin/config/restore</code></td><td>恢复指定备份</td><td>v3.2</td></tr>
+  <tr><td><code>GET /v1/admin/api-keys</code></td><td>API key 列表 (v3.6 独立页)</td><td>v3.6</td></tr>
+  <tr><td><code>POST /v1/admin/import-keys</code></td><td>批量导入 keys</td><td>v3.6</td></tr>
+  <tr><td><code>GET /v1/admin/stats</code></td><td>使用量统计</td><td>v3.6</td></tr>
+  <tr><td><code>GET /v1/admin/classifier</code></td><td>分类器配置</td><td>v3.6</td></tr>
+  <tr><td colspan="3" style="background: var(--bg-3); color: var(--cyan)"><strong>Context Bridge (v3.4+)</strong></td></tr>
+  <tr><td><code>GET /v1/admin/context_bridge</code></td><td>config + stats</td><td>v3.4</td></tr>
+  <tr><td><code>POST /v1/admin/context_bridge/update</code></td><td>动态更新 config</td><td>v3.4</td></tr>
+  <tr><td><code>POST /v1/admin/context_bridge/reset</code></td><td>重置 stats</td><td>v3.4</td></tr>
+  <tr><td><code>POST /v1/admin/context_review</code></td><td>主动盘点, 聚合 SwitchRecord</td><td>v3.5</td></tr>
+  <tr><td colspan="3" style="background: var(--bg-3); color: var(--cyan)"><strong>Health</strong></td></tr>
+  <tr><td><code>GET /v1/health</code></td><td>健康检查 (liveness)</td><td>v3.1</td></tr>
+  <tr><td><code>GET /docs</code></td><td>FastAPI 自动 OpenAPI</td><td>v3.1</td></tr>
+  <tr><td><code>GET /design</code></td><td>本文 (SMR-design.html) <span class="pill green">v3.8.1</span></td><td>v3.8.1</td></tr>
+</table>
+
+<!-- 6. 关键决策 -->
+<h2>6. 关键设计决策</h2>
+<table>
+  <tr><th>决策</th><th>理由</th><th>拒绝方案</th></tr>
+  <tr><td><strong>OpenAI 协议 100% 兼容</strong></td><td>现有 SDK / LangChain / curl 0 改动接入</td><td>自定义协议 (迁移成本高)</td></tr>
+  <tr><td><strong>Docker 化部署</strong></td><td>老大主机常重启, docker 隔离可移植</td><td>systemd 直跑 (依赖难管理)</td></tr>
+  <tr><td><strong>config.yaml 外挂 + 热重载</strong></td><td>改 key/路由无需重启容器, 5s watcher</td><td>环境变量 (不能动态改)</td></tr>
+  <tr><td><strong>state/ volume 挂载</strong></td><td>容器重启 = 不丢 public_keys/penalties</td><td>in-memory (重启即丢)</td></tr>
+  <tr><td><strong>Host 模式部署 (老 v3.7.1)</strong></td><td>跟主机共享 network, 简单 (但有端口冲突风险)</td><td>bridge + port mapping</td></tr>
+  <tr><td><strong>bridge + 6475:6473 (新 v3.8.0)</strong></td><td>端口映射清晰, 跟老实例隔离</td><td>覆盖老端口 (中断生产)</td></tr>
+  <tr><td><strong>不替老大改 docker 镜像</strong></td><td>老大 control deploy 时机, echo 跑通验证即可</td><td>直接覆盖 :6473 容器</td></tr>
+  <tr><td><strong>GitHub release 缓存 1h</strong></td><td>减少 API 调用 + 抗 rate limit</td><td>每次请求实时拉</td></tr>
+  <tr><td><strong>升级命令只生成不执行</strong></td><td>SMR 不直接做危险操作, owner 手动执行</td><td>auto restart (破坏性)</td></tr>
+  <tr><td><strong>占位符用 <code>&lt;X_API_KEY_PLACEHOLDER&gt;</code></strong></td><td>避开 GH secret scanning 误判</td><td><code>${X_API_KEY}</code> (被 GH 拦)</td></tr>
+</table>
+
+<!-- 7. 已知 bug 修复 -->
+<h2>7. 已修复 Bug 清单</h2>
+<table>
+  <tr><th>版本</th><th>Bug</th><th>根因</th><th>修法</th></tr>
+  <tr><td>v3.7.2</td><td>中间件 token 累计</td><td>public_api middleware 用错位 idx 累计</td><td>改用 request.state.public_key_id</td></tr>
+  <tr><td>v3.7.2</td><td>model_filter 通配不生效</td><td>fnmatch 比对忽略大小写 + 边界匹配</td><td>改 4 通配: include/exclude/all 互斥</td></tr>
+  <tr><td>v3.7.2</td><td>state 路径 (P2)</td><td>state_dir 默认 ./state 但容器内不可写</td><td>默认 /app/state + 启动自动迁移</td></tr>
+  <tr><td>v3.7.2</td><td>secret leak 风险</td><td>config.yaml 可能含真 key</td><td>.gitignore 加 9 行 + config.local.yaml 隔离</td></tr>
+  <tr><td>v3.8.0</td><td>paragraph_chunk 不省 token</td><td>插 N 个新 message + markers, token 反而增加</td><td>拼回原 content, 用 [续 N/M] 短标记</td></tr>
+  <tr><td>v3.8.0</td><td>compress_on_switch=False 仍压缩</td><td>L368 漏检 self.compress_on_switch</td><td>加 `or not self.compress_on_switch`</td></tr>
+  <tr><td>v3.8.0</td><td>history_trim 段 n_chunks>0 不跑</td><td>条件 `n_chunks == 0` 太严</td><td>改成 `strategy in ("history_trim", "auto")`</td></tr>
+  <tr><td>v3.8.0</td><td>routes 缺 context_window 输出</td><td>P1 漏改 admin_routes</td><td>加 context_window + score 字段</td></tr>
+</table>
+
+<!-- 8. 部署 -->
+<h2>8. 部署 / 升级</h2>
+<h3>8.1 当前生产</h3>
+<pre><code>容器 supermodel_router (v3.7.1, host 模式, 端口 6473)
+  - PID 205779, 启动 2026-06-18 03:12, uptime 12h
+  - config: /root/projects/supermodel_router/config.yaml
+  - state:  /root/projects/supermodel_router/state/</code></pre>
+
+<h3>8.2 v3.8.0 新部署 (验证用)</h3>
+<pre><code>容器 smr-v380 (v3.8.0, bridge 模式, 端口 6475:6473)
+  - PID via docker, 启动 2026-06-18 14:44
+  - curl http://localhost:6475/v1/health → 200 OK v3.8.0
+  - curl http://localhost:6475/v1/admin/version → v3.8.0</code></pre>
+
+<h3>8.3 升级流程 (老大拍板)</h3>
+<ol>
+  <li><code>curl http://localhost:6473/v1/admin/version?force_check=true</code> 查最新 release</li>
+  <li><code>curl -X POST http://localhost:6473/v1/admin/upgrade -d '{"method":"docker"}'</code> 生成命令</li>
+  <li>在终端手动执行 <code>docker pull ghcr.io/IGhostHuang/supermodel_router:&lt;tag&gt; &amp;&amp; docker compose up -d</code></li>
+  <li><code>curl http://localhost:6473/v1/health</code> 验证</li>
+</ol>
+
+<!-- 9. 性能指标 -->
+<h2>9. 性能指标 (v3.8.0 单测)</h2>
+<table>
+  <tr><th>指标</th><th>实测</th></tr>
+  <tr><td>单元测试 (test_v380_context_window.py)</td><td>6/6 PASSED</td></tr>
+  <tr><td>历史测试兼容 (test_models.py + test_context_bridge_e2e.py)</td><td>4/4 + 12/12 PASSED</td></tr>
+  <tr><td>段落分批触发后 token 增长</td><td>≤ 50 tokens (markers)</td></tr>
+  <tr><td>历史压缩触发后 messages 减少</td><td>4 → 2 (1K 模型 + 1062 token body)</td></tr>
+  <tr><td>compressions_total 统计</td><td>context_bridge.stats 暴露</td></tr>
+  <tr><td>切链时延 (5xx → 下个 candidate)</td><td>0 + 500ms 指数退避</td></tr>
+  <tr><td>smr_request_id 校验</td><td>100% 准确 (race 防御)</td></tr>
+  <tr><td>GitHub release 缓存</td><td>1h 内不重复打 API</td></tr>
+</table>
+
+<!-- 10. 链接 -->
+<h2>10. 链接</h2>
+<ul>
+  <li><strong>GitHub:</strong> <a href="https://github.com/IGhostHuang/supermodel_router" style="color: var(--cyan)">https://github.com/IGhostHuang/supermodel_router</a></li>
+  <li><strong>FastAPI docs:</strong> <a href="/docs" style="color: var(--cyan)">http://localhost:6473/docs</a></li>
+  <li><strong>Admin UI:</strong> <a href="/" style="color: var(--cyan)">http://localhost:6473/</a></li>
+  <li><strong>SRS-requirements-v3.md:</strong> <code>docs/SRS-requirements-v3.md</code> (571 行, 设计需求源)</li>
+  <li><strong>PERSISTENCE.md:</strong> <code>docs/PERSISTENCE.md</code> (持久化字段 + 迁移说明)</li>
+  <li><strong>热缓存:</strong> <code>hot-cache/2026-06-18-*.md</code> (复盘 + 决策记录)</li>
+</ul>
+
+<div class="footer">
+  <div>本文档 build-time 自动 sync 到 SMR <code>/design</code> 端点. 编辑 <code>docs/SMR-design.html</code> 后跑 <code>python scripts/sync_design_to_admin.py</code> 同步.</div>
+  <div style="margin-top: 8px;">生成于 2026-06-18 · SuperModel Router v3.8.0 · mainbot/echo 主导</div>
+</div>
+
+</div>
+</body>
+</html>
