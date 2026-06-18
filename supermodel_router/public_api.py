@@ -10,7 +10,7 @@ supermodel_router/public_api.py — 对外 API 模块 (v3.7.0)
 - 认证顺序: 公开 key (per-tenant) → 默认 key (单 key) → 401
 
 v3.7.0 落地:
-- /v1/public/api-keys (admin CRUD)
+- /v1/admin/public-keys (admin CRUD)
 - 中间件注入 current_api_key 到 request.state
 - /v1/public/stats 看每个 key 用量
 - 持久化: state/public_keys_state.json (原子写, debounce 5s)

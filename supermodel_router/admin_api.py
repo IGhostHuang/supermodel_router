@@ -99,15 +99,30 @@ async def admin_modalities():
 
 @router.get("/v1/admin/routes")
 async def admin_routes():
-    """v3.6: 路由列表 + 模型详情 (含 pricing_type)"""
-    from .classifier import classify_pricing
+    """v3.6: 路由列表 + 模型详情 (含 pricing_type)
+    v3.8.0: 加 context_window + capability_score (从 classifier 拿)
+    """
+    from .classifier import classify_pricing, compute_capability_score
     out = []
     for r in registry.all_routes():
         # r 格式: "provider/model_id"
         if "/" in r:
             p, mid = r.split("/", 1)
             pricing = classify_pricing(p, mid)
-            out.append({"route": r, "provider": p, "model": mid, "pricing": pricing})
+            # ✅ v3.8.0: 加 context_window + score
+            try:
+                model = registry.get_model(p, mid)
+                ctx = getattr(model, "context_window", 0) or 0
+            except Exception:
+                ctx = 0
+            try:
+                score = round(compute_capability_score(mid, "text", extra={"context_window": ctx}), 1)
+            except Exception:
+                score = None
+            out.append({
+                "route": r, "provider": p, "model": mid,
+                "pricing": pricing, "context_window": ctx, "score": score,
+            })
         else:
             out.append({"route": r, "provider": "?", "model": r, "pricing": "unknown"})
     return JSONResponse({"routes": out, "total": len(out)})

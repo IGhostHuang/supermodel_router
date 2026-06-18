@@ -206,7 +206,8 @@ async def smr_design_page():
     """
     for p in _DESIGN_HTML_CANDIDATES:
         if p.exists():
-            return FileResponse(p, media_type="text/html")
+            return FileResponse(p, media_type="text/html",
+                                headers={"Cache-Control": "public, max-age=3600"})
     return Response(
         content="<h1>Design doc not found</h1><p>Expected at: "
                 + "<br>".join(str(p) for p in _DESIGN_HTML_CANDIDATES)

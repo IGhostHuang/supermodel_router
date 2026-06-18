@@ -45,9 +45,8 @@ def main():
 
     # 1. 校验源存在
     if not src.exists():
-        print(f"❌ 源文件不存在: {src}", file=sys.stderr)
-        print(f"   请先创建 docs/SMR-design.html", file=sys.stderr)
-        return 1
+        print(f"⚠️  WARN: {src} 不存在, 跳过 sync", file=sys.stderr)
+        sys.exit(0)
 
     src_size = src.stat().st_size
     src_mtime = src.stat().st_mtime
