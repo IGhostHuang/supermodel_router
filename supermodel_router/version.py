@@ -1,46 +1,78 @@
 """
 supermodel_router/version.py — 版本元数据 + GitHub release 检查
 
-v3.8.0 新增 (2026-06-18 老大拍):
+v3.10.0 (2026.06.19 老大拍 3 项全满足, 一气呵成):
+- 4 轮询策略并存 (model-level + group-level 双层):
+  * model-level: routing.strategy (老 v3.9.0 字段)
+    - quality_weighted (默认)
+    - flat (v4 老策略, 降序)
+    - balanced
+  * group-level: routing.group_strategy (v3.10.0 新字段, 默认 round-robin-group)
+    - round-robin-group: 默认, group 内轮询, group 间 round-robin
+    - flat: 全局降序
+    - group-failover: 按 group 优先级
+    - group-weighted: 按 group_weights 加权随机
+- 优先级: model-level 先选候选 -> group-level 决定 group 顺序
+- config.yaml 默认 round-robin-group, UI /v1/admin/routing PUT 可改
+- wizard UI 一键生成 group 时可选 4 策略 (UI 覆盖 config 默认)
+
+v3.10.0 新增 (2026.06.18 老大拍 A 一气呵成 + 数据持久化):
+- 模型分组向导器: 13 preset + 5 维自定义筛选 + 批量勾选 + 策略 dropdown
+- 端点 4 个:
+  * GET  /v1/admin/models/filter       (provider/context/quality/speed/modality/tags)
+  * POST /v1/admin/model-groups/from-filter   (filter 自动建 group)
+  * GET  /v1/admin/model-groups/wizard/presets      (13 preset 列表 + 实时匹配数)
+  * POST /v1/admin/model-groups/from-wizard   (preset 到 filter 到建 group + key)
+- ModelInfo 扩字段: quality_score / speed_score / reasoning_score / tags / metadata_source
+- model_metadata.json: 持久化元数据 (EWMA 自动算 + auto_tags + R40 backup)
+- _sync_mgm() 修复: registry callback 注册后立即手动调一次 (startup refresh 已完成 sync 永远不触发)
+- wizard UI: 13 preset 卡片 + 5 维筛选 + 实时匹配数 + 模型批量勾选 + 策略 dropdown + 一键生成
+- 数据持久化 (老大拍, docker 升级保留数据):
+  * docker-entrypoint.sh: 首次启动 seed model_metadata + 老 state 自动迁移
+  * secrets/ 卷挂载 entrypoint 从 /run/secrets/* 渲染真 key 到 config.yaml 占位符
+  * .dockerignore: 锁 state/secrets/backups 不进 image
+  * UPGRADE.md: 同端口/蓝绿升级 SOP + 回滚 + 老 state 自动迁移
+
+v3.8.0 新增 (2026.06.18 老大拍):
 - 模型上下文窗口加分: 7 档细分 (4K/8K/16K/32K/64K/128K/200K+), 加分可配置
   (config.classifier.context_window_bonus)
 - 上下文压缩 (切链时): 按目标 model context_window 限制, 3 策略 (pass-through / 段落分批 / 历史压缩)
-  1. Pass-through: total ≤ target * overhead (默认 0.8) → 原样
-  2. 段落分批 (paragraph_chunk): 超长 user message 拆 N 段, 每段 ≤ chunk_tokens
+  1. Pass-through: total <= target * overhead (默认 0.8) 原样
+  2. 段落分批 (paragraph_chunk): 超长 user message 拆 N 段, 每段 <= chunk_tokens
   3. 历史压缩 (history_trim): 旧 messages 摘要, 保留 system + 最近 K 轮
 - ModelInfo + CandidateResult + RouteResult 新增 context_window 顶层字段
-- _extract_context_window helper (跟 provider 解耦, 优先顶层 → openrouter nested → 0)
+- _extract_context_window helper (跟 provider 解耦, 优先顶层到 openrouter nested 到 0)
 - /v1/admin/context_bridge 新 stats: compressions_total + tokens_saved_total
 - openai_routes.py 切链时调 compress_for_target, 含 _smr_compress metadata (debug 用)
 - 总开关: context_bridge.compress_on_switch (false = 不压缩)
 
-v3.7.x 修 (2026-06-18 老大拍):
+v3.7.x 修 (2026.06.18 老大拍):
 - v3.7.1: /v1/public/chat/completions 端点 + UI 版本号修正 (commit 8cff72c)
 - v3.7.2: 修 2 P0 (中间件 token 累计 / model_filter 通配) + 1 P2 (state 路径) + secret leak
   防御 (commit 1c68ab2)
-  ⚠️ 1c68ab2 commit message 提 v3.7.2 但没改 version.py, UI 一直显示 v3.7.1
-  → v3.8.0 同步 bump version.py
+  注意: 1c68ab2 commit message 提 v3.7.2 但没改 version.py, UI 一直显示 v3.7.1
+  -> v3.8.0 同步 bump version.py
 
-v3.6.0 新增 (2026-06-17 23:56 老大拍):
-- UI/UX 全面改版: 顶部 toolbar → 左侧 sidebar nav (Dashboard/Providers/Models/Keys/Stats/Config/Classifier/Version)
+v3.6.0 新增 (2026.06.17 23:56 老大拍):
+- UI/UX 全面改版: 顶部 toolbar 左侧 sidebar nav (Dashboard/Providers/Models/Keys/Stats/Config/Classifier/Version)
 - 模型列表分页 (每页 20 + 前/后/跳转)
 - 真实使用量统计卡片: 总请求 / 成功率 / 平均延迟 / 今日 token
 - import_time / export_time / import_keys 单独 export+import
 - API key 独立管理页 (/v1/admin/api-keys)
 - 持久化复盘文档 (PERSISTENCE.md) + 启动时自动迁移
 
-v3.5.0 新增 (2026-06-17 22:25 老大拍):
+v3.5.0 新增 (2026.06.17 22:25 老大拍):
 - 主动盘点: POST /v1/admin/context_review 拿 smr_request_id 聚合报告
   (用户说"盘点上下文/重新审视/回顾上下文"时, mainbot 调该 endpoint)
 - 切链 race condition 防御: stream 模式切链时显式 aclose() 上游 httpx
 - smr_request_id 嵌入: response._router.smr_request_id + chain_id
-  (mainbot 收 response 时校验错配 → 丢弃)
-- per-request 跟踪: ContextBridge 维护 smr_request_id → SwitchRecord[] 映射
+  (mainbot 收 response 时校验错配 丢弃)
+- per-request 跟踪: ContextBridge 维护 smr_request_id 到 SwitchRecord[] 映射
   (bounded LRU 1000, 不持久化)
 
-v3.4.0 新增 (2026-06-17 22:00 老大拍):
+v3.4.0 新增 (2026.06.17 22:00 老大拍):
 - 上下文桥接 (ContextBridge): 切换模型时, 注入 system message 同步上下文
-- 过期标记: 切到新 candidate 的时间距请求开始 > 30min → 标 stale=true
+- 过期标记: 切到新 candidate 的时间距请求开始 > 30min 标 stale=true
 - 流式 SSE sentinel: data: {"_smr_bridge": {...}} 标记切换 + stale
 - 非流式: response._router.switched_from + stale + age_seconds
 - /v1/admin/context_bridge endpoints (config/stats/reset)
@@ -52,7 +84,7 @@ v3.1 新增: 老大 09:48 拍 C 项
 - /v1/admin/version endpoint 暴露版本信息
 - /v1/admin/upgrade endpoint 触发升级 (拉新 binary + 重启)
 
-v3.2 新增: 老大 14:40 拍 🅲
+v3.2 新增: 老大 14:40 拍 C 项
 - 配置版本管理: 自动备份 .backups/config-*.yaml (保留 50 个)
 - /v1/admin/config/backups + /v1/admin/config/restore
 - penalty state 持久化 (penalty_state.json) — SMR 重启不丢
@@ -69,24 +101,6 @@ LOG = logging.getLogger("version")
 VERSION = "3.10.0"
 BUILD_DATE = "2026-06-18"
 
-# ============================================================
-# v3.10.0 新增 (2026-06-18 老大拍 🅰️ 一气呵成 + 💾 数据持久化):
-# - 🧙 模型分组向导器: 13 preset + 5 维自定义筛选 + 批量勾选 + 策略 dropdown
-# - 端点 4 个:
-#   * GET  /v1/admin/models/filter       (provider/context/quality/speed/modality/tags)
-#   * POST /v1/admin/model-groups/from-filter   (filter → 自动建 group)
-#   * GET  /v1/admin/wizard/presets      (13 preset 列表 + 实时匹配数)
-#   * POST /v1/admin/model-groups/from-wizard   (preset → filter → 建 group + key)
-# - ModelInfo 扩字段: quality_score / speed_score / reasoning_score / tags / metadata_source
-# - model_metadata.json: 持久化元数据 (EWMA 自动算 + auto_tags + R40 backup)
-# - 🐛 _sync_mgm() 修复: registry callback 注册后立即手动调一次 (startup refresh 已完成 → sync 永远不触发)
-# - 🧙 wizard UI: 13 preset 卡片 + 5 维筛选 + 实时匹配数 + 模型批量勾选 + 策略 dropdown + 一键生成
-# - 💾 数据持久化 (老大拍, docker 升级保留数据):
-#   * docker-entrypoint.sh: 首次启动 seed model_metadata + 老 state 自动迁移
-#   * secrets/ 卷挂载 → entrypoint 从 /run/secrets/* 渲染真 key 到 config.yaml 占位符
-#   * .dockerignore: 锁 state/secrets/backups 不进 image
-#   * UPGRADE.md: 同端口/蓝绿升级 SOP + 回滚 + 老 state 自动迁移
-# ============================================================
 GITHUB_REPO = "IGhostHuang/supermodel_router"  # 默认值, 可被 config.version_check.repo 覆盖
 RELEASE_CHECK_INTERVAL = 3600  # 1 小时检查一次
 
@@ -162,9 +176,9 @@ def fetch_latest_release(github_token: Optional[str] = None,
 
 def is_newer_version(current: str, latest: str) -> bool:
     """简单 semver 比较 (major.minor.patch)
-    current="3.1.0", latest="3.2.0" → True
-    current="3.1.0", latest="3.1.0" → False
-    current="3.1.0", latest="4.0.0-beta" → True (忽略 prerelease 后缀)
+    current="3.1.0", latest="3.2.0" -> True
+    current="3.1.0", latest="3.1.0" -> False
+    current="3.1.0", latest="4.0.0-beta" -> True (忽略 prerelease 后缀)
     """
     def parse(v: str) -> tuple:
         # 去掉 -beta / -rc 等后缀
