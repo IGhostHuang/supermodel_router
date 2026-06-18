@@ -59,6 +59,8 @@ class RouteResult:
     score: float = 0.0
     latency_ms: float = 0.0
     modality: str = TEXT_ONLY
+    # v3.8.0: 上下文窗口 (供切链时压缩用, 0=未知)
+    context_window: int = 0
 
 
 @dataclass
@@ -75,6 +77,8 @@ class CandidateResult:
     capability_score: float
     modality: str = TEXT_ONLY
     penalty: float = 0.0
+    # v3.8.0: 上下文窗口 (供切链时压缩用, 0=未知)
+    context_window: int = 0
 
     @property
     def full_path(self) -> str:
@@ -96,6 +100,7 @@ class CandidateResult:
             full_model_path=self.full_path,
             score=self.score,
             modality=self.modality,
+            context_window=self.context_window,
         )
 
 
@@ -301,6 +306,7 @@ class RouteEngine:
                     capability_score=m.capability_score or 0.0,
                     modality=m.modality,
                     penalty=penalty,
+                    context_window=m.context_window,  # v3.8.0: 透传 ModelInfo.context_window
                 ))
                 if len(chain) >= max_candidates:
                     return chain
