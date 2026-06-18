@@ -24,6 +24,12 @@ COPY supermodel_router/ supermodel_router/
 COPY run.py .
 COPY config.yaml .
 
+# v3.8.1: 同步设计文档 (供 /design 端点 serve)
+COPY docs/SMR-design.html docs/SMR-design.html
+COPY scripts/sync_design_to_admin.py scripts/sync_design_to_admin.py
+RUN python3 scripts/sync_design_to_admin.py --dst /app/docs/SMR-design.html --check || \
+    python3 scripts/sync_design_to_admin.py --dst /app/docs/SMR-design.html
+
 # 默认端口
 EXPOSE 6473
 
