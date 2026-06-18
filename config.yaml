@@ -50,6 +50,15 @@ routing:
   quality_weights:
     success_rate: 0.6
     latency: 0.4
+  # v3.9.0 (Phase H): group-based 轮询策略 (跟 mgm.model_groups 协作)
+  # group_strategy: 4 选项, 默认 round-robin-group
+  #   - flat: 老 v4 行为, 全局按综合分降序 (忽略 model_groups)
+  #   - round-robin-group: 按 group 分桶, 桶间轮询 (新 default)
+  #   - group-failover: 按 group 优先级, group A 全失败才 group B
+  #   - group-weighted: 按 group_weights 加权随机决定 group 顺序
+  group_strategy: round-robin-group
+  # v3.9.0 (Phase H): group-weighted 策略专用, group_name → weight (高 weight 先抽)
+  group_weights: {}
 providers:
   openrouter:
     enabled: true
@@ -63,16 +72,14 @@ providers:
     max_concurrent: 2
     health_check_interval: 300
   newapi:
-    enabled: false
-    base_url: https://your-newapi-endpoint/v1
+    enabled: true
+    base_url: https://2154.17b331.com/v1
     api_keys:
-    - ''
+    - <NEWAPI_API_KEY_PLACEHOLDER>
     model_rules:
       mode: include
       include:
-      - deepseek/deepseek-v4-flash
-      - deepseek/deepseek-v4-pro
-      - minimaxai/minimax-m3
+      - mainrouter
       exclude: []
     max_concurrent: 3
     health_check_interval: 300
@@ -117,17 +124,6 @@ model_management:
 classifier:
   tier_bonus:
     pro: 35
-  # v3.8.0: 上下文窗口加分 (7 档细分, 可覆盖默认值)
-  # 默认: [(200K,20), (128K,14), (64K,10), (32K,7), (16K,5), (8K,3), (4K,2)]
-  # 改这里覆盖, 删整段恢复默认
-  # context_window_bonus:
-  #   - { min: 200000, bonus: 20 }
-  #   - { min: 128000, bonus: 14 }
-  #   - { min: 64000, bonus: 10 }
-  #   - { min: 32000, bonus: 7 }
-  #   - { min: 16000, bonus: 5 }
-  #   - { min: 8000, bonus: 3 }
-  #   - { min: 4000, bonus: 2 }
 context_bridge:
   enabled: true
   stale_threshold_seconds: 1800
@@ -136,8 +132,7 @@ context_bridge:
   abort_on_switch: true
   max_tracked_requests: 1000
   version: 3.5.0
-  # v3.8.0: 上下文压缩 (切链时按 target model context_window 压缩 body)
-  compress_on_switch: true                 # 总开关 (false = 不压缩, pass-through)
-  compress_overhead: 0.8                   # 留 20% 给 response
-  compress_strategy: auto                  # auto / paragraph_chunk / history_trim
-  compress_keep_last_messages: 6           # history_trim 时保留最近 K 条 (非 system)
+  compress_on_switch: true
+  compress_overhead: 0.8
+  compress_strategy: auto
+  compress_keep_last_messages: 6

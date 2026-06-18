@@ -8,8 +8,9 @@ import logging
 import random
 import os
 import threading
+from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Dict, List, Optional
 
 import httpx
 
@@ -250,13 +251,22 @@ class RouteEngine:
         return chain[0].materialize(self.registry)
 
     def pick_chain(self, requested_model: str, preferred_modalities: list[str] | None = None,
-                   max_candidates: int = 20) -> list[CandidateResult]:
+                   max_candidates: int = 20,
+                   strategy: str = "flat",
+                   groups: Optional[Dict[str, str]] = None,
+                   group_weights: Optional[Dict[str, float]] = None) -> list[CandidateResult]:
         """
         v4 新轮询机制 (老大 09:48 拍):
         - 高分模型第一个 key 不通 → 换下一个 key
         - 同 provider 全部 key 该模型不通 → 换下一个 model
         - 同时降低该模型分数 (penalty), 避免下一次又从头轮询
         - 定期复测更新分数 (decay)
+
+        v3.9.0 (Phase H): 加 strategy 参数, 4 种轮询策略
+        - flat: 老 v4 行为, 按综合分 (capability + quality - penalty + modality) 全局降序
+        - round-robin-group: 按 group 分桶, 每个 bucket 单独排序, 然后桶间轮询
+        - group-failover: 按 group 优先级, group A 全失败才 group B
+        - group-weighted: 按 group_weights 加权随机决定 group 顺序 (高 weight 先抽)
 
         返回候选链: [(m1, key0), (m1, key1), (m2, key0), ...]
         按综合分 (capability + quality + modality match - penalty) 降序。
@@ -285,11 +295,14 @@ class RouteEngine:
             combined += modality_boost
             scored.append((combined, m, penalty, path))
 
-        scored.sort(key=lambda x: -x[0])
+        # v3.9.0 (Phase H): 按 strategy 决定排序方式
+        ordered = self._order_by_strategy(scored, strategy=strategy,
+                                          groups=groups or {},
+                                          group_weights=group_weights or {})
 
         chain: list[CandidateResult] = []
         seen_keys: set[tuple[str, str, int]] = set()
-        for score, m, penalty, path in scored:
+        for score, m, penalty, path in ordered:
             ps = self.registry._providers.get(m.provider)
             if not ps or not ps.api_keys:
                 continue
@@ -312,6 +325,77 @@ class RouteEngine:
                     return chain
 
         return chain
+
+    def _order_by_strategy(self, scored, strategy: str,
+                           groups: Dict[str, str],
+                           group_weights: Dict[str, float]) -> list:
+        """v3.9.0 (Phase H): 按 strategy 排序 scored 列表
+
+        scored: List[(combined_score, ModelInfo, penalty, path)]
+        groups: Dict[path, group_name]  (model → group mapping)
+        group_weights: Dict[group_name, weight] (用于 weighted 策略)
+        """
+        if strategy == "flat" or not groups:
+            # 老 v4 行为: 全局按 combined 降序
+            return sorted(scored, key=lambda x: -x[0])
+
+        # 按 group 分桶
+        UNGROUPED = "__ungrouped__"
+        buckets: Dict[str, list] = defaultdict(list)
+        for s in scored:
+            path = s[3]
+            gname = groups.get(path, UNGROUPED)
+            buckets[gname].append(s)
+
+        # bucket 内按 score 降序
+        for b in buckets.values():
+            b.sort(key=lambda x: -x[0])
+
+        if strategy == "round-robin-group":
+            # 桶间轮询: round 1 每个桶 1 个, round 2 每个桶再 1 个, ...
+            ordered = []
+            while any(buckets.values()):
+                added = False
+                # 按 group name 稳定排序 (确定性, 调试友好)
+                for gname in sorted(buckets.keys()):
+                    if buckets[gname]:
+                        ordered.append(buckets[gname].pop(0))
+                        added = True
+                if not added:
+                    break
+            return ordered
+
+        if strategy == "group-failover":
+            # 按 group 优先级 (字母序, ungrouped 最后), 整桶一次性返回
+            ordered = []
+            # 优先有名字的 group (字母序), 然后 ungrouped
+            named_groups = sorted(g for g in buckets.keys() if g != UNGROUPED)
+            for gname in named_groups + ([UNGROUPED] if UNGROUPED in buckets else []):
+                ordered.extend(buckets[gname])
+            return ordered
+
+        if strategy == "group-weighted":
+            # 加权采样: 按 group_weights 概率抽 group, 抽完一轮重抽
+            # weight 缺省 = 1.0
+            ordered = []
+            group_names = list(buckets.keys())
+            if not group_names:
+                return []
+            weights = [group_weights.get(g, 1.0) for g in group_names]
+            while any(buckets.values()):
+                available = [(i, g) for i, g in enumerate(group_names) if buckets[g]]
+                if not available:
+                    break
+                avail_idx = [i for i, _ in available]
+                avail_weights = [weights[i] for i in avail_idx]
+                chosen_idx = random.choices(avail_idx, weights=avail_weights, k=1)[0]
+                chosen_gname = group_names[chosen_idx]
+                ordered.append(buckets[chosen_gname].pop(0))
+            return ordered
+
+        # 未知 strategy → 退到 flat (安全降级)
+        LOG.warning("Unknown strategy '%s', falling back to 'flat'", strategy)
+        return sorted(scored, key=lambda x: -x[0])
 
     def _collect_candidate_models(self, requested_model: str,
                                    preferred_modalities: list[str] | None) -> list:

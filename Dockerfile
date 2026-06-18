@@ -26,9 +26,18 @@ COPY config.yaml .
 
 # v3.8.1: 同步设计文档 (供 /design 端点 serve)
 COPY docs/SMR-design.html docs/SMR-design.html
+COPY docs/UPGRADE.md docs/UPGRADE.md
 COPY scripts/sync_design_to_admin.py scripts/sync_design_to_admin.py
 RUN python3 scripts/sync_design_to_admin.py --dst /app/docs/SMR-design.html --check || \
     python3 scripts/sync_design_to_admin.py --dst /app/docs/SMR-design.html
+
+# v3.10.0: 内置 default model_metadata (首次启动 seed, 可被 state 卷覆盖)
+RUN mkdir -p /app/data/seed
+COPY supermodel_router/static/model_metadata.default.json /app/data/seed/model_metadata.json
+
+# v3.10.0: docker-entrypoint.sh — 初始化 state + 渲染 secrets + 启动 SMR
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 # 默认端口
 EXPOSE 6473
@@ -37,13 +46,25 @@ EXPOSE 6473
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
   CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:6473/v1/health', timeout=3)" || exit 1
 
-# 启动 (支持 -e LOG_LEVEL=DEBUG 控制日志级别)
+# v3.10.0: 默认配置目录
 ENV LOG_LEVEL=INFO
 ENV HOST=0.0.0.0
 ENV PORT=6473
+ENV STATE_DIR=/app/state
+ENV DATA_DIR=/app/data
+ENV CONFIG_FILE=/app/config.yaml
 
-CMD python run.py \
-  --config /app/config.yaml \
-  --host "$HOST" \
-  --port "$PORT" \
-  --log-level "$LOG_LEVEL"
+# v3.10.0: 入口改为 docker-entrypoint.sh (state 初始化 + secrets 渲染 + SMR 启动)
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+
+
+# 保留 CMD 以便用户 override (entrypoint 末尾 exec python run.py)
+CMD []
+
+
+# legacy CMD (保留参考, 不再生效):
+# CMD python run.py \
+#     --config /app/config.yaml \
+#     --host "$HOST" \
+#     --port "$PORT" \
+#     --log-level "$LOG_LEVEL"

@@ -6,6 +6,7 @@ import time
 import re
 import threading
 from dataclasses import dataclass, field
+from typing import List
 
 import httpx
 
@@ -142,6 +143,18 @@ class ModelInfo:
     # 来源: extra.context_window (顶层) → extra.top_provider.context_length → extra.architecture.context_length → 0
     # 0 表示未知, 不参与 scoring 加分 + 切链时不压缩
     context_window: int = 0                # 模型可处理的最大 tokens
+    # ── v3.10.0 (Phase I): 扩展元数据, 给 wizard 筛选用 ──
+    # quality_score: 0-100, 综合历史成功率 + benchmark (来自 metadata.json 或 EWMA 自动算)
+    quality_score: float = 0.0
+    # speed_score: 0-100, 来自平均 latency (越高越快), 0 = 未知
+    speed_score: float = 0.0
+    # reasoning_score: 0-100, 推理能力 benchmark (人工/AI 标注), 0 = 未知
+    reasoning_score: float = 0.0
+    # tags: ["reasoning", "coding", "vision", "fast", "long-context", "tools", ...]
+    # 来源: metadata.json 静态标签 + 自动推断 (如 context_window >= 100000 → "long-context")
+    tags: List[str] = field(default_factory=list)
+    # metadata_source: "static" (metadata.json) | "auto" (EWMA) | "none" (默认 0)
+    metadata_source: str = "none"
 
 
 @dataclass

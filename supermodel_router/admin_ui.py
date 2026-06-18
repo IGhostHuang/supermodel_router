@@ -87,6 +87,40 @@ tr:hover td{background:#1a1a24}
 .modal h3{margin-bottom:12px;font-size:16px}
 .modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:10000}
 .modal-overlay .modal{background:#1a1a24;border-radius:10px;padding:24px;max-width:650px;width:90%;max-height:85vh;overflow:auto;border:1px solid #333;box-shadow:0 8px 32px rgba(0,0,0,0.5)}
+
+/* v3.10.0 (Phase L): Wizard 样式 */
+.wizard-presets-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;margin-bottom:20px}
+.wizard-preset-card{background:#0f0f13;border:1px solid #1a1a24;border-radius:8px;padding:14px;cursor:pointer;transition:all .15s ease;position:relative}
+.wizard-preset-card:hover{border-color:#5b8def;background:#1a1a24;transform:translateY(-1px);box-shadow:0 4px 12px rgba(91,141,239,0.15)}
+.wizard-preset-card.selected{border-color:#4ade80;background:#0f1f0f}
+.wizard-preset-card.disabled{opacity:0.4;cursor:not-allowed}
+.wizard-preset-card .preset-icon{font-size:24px;margin-bottom:6px}
+.wizard-preset-card .preset-name{font-size:13px;font-weight:500;color:#e0e0e0;margin-bottom:4px}
+.wizard-preset-card .preset-desc{font-size:11px;color:#888;line-height:1.4;margin-bottom:6px}
+.wizard-preset-card .preset-count{position:absolute;top:8px;right:10px;font-size:10px;background:#1a1a24;padding:2px 8px;border-radius:10px;color:#5b8def;font-weight:500}
+.wizard-preset-card .preset-count.zero{background:#2a1a1a;color:#dc2626}
+.wizard-filter-panel{background:#0f0f13;border:1px solid #1a1a24;border-radius:8px;padding:16px;margin-bottom:20px}
+.filter-row{margin-bottom:12px}
+.filter-row label{display:block;font-size:12px;color:#888;margin-bottom:6px}
+.filter-row .filter-input,.filter-row .filter-select{background:#0a0a0d;border:1px solid #333;color:#e0e0e0;padding:8px 12px;border-radius:6px;width:100%;font-size:13px}
+.filter-row input[type="range"]{width:60%;display:inline-block;vertical-align:middle}
+.chip-group{display:flex;flex-wrap:wrap;gap:6px}
+.chip{background:#1a1a24;border:1px solid #333;color:#a0a0b0;padding:5px 12px;border-radius:14px;font-size:11px;cursor:pointer;transition:all .12s ease;user-select:none}
+.chip:hover{border-color:#5b8def;color:#e0e0e0}
+.chip.selected{background:#5b8def;color:#fff;border-color:#5b8def}
+.wizard-models-list{background:#0f0f13;border:1px solid #1a1a24;border-radius:8px;padding:12px;max-height:420px;overflow-y:auto;margin-bottom:20px}
+.wizard-model-row{display:flex;align-items:center;padding:10px 12px;border-radius:6px;transition:background .12s ease;border:1px solid transparent;margin-bottom:4px}
+.wizard-model-row:hover{background:#1a1a24}
+.wizard-model-row.selected{border-color:#4ade80;background:#0f1f0f}
+.wizard-model-row input[type="checkbox"]{margin-right:12px;cursor:pointer;width:16px;height:16px}
+.wizard-model-row .model-info{flex:1;min-width:0}
+.wizard-model-row .model-path{font-size:13px;font-weight:500;color:#e0e0e0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wizard-model-row .model-meta{font-size:10px;color:#888;margin-top:3px;display:flex;gap:10px;flex-wrap:wrap}
+.wizard-model-row .meta-chip{background:#1a1a24;padding:1px 6px;border-radius:8px;font-size:10px}
+.wizard-model-row .meta-chip.tag{background:#2a2440;color:#a78bfa}
+.wizard-generate-panel{background:#0f0f13;border:1px solid #1a1a24;border-radius:8px;padding:16px}
+.empty-state{padding:40px 20px;text-align:center;color:#666;font-size:13px}
+.wizard-models-list .empty-state{padding:20px}
 .version-info{margin:16px 0}
 .version-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #222}
 .version-row:last-child{border-bottom:none}
@@ -199,7 +233,7 @@ body{display:flex;gap:0;padding:0;max-width:none;min-height:100vh;background:#0a
 <body>
 <!-- 左侧 sidebar nav (v3.6.0) -->
 <div class="sidebar">
-  <h1><span class="logo">⚡</span> SMR v3.7.1</h1>
+  <h1><span class="logo">⚡</span> SMR v3.10.0</h1>
   <div class="nav-item active" data-view="dashboard" onclick="showView('dashboard')">
     <span class="icon">📊</span> 仪表盘
   </div>
@@ -229,6 +263,12 @@ body{display:flex;gap:0;padding:0;max-width:none;min-height:100vh;background:#0a
   </div>
   <div class="nav-item" data-view="publicapi" onclick="showView('publicapi')">
     <span class="icon">🌐</span> 对外 API
+  </div>
+  <div class="nav-item" data-view="modelgroups" onclick="showView('modelgroups')">
+    <span class="icon">🏷️</span> 模型分组
+  </div>
+  <div class="nav-item" data-view="wizard" onclick="showView('wizard')">
+    <span class="icon">🧙</span> 分组向导 <span class="badge" style="background:#f59e0b">NEW</span>
   </div>
   <div class="sidebar-footer">
     <div>运行时间 <span id="navUptime" class="uptime">-</span></div>
@@ -359,9 +399,428 @@ body{display:flex;gap:0;padding:0;max-width:none;min-height:100vh;background:#0a
     • 每个 key 独立追踪 total/success/fail/tokens<br>
     • 速率限制: sliding window 60s 内 rpm 计数<br>
     • 模型白名单: 空 = 全部允许, 否则只允许列表内<br>
-    • 客户端调用: <code>Authorization: Bearer smr-pub-xxx</code> 即可
+    • 客户端调用: <code>Authorization: Bearer *** 即可
   </div>
 </div>
+
+<!-- 视图: 模型分组 (v3.9.0 新增) -->
+<div class="view" id="view-modelgroups">
+  <h2 class="view-title">🏷️ 模型分组管理</h2>
+  <p class="view-subtitle">正则跨 provider 拉取模型分组 · 给对外 API 白名单 + 轮询规则用</p>
+  <div class="section-header">
+    <div class="provider-toolbar">
+      <button class="btn-sm primary" onclick="openCreateModelGroup()">➕ 创建分组</button>
+      <button class="btn-sm" onclick="renderModelGroupsView()">🔄 刷新</button>
+    </div>
+  </div>
+  <div class="stats-grid" id="modelGroupsSummary"><div class="loading">加载中...</div></div>
+  <h3 style="font-size:14px;color:#888;margin:20px 0 10px">所有分组</h3>
+  <div id="modelGroupsList"><div class="loading">加载中...</div></div>
+
+  <div style="margin-top:30px;padding:16px;background:#0f0f13;border-radius:8px;font-size:12px;color:#888">
+    <strong>💡 模型分组使用说明</strong><br>
+    • <strong>patterns</strong>: 正则列表, 跨所有 provider 的 model_id 模糊匹配<br>
+    • e.g. <code>["claude-3-5.*", "claude-3-haiku.*"]</code> → 所有 Claude 3.5 + 3-haiku<br>
+    • <strong>resolved_models</strong>: 当前 provider 已知 model 中匹配上的列表<br>
+    • 创建分组后, 对外 API 白名单可用 <code>group:&lt;name&gt;</code> 引用<br>
+    • 轮询规则 (Phase H) 按 group 维度做 round-robin / failover / weighted
+  </div>
+</div>
+
+<!-- 视图: 模型分组向导 (v3.10.0 新增) -->
+<div class="view" id="view-wizard">
+  <h2 class="view-title">🧙 模型分组向导</h2>
+  <p class="view-subtitle">选预设场景或自定义筛选条件 · 一键生成模型分组 + API key</p>
+
+  <!-- 第一部分: 13 个预设场景卡片 -->
+  <h3 style="font-size:13px;color:#888;margin:20px 0 10px">✨ 快速开始: 选一个预设场景</h3>
+  <div class="wizard-presets-grid" id="wizardPresetsGrid">
+    <div class="loading">加载中...</div>
+  </div>
+
+  <!-- 第二部分: 自定义筛选 -->
+  <h3 style="font-size:13px;color:#888;margin:30px 0 10px">🔍 或自定义筛选条件</h3>
+  <div class="wizard-filter-panel">
+    <div class="filter-row">
+      <label>Provider (多选)</label>
+      <div class="chip-group" id="wizardFilterProviders">
+        <span class="chip" data-value="openrouter" onclick="toggleChip(this)">openrouter</span>
+        <span class="chip" data-value="newapi" onclick="toggleChip(this)">newapi</span>
+        <span class="chip" data-value="mock_a" onclick="toggleChip(this)">mock_a</span>
+        <span class="chip" data-value="mock_b" onclick="toggleChip(this)">mock_b</span>
+      </div>
+    </div>
+    <div class="filter-row">
+      <label>上下文窗口</label>
+      <select id="wizardFilterContext" class="filter-select">
+        <option value="0">全部</option>
+        <option value="8000">≥ 8K</option>
+        <option value="16000">≥ 16K</option>
+        <option value="32000">≥ 32K</option>
+        <option value="64000">≥ 64K</option>
+        <option value="100000">≥ 100K</option>
+        <option value="128000">≥ 128K</option>
+        <option value="200000">≥ 200K</option>
+      </select>
+    </div>
+    <div class="filter-row">
+      <label>最低 Quality Score</label>
+      <input type="range" id="wizardFilterQuality" min="0" max="100" value="0" step="5" oninput="document.getElementById('qualityVal').textContent=this.value">
+      <span id="qualityVal" style="color:#5b8def;font-weight:500;margin-left:8px">0</span>
+    </div>
+    <div class="filter-row">
+      <label>最低 Speed Score</label>
+      <input type="range" id="wizardFilterSpeed" min="0" max="100" value="0" step="5" oninput="document.getElementById('speedVal').textContent=this.value">
+      <span id="speedVal" style="color:#5b8def;font-weight:500;margin-left:8px">0</span>
+    </div>
+    <div class="filter-row">
+      <label>Modality</label>
+      <select id="wizardFilterModality" class="filter-select">
+        <option value="">全部</option>
+        <option value="text">纯文本</option>
+        <option value="multimodal">多模态</option>
+        <option value="image">视觉</option>
+        <option value="image-gen">图像生成</option>
+        <option value="audio">音频</option>
+        <option value="video">视频</option>
+      </select>
+    </div>
+    <div class="filter-row">
+      <label>Tags (含任一)</label>
+      <div class="chip-group" id="wizardFilterTags">
+        <span class="chip" data-value="reasoning" onclick="toggleChip(this)">reasoning</span>
+        <span class="chip" data-value="coding" onclick="toggleChip(this)">coding</span>
+        <span class="chip" data-value="vision" onclick="toggleChip(this)">vision</span>
+        <span class="chip" data-value="fast" onclick="toggleChip(this)">fast</span>
+        <span class="chip" data-value="long-context" onclick="toggleChip(this)">long-context</span>
+        <span class="chip" data-value="tools" onclick="toggleChip(this)">tools</span>
+        <span class="chip" data-value="multimodal" onclick="toggleChip(this)">multimodal</span>
+      </div>
+    </div>
+    <div style="margin-top:14px;text-align:right">
+      <button class="btn-sm" onclick="resetWizardFilter()">🔄 重置</button>
+      <button class="btn-sm primary" onclick="applyWizardFilter()">🔍 应用筛选</button>
+    </div>
+  </div>
+
+  <!-- 第三部分: 匹配模型列表 (批量勾选) -->
+  <h3 style="font-size:13px;color:#888;margin:30px 0 10px">
+    匹配模型 (<span id="wizardMatchCount">0</span>)
+    <span style="float:right">
+      <button class="btn-sm" onclick="wizardSelectAll()">☑ 全选</button>
+      <button class="btn-sm" onclick="wizardSelectNone()">☐ 清选</button>
+    </span>
+  </h3>
+  <div class="wizard-models-list" id="wizardModelsList">
+    <div class="empty-state">应用筛选或选预设场景查看匹配模型</div>
+  </div>
+
+  <!-- 第四部分: 一键生成 -->
+  <h3 style="font-size:13px;color:#888;margin:30px 0 10px">✨ 生成模型分组</h3>
+  <div class="wizard-generate-panel">
+    <div class="filter-row">
+      <label>分组名</label>
+      <input type="text" id="wizardGroupName" placeholder="my-premium-group" class="filter-input">
+    </div>
+    <div class="filter-row">
+      <label>轮询策略</label>
+      <select id="wizardGroupStrategy" class="filter-select">
+        <option value="round-robin-group" selected>round-robin-group (新 default)</option>
+        <option value="flat">flat (老 v4 全局降序)</option>
+        <option value="group-failover">group-failover (按 group 优先级)</option>
+        <option value="group-weighted">group-weighted (加权随机)</option>
+      </select>
+    </div>
+    <div class="filter-row">
+      <label>
+        <input type="checkbox" id="wizardCreateApiKey" checked>
+        自动生成 API key (绑定到 group)
+      </label>
+    </div>
+    <div class="filter-row">
+      <label>API key 名 (默认 = group name + "-key")</label>
+      <input type="text" id="wizardApiKeyName" placeholder="(可选)" class="filter-input">
+    </div>
+    <div style="margin-top:14px;text-align:right">
+      <button class="btn-sm" onclick="previewWizardGroup()">🔍 预览</button>
+      <button class="btn-sm primary" onclick="generateWizardGroup()">✨ 生成分组</button>
+    </div>
+  </div>
+
+  <!-- 第五部分: 生成结果展示 -->
+  <div id="wizardResultPanel" style="display:none;margin-top:24px;padding:16px;background:#0f1f0f;border:1px solid #4ade80;border-radius:8px">
+    <h3 style="font-size:14px;color:#4ade80;margin:0 0 12px">✅ 分组生成成功</h3>
+    <div id="wizardResultContent"></div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// v3.10.0 (Phase L + M): 模型分组向导器 JS
+// ============================================================
+
+let wizardState = {
+  presets: [],          // [{id, name, icon, description, current_match_count, ...}]
+  matchedModels: [],    // 当前匹配 models [{id, provider, path, modality, ...}]
+  selectedPreset: null, // null = 自定义筛选
+  selectedPaths: new Set(),  // 用户勾选的 model path
+  currentFilter: null,  // 当前应用的 filter (dict)
+};
+
+function toggleChip(el) {
+  el.classList.toggle('selected');
+}
+
+async function loadWizard() {
+  wizardState.selectedPreset = null;
+  wizardState.selectedPaths = new Set();
+  // 加载 13 preset
+  const r = await fetch('/v1/admin/model-groups/wizard/presets');
+  const data = await r.json();
+  if (data.error) { toast('❌ ' + data.error); return; }
+  wizardState.presets = data.presets;
+  renderPresetCards();
+  // 初始化空列表
+  document.getElementById('wizardModelsList').innerHTML =
+    '<div class="empty-state">👆 选一个预设场景 或 自定义筛选查看匹配模型</div>';
+  document.getElementById('wizardMatchCount').textContent = '0';
+  // 自动分组名
+  if (!document.getElementById('wizardGroupName').value) {
+    document.getElementById('wizardGroupName').value = 'my-group-' + Date.now().toString(36);
+  }
+}
+
+function renderPresetCards() {
+  const grid = document.getElementById('wizardPresetsGrid');
+  grid.innerHTML = '';
+  for (const p of wizardState.presets) {
+    const card = document.createElement('div');
+    card.className = 'wizard-preset-card';
+    card.dataset.presetId = p.id;
+    if (p.current_match_count === 0) card.classList.add('disabled');
+    const countClass = p.current_match_count === 0 ? 'preset-count zero' : 'preset-count';
+    card.innerHTML = `
+      <div class="preset-icon">${p.icon}</div>
+      <div class="preset-name">${escapeHtml(p.name)}</div>
+      <div class="preset-desc">${escapeHtml(p.description)}</div>
+      <div class="${countClass}">${p.current_match_count} models</div>
+    `;
+    if (p.current_match_count > 0) {
+      card.onclick = () => selectPreset(p.id);
+    }
+    grid.appendChild(card);
+  }
+}
+
+async function selectPreset(presetId) {
+  wizardState.selectedPreset = presetId;
+  // 高亮卡片
+  document.querySelectorAll('.wizard-preset-card').forEach(c => {
+    c.classList.toggle('selected', c.dataset.presetId === presetId);
+  });
+  // 自动应用 preset 的 filter
+  const preset = wizardState.presets.find(p => p.id === presetId);
+  if (!preset) return;
+  await applyFilterToBackend(preset.filter);
+  // 自动填分组名
+  if (!document.getElementById('wizardGroupName').value || document.getElementById('wizardGroupName').value.startsWith('my-group-')) {
+    document.getElementById('wizardGroupName').value = presetId + '-' + Date.now().toString(36).slice(-4);
+  }
+}
+
+function applyWizardFilter() {
+  // 从 UI 收集 filter
+  const providers = Array.from(document.querySelectorAll('#wizardFilterProviders .chip.selected')).map(c => c.dataset.value);
+  const contextMin = parseInt(document.getElementById('wizardFilterContext').value) || 0;
+  const qualityMin = parseFloat(document.getElementById('wizardFilterQuality').value) || 0;
+  const speedMin = parseFloat(document.getElementById('wizardFilterSpeed').value) || 0;
+  const modality = document.getElementById('wizardFilterModality').value || '';
+  const tagsAny = Array.from(document.querySelectorAll('#wizardFilterTags .chip.selected')).map(c => c.dataset.value);
+
+  const filter = {};
+  if (providers.length > 0) filter.providers = providers;
+  if (contextMin > 0) filter.context_min = contextMin;
+  if (qualityMin > 0) filter.quality_min = qualityMin;
+  if (speedMin > 0) filter.speed_min = speedMin;
+  if (modality) filter.modality = modality;
+  if (tagsAny.length > 0) filter.tags_any = tagsAny;
+
+  wizardState.selectedPreset = null;
+  document.querySelectorAll('.wizard-preset-card').forEach(c => c.classList.remove('selected'));
+  applyFilterToBackend(filter);
+}
+
+function resetWizardFilter() {
+  document.querySelectorAll('#wizardFilterProviders .chip, #wizardFilterTags .chip').forEach(c => c.classList.remove('selected'));
+  document.getElementById('wizardFilterContext').value = '0';
+  document.getElementById('wizardFilterQuality').value = '0';
+  document.getElementById('wizardSpeed') || 0;
+  document.getElementById('wizardFilterSpeed').value = '0';
+  document.getElementById('wizardFilterModality').value = '';
+  document.getElementById('qualityVal').textContent = '0';
+  document.getElementById('speedVal').textContent = '0';
+}
+
+async function applyFilterToBackend(filter) {
+  wizardState.currentFilter = filter;
+  const params = new URLSearchParams();
+  if (filter.providers) params.set('providers', filter.providers.join(','));
+  if (filter.context_min) params.set('context_min', filter.context_min);
+  if (filter.quality_min) params.set('quality_min', filter.quality_min);
+  if (filter.speed_min) params.set('speed_min', filter.speed_min);
+  if (filter.reasoning_min) params.set('reasoning_min', filter.reasoning_min);
+  if (filter.modality) params.set('modality', filter.modality);
+  if (filter.tags_any) params.set('tags_any', filter.tags_any.join(','));
+
+  const r = await fetch('/v1/admin/models/filter?' + params.toString());
+  const data = await r.json();
+  if (data.error) { toast('❌ ' + data.error); return; }
+  wizardState.matchedModels = data.models;
+  document.getElementById('wizardMatchCount').textContent = data.total;
+  renderMatchedModels();
+}
+
+function renderMatchedModels() {
+  const list = document.getElementById('wizardModelsList');
+  if (wizardState.matchedModels.length === 0) {
+    list.innerHTML = '<div class="empty-state">😢 没匹配到 model, 试试放宽条件</div>';
+    return;
+  }
+  list.innerHTML = '';
+  for (const m of wizardState.matchedModels) {
+    const row = document.createElement('div');
+    row.className = 'wizard-model-row';
+    if (wizardState.selectedPaths.has(m.path)) row.classList.add('selected');
+    const metaChips = [];
+    if (m.context_window > 0) metaChips.push(`<span class="meta-chip">ctx:${(m.context_window/1000).toFixed(0)}K</span>`);
+    if (m.quality_score > 0) metaChips.push(`<span class="meta-chip">q:${m.quality_score}</span>`);
+    if (m.speed_score > 0) metaChips.push(`<span class="meta-chip">s:${m.speed_score}</span>`);
+    if (m.reasoning_score > 0) metaChips.push(`<span class="meta-chip">r:${m.reasoning_score}</span>`);
+    for (const t of (m.tags || []).slice(0, 3)) {
+      metaChips.push(`<span class="meta-chip tag">#${escapeHtml(t)}</span>`);
+    }
+    row.innerHTML = `
+      <input type="checkbox" ${wizardState.selectedPaths.has(m.path) ? 'checked' : ''}>
+      <div class="model-info">
+        <div class="model-path">${escapeHtml(m.path)}</div>
+        <div class="model-meta">${metaChips.join(' ')}</div>
+      </div>
+    `;
+    const cb = row.querySelector('input');
+    cb.onclick = (e) => e.stopPropagation();
+    cb.onchange = () => {
+      if (cb.checked) wizardState.selectedPaths.add(m.path);
+      else wizardState.selectedPaths.delete(m.path);
+      row.classList.toggle('selected', cb.checked);
+    };
+    row.onclick = () => { cb.checked = !cb.checked; cb.onchange(); };
+    list.appendChild(row);
+  }
+}
+
+function wizardSelectAll() {
+  for (const m of wizardState.matchedModels) wizardState.selectedPaths.add(m.path);
+  renderMatchedModels();
+}
+
+function wizardSelectNone() {
+  wizardState.selectedPaths.clear();
+  renderMatchedModels();
+}
+
+async function previewWizardGroup() {
+  if (!wizardState.currentFilter) {
+    toast('⚠️ 先应用筛选或选预设场景');
+    return;
+  }
+  const r = await fetch('/v1/admin/models/filter?' + new URLSearchParams(wizardState.currentFilter).toString());
+  const data = await r.json();
+  toast(`👀 预览: 将匹配 ${data.total} 个 model, 创建 1 个 group${document.getElementById('wizardCreateApiKey').checked ? ' + 1 个 API key' : ''}`);
+}
+
+async function generateWizardGroup() {
+  if (!wizardState.currentFilter) {
+    toast('⚠️ 先应用筛选或选预设场景');
+    return;
+  }
+  const name = document.getElementById('wizardGroupName').value.trim();
+  if (!name) { toast('⚠️ 填分组名'); return; }
+  const strategy = document.getElementById('wizardGroupStrategy').value;
+  const createKey = document.getElementById('wizardCreateApiKey').checked;
+  const keyName = document.getElementById('wizardApiKeyName').value.trim();
+
+  // 合并筛选 + 手动选择 (如果有勾选, 用 paths 限制)
+  const filter = {...wizardState.currentFilter};
+  if (wizardState.selectedPaths.size > 0 && wizardState.selectedPaths.size < wizardState.matchedModels.length) {
+    // 用户手动选了子集 → 用 selectedPaths 限制 (但 UI 不支持直接 path filter, 用 tags_any 模拟: 不行)
+    // 改: 限制 patterns 用 selectedPaths 里的 model id
+    filter._manual_selection = Array.from(wizardState.selectedPaths);
+  }
+
+  let endpoint, body;
+  if (wizardState.selectedPreset) {
+    endpoint = '/v1/admin/model-groups/from-wizard';
+    body = {preset: wizardState.selectedPreset, name, strategy, create_api_key: createKey};
+    if (keyName) body.api_key_name = keyName;
+  } else {
+    endpoint = '/v1/admin/model-groups/from-filter';
+    body = {name, filter: wizardState.currentFilter, strategy, create_api_key: createKey};
+    if (keyName) body.api_key_name = keyName;
+    // 手动选择: 传 patterns
+    if (filter._manual_selection && filter._manual_selection.length > 0) {
+      body.patterns = filter._manual_selection.map(p => `.*${p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}.*`);
+      delete body.filter._manual_selection;
+    }
+  }
+
+  const r = await fetch(endpoint, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body),
+  });
+  const data = await r.json();
+  if (data.error) { toast('❌ ' + data.error); return; }
+
+  // 展示结果
+  showWizardResult(data);
+  // 提示
+  let msg = `✅ 已创建 group '${data.group.name}' (${data.resolved_count} models)`;
+  if (data.api_key) msg += ` + API key '${data.api_key.name}'`;
+  toast(msg);
+  // 刷新 modelgroups view 缓存
+  lastModelGroups = null;
+}
+
+function showWizardResult(data) {
+  const panel = document.getElementById('wizardResultPanel');
+  const content = document.getElementById('wizardResultContent');
+  let html = `
+    <div style="margin-bottom:8px"><strong>分组名:</strong> <code>${escapeHtml(data.group.name)}</code></div>
+    <div style="margin-bottom:8px"><strong>匹配 model 数:</strong> ${data.resolved_count}</div>
+    <div style="margin-bottom:8px"><strong>Sample models:</strong> ${data.matched_samples.map(s => `<code>${escapeHtml(s)}</code>`).join(', ')}</div>
+    <div style="margin-bottom:8px"><strong>说明:</strong> ${escapeHtml(data.group.description || '')}</div>
+  `;
+  if (data.api_key) {
+    html += `
+      <div style="margin-top:14px;padding-top:14px;border-top:1px solid #4ade80">
+        <strong style="color:#4ade80">🔑 API Key (仅显示这一次!)</strong>
+        <div style="margin-top:6px;padding:10px;background:#0a0a0d;border-radius:6px;font-family:monospace;font-size:12px;word-break:break-all;color:#fbbf24">
+          ${escapeHtml(data.api_key.key)}
+        </div>
+        <div style="margin-top:6px;font-size:11px;color:#888">name: <code>${escapeHtml(data.api_key.name)}</code> · hash: <code>${escapeHtml(data.api_key.key_hash)}</code></div>
+      </div>
+    `;
+  }
+  content.innerHTML = html;
+  panel.style.display = 'block';
+  panel.scrollIntoView({behavior: 'smooth', block: 'nearest'});
+}
+
+function escapeHtml(s) {
+  if (s === undefined || s === null) return '';
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
+}
+</script>
 
 </div> <!-- .main -->
 
@@ -395,6 +854,8 @@ function showView(view){
   else if(view === 'keys') renderKeysView();
   else if(view === 'version') renderVersionView();
   else if(view === 'publicapi') renderPublicApiView();
+  else if(view === 'modelgroups') renderModelGroupsView();
+  else if(view === 'wizard') loadWizard();
   else if(view === 'models') { /* keep current page */ }
 }
 
@@ -1416,6 +1877,7 @@ async function renderPublicApiView(){
             ? `<button class="btn-sm" onclick="togglePublicKey('${k.name}', false)">⏸ 停用</button>`
             : `<button class="btn-sm primary" onclick="togglePublicKey('${k.name}', true)">▶ 启用</button>`}
           <button class="btn-sm" onclick="resetPublicKeyUsage('${k.name}')" title="清零用量计数">🔄 重置用量</button>
+          <button class="btn-sm" onclick="showUsageByModel('${k.name}')" title="查看按 model 分组的用量统计">📊 按 model</button>
           <button class="btn-sm danger" onclick="deletePublicKey('${k.name}')">🗑️ 删除</button>
         </div>
       </div>
@@ -1424,65 +1886,228 @@ async function renderPublicApiView(){
 }
 
 let lastPublicKeys = null;
+let lastModelGroups = null;  // 缓存 model-groups (给白名单编辑器用)
 
-function openCreatePublicKey(){
-  const name = prompt('Key 名称 (字母数字/-/_):');
-  if(!name) return;
-  if(!/^[a-zA-Z0-9_-]+$/.test(name)){
-    alert('❌ 名称只能包含字母数字/-/_'); return;
-  }
-  const rpm = prompt('速率限制 (rpm, 0 = 不限, 默认 60):', '60');
-  if(rpm === null) return;
-  const rpmNum = parseInt(rpm) || 60;
-  const models = prompt('模型白名单 (逗号分隔, 留空 = 全部允许):', '');
-  const modelFilter = models ? models.split(',').map(s=>s.trim()).filter(Boolean) : [];
-  const note = prompt('备注 (可选):', '') || '';
-  submitCreatePublicKey(name, rpmNum, modelFilter, note);
+// ============================================================
+// v3.9.0: inline modal 替代 prompt 弹窗 (老大 16:55 拍)
+// 白名单编辑器支持:
+//   - text 形式 (老): openai/gpt-4o, *:free
+//   - @provider 形式 (新): @openrouter 整 provider
+//   - group:xxx 形式 (新): group:claude 整分组
+//   - 智能建议: 输入时联想现有 model
+// ============================================================
+
+async function loadModelGroupsCache(){
+  if(lastModelGroups) return lastModelGroups;
+  const r = await api('/v1/admin/model-groups');
+  lastModelGroups = r.groups || [];
+  return lastModelGroups;
 }
 
-async function submitCreatePublicKey(name, rpm, modelFilter, note){
-  const r = await api('/v1/admin/public-keys', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({name, rate_limit_rpm: rpm, model_filter: modelFilter, note}),
-  });
-  if(r.error){ alert('❌ ' + r.error); return; }
-  const msg = `✅ Key '${r.name}' 已创建!\n\n` +
-              `原 key (⚠️ 唯一一次显示):\n${r.key}\n\n` +
-              `哈希: ${r.key_hash}\n` +
-              `速率限制: ${r.rate_limit_rpm} rpm\n` +
-              `白名单: ${(r.model_filter||[]).join(', ') || '全部'}\n\n` +
-              `请立即复制保存到本地, 关闭后将无法再次查看!`;
-  alert(msg);
-  await renderPublicApiView();
+async function loadProvidersCache(){
+  const r = await api('/v1/admin/providers');
+  return r.providers || [];
+}
+
+let allModelsCache = null;
+async function loadAllModelsCache(){
+  if(allModelsCache) return allModelsCache;
+  try {
+    const r = await api('/v1/admin/models');
+    allModelsCache = r.models || r.data || [];
+  } catch(e) {
+    allModelsCache = [];
+  }
+  return allModelsCache;
+}
+
+function openCreatePublicKey(){
+  showPublicKeyModal(null);
 }
 
 function editPublicKey(name){
-  const k = lastPublicKeys?.find?.(x=>x.name===name) || {};
-  const curRpm = k?.rate_limit_rpm || 60;
-  const curModels = (k?.model_filter || []).join(', ');
-  const curNote = k?.note || '';
-  const rpm = prompt(`'${name}' 速率限制 (rpm, 0=不限, 当前 ${curRpm}):`, String(curRpm));
-  if(rpm === null) return;
-  const rpmNum = parseInt(rpm);
-  if(isNaN(rpmNum) || rpmNum < 0){ alert('❌ 无效 rpm'); return; }
-  const models = prompt(`'${name}' 模型白名单 (逗号分隔, 当前 "${curModels}"):`, curModels);
-  if(models === null) return;
-  const modelFilter = models ? models.split(',').map(s=>s.trim()).filter(Boolean) : [];
-  const note = prompt(`'${name}' 备注 (当前 "${curNote}"):`, curNote);
-  if(note === null) return;
-  submitEditPublicKey(name, rpmNum, modelFilter, note);
+  const k = lastPublicKeys?.find?.(x=>x.name===name);
+  if(!k){ toast('❌ 找不到 key '+name, false); return; }
+  showPublicKeyModal(k);
 }
 
-async function submitEditPublicKey(name, rpm, modelFilter, note){
-  const r = await api('/v1/admin/public-keys/'+encodeURIComponent(name), {
-    method: 'PUT',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({rate_limit_rpm: rpm, model_filter: modelFilter, note}),
+async function showPublicKeyModal(existing){
+  const isEdit = !!existing;
+  const name = existing?.name || '';
+  const rpm = existing?.rate_limit_rpm ?? 60;
+  const modelFilter = existing?.model_filter || [];
+  const note = existing?.note || '';
+  const enabled = existing?.enabled !== false;
+
+  const [groups, providers, allModels] = await Promise.all([
+    loadModelGroupsCache(), loadProvidersCache(), loadAllModelsCache()
+  ]);
+  const enabledProviders = providers.filter(p => p.enabled).map(p => p.name);
+
+  const html = `
+<div class="modal-bg" id="publicKeyModal" onclick="if(event.target===this)closePublicKeyModal()">
+  <div class="modal" style="max-width:780px;max-height:90vh;overflow-y:auto">
+    <h3>${isEdit ? '✏️ 编辑 Key: '+name : '➕ 创建对外 API Key'}</h3>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:8px">
+      <div>
+        <label>名称 * <span class="text-muted">(字母数字/-/_)</span></label>
+        <input id="pkName" value="${name.replace(/"/g,'&quot;')}" ${isEdit?'disabled':''} placeholder="e.g. user-alice" ${isEdit?'':'autofocus'}>
+      </div>
+      <div>
+        <label>速率限制 (rpm) <span class="text-muted">(0 = 不限)</span></label>
+        <input id="pkRpm" type="number" min="0" value="${rpm}">
+      </div>
+    </div>
+    <label style="margin-top:10px;display:block">状态</label>
+    <select id="pkEnabled" style="width:200px">
+      <option value="true" ${enabled?'selected':''}>✅ 启用</option>
+      <option value="false" ${!enabled?'selected':''}>⏸ 停用</option>
+    </select>
+    <h4 style="margin-top:16px;font-size:14px;color:#94a3b8">🔓 模型白名单
+      <span class="text-muted" style="font-weight:normal;font-size:12px">空 = 全部允许</span>
+    </h4>
+    <div id="pkChips" style="min-height:32px;padding:8px;background:#0f172a;border-radius:6px;margin-bottom:8px;display:flex;flex-wrap:wrap;gap:6px"></div>
+    <div style="position:relative;margin-bottom:12px">
+      <input id="pkAddModel" placeholder="输入 model / @provider / group:名, Enter 添加" style="font-family:monospace">
+      <div id="pkSuggestions" style="position:absolute;top:100%;left:0;right:0;background:#1e293b;border:1px solid #334155;border-radius:4px;max-height:200px;overflow-y:auto;display:none;z-index:10"></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:8px">
+      <div>
+        <div class="text-muted" style="font-size:12px;margin-bottom:4px">📦 整 provider (一键全开):</div>
+        <div id="pkProviders" style="display:flex;flex-direction:column;gap:4px;max-height:140px;overflow-y:auto;background:#0f172a;padding:8px;border-radius:4px">
+          ${enabledProviders.length===0 ? '<div class="text-muted" style="font-size:12px">暂无可用 provider</div>' :
+            enabledProviders.map(p => `<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px"><input type="checkbox" data-pk-shortcut="@${p}"><span>@${p}</span></label>`).join('')}
+        </div>
+      </div>
+      <div>
+        <div class="text-muted" style="font-size:12px;margin-bottom:4px">🏷️ 整 model group (一键全开):</div>
+        <div id="pkGroups" style="display:flex;flex-direction:column;gap:4px;max-height:140px;overflow-y:auto;background:#0f172a;padding:8px;border-radius:4px">
+          ${groups.length===0 ? '<div class="text-muted" style="font-size:12px">暂无 model group, 点左侧导航 🏷️ 模型分组 创建</div>' :
+            groups.map(g => `<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px" title="${(g.patterns||[]).join(', ')}"><input type="checkbox" data-pk-shortcut="group:${g.name}" ${g.enabled?'':'disabled'}><span>group:${g.name}</span><span class="text-muted" style="font-size:11px">(${g.model_count||0})</span></label>`).join('')}
+        </div>
+      </div>
+    </div>
+    <label style="margin-top:14px;display:block">备注</label>
+    <input id="pkNote" value="${note.replace(/"/g,'&quot;')}" placeholder="e.g. echo R21 测试 key">
+    <div class="row" style="margin-top:16px;justify-content:flex-end;gap:8px">
+      <button class="btn-sm" onclick="closePublicKeyModal()">取消</button>
+      <button class="btn primary" onclick="submitPublicKeyModal(${isEdit?'true':'false'})">${isEdit ? '💾 保存' : '➕ 创建'}</button>
+    </div>
+  </div>
+</div>`;
+  const div = document.createElement('div');
+  div.innerHTML = html;
+  document.body.appendChild(div.firstElementChild);
+
+  window._pkCurrentFilter = [...modelFilter];
+  renderPkChips();
+
+  const input = document.getElementById('pkAddModel');
+  const sugDiv = document.getElementById('pkSuggestions');
+  input.addEventListener('input', () => {
+    const q = input.value.trim().toLowerCase();
+    if(!q){ sugDiv.style.display='none'; return; }
+    const matches = allModels
+      .filter(m => (m.id||'').toLowerCase().includes(q) || (m.provider||'').toLowerCase().includes(q))
+      .slice(0, 10)
+      .map(m => `<div class="pk-sug-item" data-full="${(m.provider+'/'+m.id).replace(/"/g,'&quot;')}" style="padding:6px 10px;cursor:pointer;font-family:monospace;font-size:12px;border-bottom:1px solid #334155">${m.provider}/${m.id}</div>`).join('');
+    sugDiv.innerHTML = matches || '<div class="text-muted" style="padding:8px;font-size:12px">无匹配 model</div>';
+    sugDiv.style.display = 'block';
   });
-  if(r.error){ alert('❌ ' + r.error); return; }
-  toast(`✅ '${name}' 已更新`);
-  await renderPublicApiView();
+  input.addEventListener('keydown', (e) => {
+    if(e.key === 'Enter'){
+      e.preventDefault();
+      const v = input.value.trim();
+      if(v && !window._pkCurrentFilter.includes(v)){ window._pkCurrentFilter.push(v); renderPkChips(); }
+      input.value = '';
+      sugDiv.style.display = 'none';
+    } else if(e.key === 'Escape'){
+      sugDiv.style.display = 'none';
+    }
+  });
+  sugDiv.addEventListener('click', (e) => {
+    const item = e.target.closest('.pk-sug-item');
+    if(!item) return;
+    const full = item.dataset.full;
+    if(full && !window._pkCurrentFilter.includes(full)){ window._pkCurrentFilter.push(full); renderPkChips(); }
+    input.value = '';
+    sugDiv.style.display = 'none';
+  });
+  document.addEventListener('click', (e) => {
+    if(!input.contains(e.target) && !sugDiv.contains(e.target)){ sugDiv.style.display = 'none'; }
+  });
+
+  document.querySelectorAll('[data-pk-shortcut]').forEach(cb => {
+    cb.addEventListener('change', (e) => {
+      const v = e.target.dataset.pkShortcut;
+      if(e.target.checked){
+        if(!window._pkCurrentFilter.includes(v)) window._pkCurrentFilter.push(v);
+      } else {
+        window._pkCurrentFilter = window._pkCurrentFilter.filter(x => x !== v);
+      }
+      renderPkChips();
+    });
+    if(window._pkCurrentFilter.includes(cb.dataset.pkShortcut)) cb.checked = true;
+  });
+}
+
+function renderPkChips(){
+  const div = document.getElementById('pkChips');
+  if(!div) return;
+  if(!window._pkCurrentFilter || window._pkCurrentFilter.length === 0){
+    div.innerHTML = '<span class="text-muted" style="font-size:12px;padding:6px">空 = 全部模型允许 (无限制)</span>';
+    return;
+  }
+  div.innerHTML = window._pkCurrentFilter.map(m => {
+    let badge = '🔹', color = '#64748b';
+    if(m.startsWith('@')){ badge = '📦'; color = '#0ea5e9'; }
+    else if(m.startsWith('group:')){ badge = '🏷️'; color = '#a855f7'; }
+    else if(m.includes('*')){ badge = '✨'; color = '#f59e0b'; }
+    return `<span style="background:${color};color:#fff;padding:3px 8px;border-radius:12px;font-size:12px;display:inline-flex;align-items:center;gap:4px;font-family:monospace">${badge} ${m.replace(/</g,'&lt;')}<span style="cursor:pointer;margin-left:4px;opacity:0.7" onclick="removePkChip('${m.replace(/'/g,"\\'")}')">×</span></span>`;
+  }).join('');
+}
+
+function removePkChip(m){
+  window._pkCurrentFilter = window._pkCurrentFilter.filter(x => x !== m);
+  document.querySelectorAll(`[data-pk-shortcut="${m.replace(/"/g,'\\"')}"]`).forEach(cb => cb.checked = false);
+  renderPkChips();
+}
+
+function closePublicKeyModal(){
+  const m = document.getElementById('publicKeyModal');
+  if(m) m.remove();
+  window._pkCurrentFilter = null;
+}
+
+async function submitPublicKeyModal(isEdit){
+  const name = document.getElementById('pkName').value.trim();
+  if(!name){ toast('❌ 名称必填', false); return; }
+  if(!/^[a-zA-Z0-9_-]+$/.test(name)){ toast('❌ 名称只能含字母数字/-/_', false); return; }
+  const rpm = parseInt(document.getElementById('pkRpm').value) || 60;
+  const enabled = document.getElementById('pkEnabled').value === 'true';
+  const note = document.getElementById('pkNote').value;
+  const modelFilter = window._pkCurrentFilter || [];
+
+  if(isEdit){
+    const r = await api('/v1/admin/public-keys/'+encodeURIComponent(name), {
+      method: 'PUT', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({rate_limit_rpm: rpm, model_filter: modelFilter, note, enabled}),
+    });
+    if(r.error){ toast('❌ '+r.error, false); return; }
+    toast(`✅ '${name}' 已更新`);
+    closePublicKeyModal();
+    await renderPublicApiView();
+  } else {
+    const r = await api('/v1/admin/public-keys', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({name, rate_limit_rpm: rpm, model_filter: modelFilter, note}),
+    });
+    if(r.error){ toast('❌ '+r.error, false); return; }
+    const msg = `✅ Key '${r.name}' 已创建!\n\n原 key (⚠️ 唯一一次显示):\n${r.key}\n\n哈希: ${r.key_hash}\n速率限制: ${r.rate_limit_rpm} rpm\n白名单: ${(r.model_filter||[]).join(', ') || '全部'}\n\n请立即复制保存到本地, 关闭后将无法再次查看!`;
+    alert(msg);
+    closePublicKeyModal();
+    await renderPublicApiView();
+  }
 }
 
 async function togglePublicKey(name, enabled){
@@ -1510,6 +2135,163 @@ async function resetPublicKeyUsage(name){
   if(r.error){ toast(r.error, false); return; }
   toast(`🔄 '${name}' 用量已清零`);
   await renderPublicApiView();
+}
+
+// ============================================================
+// v3.9.0: 模型分组管理 (model_groups)
+// ============================================================
+
+async function renderModelGroupsView(){
+  await loadModelGroupsCache();
+  const groups = lastModelGroups || [];
+  // 摘要
+  const total = groups.length;
+  const enabled = groups.filter(g => g.enabled !== false).length;
+  const totalModels = groups.reduce((s, g) => s + (g.model_count || 0), 0);
+  document.getElementById('modelGroupsSummary').innerHTML = `
+    <div class="stat-card"><div class="label">总分组</div><div class="value">${total}</div></div>
+    <div class="stat-card"><div class="label">已启用</div><div class="value">${enabled}</div></div>
+    <div class="stat-card"><div class="label">解析 model 总数</div><div class="value">${totalModels}</div></div>
+  `;
+  // 列表
+  const listEl = document.getElementById('modelGroupsList');
+  if(groups.length === 0){
+    listEl.innerHTML = '<div class="empty-state">🏷️ 暂无 model group, 点 "➕ 创建分组" 开始</div>';
+    return;
+  }
+  listEl.innerHTML = groups.map(g => {
+    const patterns = (g.patterns || []).map(p => `<code style="background:#1e293b;padding:1px 4px;border-radius:3px">${p.replace(/</g,'&lt;')}</code>`).join(' ');
+    const samples = (g.resolved_sample || []).slice(0, 3).map(m => `<code style="background:#0f172a;padding:1px 4px;border-radius:3px;font-size:10px">${m.replace(/</g,'&lt;')}</code>`).join(' ');
+    const more = (g.model_count || 0) > 3 ? ` <span class="text-muted">+${g.model_count - 3}</span>` : '';
+    const statusBadge = g.enabled !== false
+      ? '<span style="background:#10b981;color:#fff;padding:2px 6px;border-radius:4px;font-size:10px">启用</span>'
+      : '<span style="background:#64748b;color:#fff;padding:2px 6px;border-radius:4px;font-size:10px">停用</span>';
+    return `<div class="provider-card" style="margin-bottom:8px">
+      <div class="row" style="justify-content:space-between">
+        <div>
+          <strong>🏷️ group:${g.name}</strong> ${statusBadge}
+          <span class="text-muted" style="font-size:12px;margin-left:8px">${(g.description || '').replace(/</g,'&lt;')}</span>
+        </div>
+        <div class="row" style="gap:4px">
+          <button class="btn-sm" onclick="showResolvedGroup('${g.name}')" title="查看当前匹配的所有 model">🔍 解析</button>
+          <button class="btn-sm" onclick="openEditModelGroup('${g.name}')">✏️ 编辑</button>
+          <button class="btn-sm danger" onclick="deleteModelGroup('${g.name}')">🗑️</button>
+        </div>
+      </div>
+      <div style="margin-top:6px;font-size:12px">
+        <span class="text-muted">patterns:</span> ${patterns}<br>
+        <span class="text-muted">resolved (${g.model_count || 0}):</span> ${samples}${more}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function openCreateModelGroup(){
+  showModelGroupModal(null);
+}
+
+async function openEditModelGroup(name){
+  const g = (lastModelGroups || []).find(x => x.name === name);
+  if(!g){ toast('❌ 找不到分组 '+name, false); return; }
+  showModelGroupModal(g);
+}
+
+async function showModelGroupModal(existing){
+  const isEdit = !!existing;
+  const name = existing?.name || '';
+  const patterns = existing?.patterns || [];
+  const description = existing?.description || '';
+  const enabled = existing?.enabled !== false;
+  const html = `
+<div class="modal-bg" id="modelGroupModal" onclick="if(event.target===this)closeModelGroupModal()">
+  <div class="modal" style="max-width:600px">
+    <h3>${isEdit ? '✏️ 编辑分组: '+name : '➕ 创建 model group'}</h3>
+    <label>名称 * <span class="text-muted">(字母数字/-/_)</span></label>
+    <input id="mgName" value="${name.replace(/"/g,'&quot;')}" ${isEdit?'disabled':''} placeholder="e.g. claude-sonnet">
+    <label style="margin-top:10px;display:block">patterns (正则列表, 1 行 1 个) *</label>
+    <textarea id="mgPatterns" rows="5" style="width:100%;font-family:monospace;font-size:13px"
+              placeholder="claude-3-5.*&#10;claude-3-haiku.*">${patterns.join('\n').replace(/</g,'&lt;')}</textarea>
+    <label style="margin-top:10px;display:block">描述</label>
+    <input id="mgDesc" value="${description.replace(/"/g,'&quot;')}" placeholder="e.g. Claude 3.x 系列">
+    <label style="margin-top:10px;display:block">状态</label>
+    <select id="mgEnabled" style="width:200px">
+      <option value="true" ${enabled?'selected':''}>✅ 启用</option>
+      <option value="false" ${!enabled?'selected':''}>⏸ 停用</option>
+    </select>
+    <div class="row" style="margin-top:16px;justify-content:flex-end;gap:8px">
+      <button class="btn-sm" onclick="closeModelGroupModal()">取消</button>
+      <button class="btn primary" onclick="submitModelGroupModal(${isEdit?'true':'false'})">${isEdit ? '💾 保存' : '➕ 创建'}</button>
+    </div>
+  </div>
+</div>`;
+  const div = document.createElement('div');
+  div.innerHTML = html;
+  document.body.appendChild(div.firstElementChild);
+}
+
+function closeModelGroupModal(){
+  const m = document.getElementById('modelGroupModal');
+  if(m) m.remove();
+}
+
+async function submitModelGroupModal(isEdit){
+  const name = document.getElementById('mgName').value.trim();
+  if(!name){ toast('❌ 名称必填', false); return; }
+  if(!/^[a-zA-Z0-9_-]+$/.test(name)){ toast('❌ 名称只能含字母数字/-/_', false); return; }
+  const patterns = document.getElementById('mgPatterns').value.split('\n').map(s=>s.trim()).filter(Boolean);
+  if(patterns.length === 0){ toast('❌ patterns 至少 1 个', false); return; }
+  const description = document.getElementById('mgDesc').value;
+  const enabled = document.getElementById('mgEnabled').value === 'true';
+
+  if(isEdit){
+    const r = await api('/v1/admin/model-groups/'+encodeURIComponent(name), {
+      method: 'PUT', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({patterns, description, enabled}),
+    });
+    if(r.error){ toast('❌ '+r.error, false); return; }
+    toast(`✅ group '${name}' 已更新`);
+  } else {
+    const r = await api('/v1/admin/model-groups', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({name, patterns, description, enabled}),
+    });
+    if(r.error){ toast('❌ '+r.error, false); return; }
+    toast(`✅ group '${name}' 已创建 (匹配 ${r.model_count||0} models)`);
+  }
+  lastModelGroups = null;  // 清缓存
+  closeModelGroupModal();
+  await renderModelGroupsView();
+}
+
+async function deleteModelGroup(name){
+  if(!confirm(`⚠️ 确认删除 group '${name}'?\n使用 group:${name} 的白名单会立即失效!`)) return;
+  const r = await api('/v1/admin/model-groups/'+encodeURIComponent(name), {method: 'DELETE'});
+  if(r.error){ toast(r.error, false); return; }
+  toast(`🗑️ group '${name}' 已删除`);
+  lastModelGroups = null;
+  await renderModelGroupsView();
+}
+
+async function showResolvedGroup(name){
+  const g = (lastModelGroups || []).find(x => x.name === name);
+  if(!g) return;
+  const r = await api('/v1/admin/model-groups/'+encodeURIComponent(name)+'/resolve');
+  const list = (r.resolved_models || []).map(m => `<code style="display:inline-block;background:#0f172a;padding:2px 6px;border-radius:3px;margin:2px;font-size:11px">${m.replace(/</g,'&lt;')}</code>`).join('');
+  const html = `
+<div class="modal-bg" onclick="this.remove()">
+  <div class="modal" style="max-width:700px" onclick="event.stopPropagation()">
+    <h3>🔍 group:${name} 解析结果 (${(r.resolved_models||[]).length} models)</h3>
+    <div style="max-height:60vh;overflow-y:auto;padding:8px;background:#0f172a;border-radius:6px">
+      ${list || '<div class="text-muted">无匹配 model (检查 patterns 或 provider 是否已加载)</div>'}
+    </div>
+    <div class="row" style="margin-top:12px;justify-content:flex-end">
+      <button class="btn-sm" onclick="this.closest('.modal-bg').remove()">关闭</button>
+    </div>
+  </div>
+</div>`;
+  const div = document.createElement('div');
+  div.innerHTML = html;
+  document.body.appendChild(div.firstElementChild);
 }
 
 // ============================================================
@@ -1623,6 +2405,9 @@ async function openServer(){
   document.getElementById('rtRecovery').value = rt.recovery_interval || 300;
   document.getElementById('rtMaxRetry').value = rt.max_retry || 2;
   document.getElementById('rtFirstToken').value = rt.first_token_timeout_ms || 10000;
+  // v3.9.0 (Phase H): group-based 轮询
+  document.getElementById('rtGroupStrategy').value = rt.group_strategy || 'round-robin-group';
+  document.getElementById('rtGroupWeights').value = JSON.stringify(rt.group_weights || {}, null, 2);
   document.getElementById('serverModal').classList.add('show');
 }
 function closeServer(){
@@ -1648,6 +2433,23 @@ async function saveServer(){
   if (!isNaN(recovery)) rtPayload.recovery_interval = recovery;
   if (!isNaN(maxRetry)) rtPayload.max_retry = maxRetry;
   if (!isNaN(firstToken)) rtPayload.first_token_timeout_ms = firstToken;
+  // v3.9.0 (Phase H): group-based 轮询
+  rtPayload.group_strategy = document.getElementById('rtGroupStrategy').value;
+  const weightsRaw = document.getElementById('rtGroupWeights').value.trim();
+  if (weightsRaw) {
+    try {
+      rtPayload.group_weights = JSON.parse(weightsRaw);
+      if (typeof rtPayload.group_weights !== 'object' || Array.isArray(rtPayload.group_weights)) {
+        toast('Group Weights 必须是 JSON 对象 {"name": weight}', false);
+        return;
+      }
+    } catch (e) {
+      toast('Group Weights JSON 解析失败: ' + e.message, false);
+      return;
+    }
+  } else {
+    rtPayload.group_weights = {};
+  }
 
   const r1 = await api('/v1/admin/server', {
     method: 'PUT',
@@ -1886,6 +2688,20 @@ function onPresetUrlChange(){
     <input id="rtMaxRetry" type="number" min="0" max="10" value="2">
     <label>First Token Timeout (首个 token 超时, ms)</label>
     <input id="rtFirstToken" type="number" min="1000" value="10000">
+    <!-- v3.9.0 (Phase H): group-based 轮询策略 (跟 mgm.model_groups 协作) -->
+    <h4 style="margin-top:18px;font-size:14px;color:#a78bfa">🆕 v3.9.0 Group-Based 轮询 (Phase H)</h4>
+    <div class="text-muted" style="font-size:12px;margin-bottom:6px">
+      按 model 分组 (mgm.model_groups) 决定候选链顺序, 跟上面的 strategy 字段叠加生效
+    </div>
+    <label>Group Strategy (group-based 轮询策略, 默认 round-robin-group)</label>
+    <select id="rtGroupStrategy">
+      <option value="round-robin-group">round-robin-group (按 group 桶间轮询 — 默认)</option>
+      <option value="flat">flat (忽略 model_groups, 全局降序)</option>
+      <option value="group-failover">group-failover (group A 全失败才 group B)</option>
+      <option value="group-weighted">group-weighted (按 group_weights 加权随机)</option>
+    </select>
+    <label>Group Weights (JSON: {"group_name": weight, ...}, 用于 group-weighted)</label>
+    <textarea id="rtGroupWeights" rows="3" placeholder='{"claude": 2.0, "gpt": 1.0}' style="font-family:monospace;font-size:12px"></textarea>
 
     <div class="row">
       <button class="btn" onclick="saveServer()">保存</button>
@@ -1907,6 +2723,89 @@ function onPresetUrlChange(){
     </div>
   </div>
 </div>
+
+<div id="usageByModelModal" class="modal-overlay" style="display:none">
+  <div class="modal-content" style="max-width:700px">
+    <div class="modal-header">
+      <h3 id="usageByModelTitle">📊 按 model 分组的用量</h3>
+      <button class="modal-close" onclick="closeUsageByModel()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="usageByModelStats" style="margin-bottom:14px"></div>
+      <div id="usageByModelChart" style="margin-bottom:14px"></div>
+      <div id="usageByModelList"><div class="loading">加载中...</div></div>
+    </div>
+    <div class="row" style="margin-top:14px">
+      <button class="btn-sm" onclick="closeUsageByModel()">关闭</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// v3.9.0 (Phase G): 按 model 分组用量弹窗
+async function showUsageByModel(name){
+  const modal = document.getElementById('usageByModelModal');
+  const titleEl = document.getElementById('usageByModelTitle');
+  const statsEl = document.getElementById('usageByModelStats');
+  const chartEl = document.getElementById('usageByModelChart');
+  const listEl = document.getElementById('usageByModelList');
+  if(!modal) return;
+  titleEl.textContent = "📊 '" + name + "' 按 model 分组的用量";
+  statsEl.innerHTML = '<div class="loading">加载中...</div>';
+  chartEl.innerHTML = '';
+  listEl.innerHTML = '<div class="loading">加载中...</div>';
+  modal.style.display = 'flex';
+  const r = await api('/v1/admin/public-keys/'+encodeURIComponent(name)+'/usage-by-model').catch(e=>({error:e.message}));
+  if(r.error){
+    statsEl.innerHTML = '<div class="empty-state">❌ ' + r.error + '</div>';
+    listEl.innerHTML = '';
+    return;
+  }
+  const byModel = r.by_model || {};
+  const totalCalls = r.total_calls || 0;
+  const lastUsed = r.last_used ? new Date(r.last_used*1000).toLocaleString('zh-CN') : '未使用';
+  statsEl.innerHTML = '<div style="display:flex;gap:18px;font-size:13px">'
+    + '<span>📈 总调用: <b>' + totalCalls + '</b></span>'
+    + '<span>🎯 不同 model: <b>' + Object.keys(byModel).length + '</b></span>'
+    + '<span>🕐 最近: <b>' + lastUsed + '</b></span>'
+    + '</div>';
+  if(Object.keys(byModel).length === 0){
+    chartEl.innerHTML = '<div class="empty-state">暂无用量数据</div>';
+    listEl.innerHTML = '';
+    return;
+  }
+  const maxCount = Math.max.apply(null, Object.values(byModel));
+  const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
+  let chartHtml = '<div style="display:flex;flex-direction:column;gap:6px;padding:10px;background:#0f0f13;border-radius:8px">';
+  let listHtml = '<h4 style="font-size:13px;color:#888;margin:12px 0 8px">详细列表</h4>'
+    + '<div style="display:flex;flex-direction:column;gap:4px;max-height:240px;overflow-y:auto">';
+  Object.entries(byModel).forEach(function(entry, idx){
+    const model = entry[0], count = entry[1];
+    const pct = maxCount > 0 ? (count / maxCount * 100).toFixed(1) : 0;
+    const totalPct = totalCalls > 0 ? (count / totalCalls * 100).toFixed(1) : 0;
+    const color = colors[idx % colors.length];
+    chartHtml += '<div style="display:flex;align-items:center;gap:8px;font-size:12px">'
+      + '<div style="min-width:160px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#ddd" title="' + model + '">' + model + '</div>'
+      + '<div style="flex:1;background:#1f2937;border-radius:4px;height:18px;overflow:hidden;position:relative">'
+      + '<div style="background:' + color + ';height:100%;width:' + pct + '%;transition:width 0.3s"></div>'
+      + '<span style="position:absolute;left:8px;top:50%;transform:translateY(-50%);color:#fff;font-weight:600;font-size:11px">' + count + ' 次 (' + totalPct + '%)</span>'
+      + '</div></div>';
+    listHtml += '<div style="display:flex;justify-content:space-between;padding:6px 10px;background:#0f0f13;border-radius:4px;font-size:12px;border-left:3px solid ' + color + '">'
+      + '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + model + '</span>'
+      + '<span style="color:#888;margin-left:8px">' + count + ' 次</span>'
+      + '</div>';
+  });
+  chartHtml += '</div>';
+  listHtml += '</div>';
+  chartEl.innerHTML = chartHtml;
+  listEl.innerHTML = listHtml;
+}
+
+function closeUsageByModel(){
+  const modal = document.getElementById('usageByModelModal');
+  if(modal) modal.style.display = 'none';
+}
+</script>
 
 </body>
 </html>"""

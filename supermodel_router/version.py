@@ -66,8 +66,27 @@ from typing import Optional
 LOG = logging.getLogger("version")
 
 # 当前版本 (跟随 release tag)
-VERSION = "3.8.1"
+VERSION = "3.10.0"
 BUILD_DATE = "2026-06-18"
+
+# ============================================================
+# v3.10.0 新增 (2026-06-18 老大拍 🅰️ 一气呵成 + 💾 数据持久化):
+# - 🧙 模型分组向导器: 13 preset + 5 维自定义筛选 + 批量勾选 + 策略 dropdown
+# - 端点 4 个:
+#   * GET  /v1/admin/models/filter       (provider/context/quality/speed/modality/tags)
+#   * POST /v1/admin/model-groups/from-filter   (filter → 自动建 group)
+#   * GET  /v1/admin/wizard/presets      (13 preset 列表 + 实时匹配数)
+#   * POST /v1/admin/model-groups/from-wizard   (preset → filter → 建 group + key)
+# - ModelInfo 扩字段: quality_score / speed_score / reasoning_score / tags / metadata_source
+# - model_metadata.json: 持久化元数据 (EWMA 自动算 + auto_tags + R40 backup)
+# - 🐛 _sync_mgm() 修复: registry callback 注册后立即手动调一次 (startup refresh 已完成 → sync 永远不触发)
+# - 🧙 wizard UI: 13 preset 卡片 + 5 维筛选 + 实时匹配数 + 模型批量勾选 + 策略 dropdown + 一键生成
+# - 💾 数据持久化 (老大拍, docker 升级保留数据):
+#   * docker-entrypoint.sh: 首次启动 seed model_metadata + 老 state 自动迁移
+#   * secrets/ 卷挂载 → entrypoint 从 /run/secrets/* 渲染真 key 到 config.yaml 占位符
+#   * .dockerignore: 锁 state/secrets/backups 不进 image
+#   * UPGRADE.md: 同端口/蓝绿升级 SOP + 回滚 + 老 state 自动迁移
+# ============================================================
 GITHUB_REPO = "IGhostHuang/supermodel_router"  # 默认值, 可被 config.version_check.repo 覆盖
 RELEASE_CHECK_INTERVAL = 3600  # 1 小时检查一次
 

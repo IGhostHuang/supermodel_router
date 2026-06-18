@@ -1,0 +1,109 @@
+{
+  "_comment": "v3.10.0 Phase I 默认 model_metadata seed — 首次启动 entrypoint 拷贝到 state/. 卷挂载优先.",
+  "_version": "3.10.0",
+  "openrouter/anthropic/claude-3-opus": {
+    "quality_score": 95, "speed_score": 55, "reasoning_score": 95,
+    "tags": ["reasoning", "long-context", "coding"], "modality": "multimodal",
+    "context_window": 200000, "metadata_source": "seed"
+  },
+  "openrouter/anthropic/claude-3-sonnet": {
+    "quality_score": 85, "speed_score": 75, "reasoning_score": 80,
+    "tags": ["reasoning", "balanced", "coding"], "modality": "multimodal",
+    "context_window": 200000, "metadata_source": "seed"
+  },
+  "openrouter/anthropic/claude-3-haiku": {
+    "quality_score": 70, "speed_score": 92, "reasoning_score": 65,
+    "tags": ["fast", "budget"], "modality": "multimodal",
+    "context_window": 200000, "metadata_source": "seed"
+  },
+  "openrouter/openai/gpt-4o": {
+    "quality_score": 92, "speed_score": 78, "reasoning_score": 88,
+    "tags": ["reasoning", "vision", "tools", "fast"], "modality": "multimodal",
+    "context_window": 128000, "metadata_source": "seed"
+  },
+  "openrouter/openai/gpt-4o-mini": {
+    "quality_score": 78, "speed_score": 90, "reasoning_score": 75,
+    "tags": ["fast", "budget", "vision"], "modality": "multimodal",
+    "context_window": 128000, "metadata_source": "seed"
+  },
+  "openrouter/openai/gpt-4-turbo": {
+    "quality_score": 90, "speed_score": 70, "reasoning_score": 85,
+    "tags": ["reasoning", "vision"], "modality": "multimodal",
+    "context_window": 128000, "metadata_source": "seed"
+  },
+  "openrouter/openai/o1-preview": {
+    "quality_score": 96, "speed_score": 35, "reasoning_score": 98,
+    "tags": ["reasoning", "coding", "long-context"], "modality": "text",
+    "context_window": 128000, "metadata_source": "seed"
+  },
+  "openrouter/openai/o1-mini": {
+    "quality_score": 88, "speed_score": 50, "reasoning_score": 92,
+    "tags": ["reasoning", "coding", "fast"], "modality": "text",
+    "context_window": 128000, "metadata_source": "seed"
+  },
+  "openrouter/google/gemini-pro-1.5": {
+    "quality_score": 88, "speed_score": 75, "reasoning_score": 85,
+    "tags": ["long-context", "vision", "multimodal"], "modality": "multimodal",
+    "context_window": 2000000, "metadata_source": "seed"
+  },
+  "openrouter/google/gemini-flash-1.5": {
+    "quality_score": 78, "speed_score": 92, "reasoning_score": 75,
+    "tags": ["fast", "vision", "long-context", "budget"], "modality": "multimodal",
+    "context_window": 1000000, "metadata_source": "seed"
+  },
+  "openrouter/meta-llama/llama-3.1-405b-instruct": {
+    "quality_score": 90, "speed_score": 60, "reasoning_score": 85,
+    "tags": ["reasoning", "long-context", "coding"], "modality": "text",
+    "context_window": 128000, "metadata_source": "seed"
+  },
+  "openrouter/meta-llama/llama-3.1-70b-instruct": {
+    "quality_score": 82, "speed_score": 80, "reasoning_score": 78,
+    "tags": ["balanced", "coding", "tools"], "modality": "text",
+    "context_window": 128000, "metadata_source": "seed"
+  },
+  "openrouter/mistralai/mistral-large": {
+    "quality_score": 85, "speed_score": 72, "reasoning_score": 80,
+    "tags": ["reasoning", "coding", "balanced"], "modality": "text",
+    "context_window": 128000, "metadata_source": "seed"
+  },
+  "openrouter/deepseek/deepseek-chat": {
+    "quality_score": 82, "speed_score": 85, "reasoning_score": 80,
+    "tags": ["coding", "fast", "budget"], "modality": "text",
+    "context_window": 64000, "metadata_source": "seed"
+  },
+  "openrouter/deepseek/deepseek-r1": {
+    "quality_score": 90, "speed_score": 50, "reasoning_score": 95,
+    "tags": ["reasoning", "coding", "long-context"], "modality": "text",
+    "context_window": 64000, "metadata_source": "seed"
+  },
+  "openrouter/openai/dall-e-3": {
+    "quality_score": 92, "speed_score": 50, "reasoning_score": 0,
+    "tags": ["image-gen"], "modality": "image-gen",
+    "context_window": 0, "metadata_source": "seed"
+  },
+  "openrouter/stabilityai/stable-diffusion-3": {
+    "quality_score": 85, "speed_score": 60, "reasoning_score": 0,
+    "tags": ["image-gen", "budget"], "modality": "image-gen",
+    "context_window": 0, "metadata_source": "seed"
+  },
+  "openrouter/xai/grok-2": {
+    "quality_score": 84, "speed_score": 78, "reasoning_score": 82,
+    "tags": ["reasoning", "fast", "tools"], "modality": "multimodal",
+    "context_window": 128000, "metadata_source": "seed"
+  },
+  "openrouter/qwen/qwen-2.5-72b-instruct": {
+    "quality_score": 80, "speed_score": 85, "reasoning_score": 78,
+    "tags": ["coding", "fast", "budget"], "modality": "text",
+    "context_window": 128000, "metadata_source": "seed"
+  },
+  "openrouter/cohere/command-r-plus": {
+    "quality_score": 82, "speed_score": 75, "reasoning_score": 78,
+    "tags": ["reasoning", "tools", "balanced"], "modality": "text",
+    "context_window": 128000, "metadata_source": "seed"
+  },
+  "openrouter/perplexity/llama-3.1-sonar-large": {
+    "quality_score": 85, "speed_score": 70, "reasoning_score": 82,
+    "tags": ["reasoning", "tools", "search"], "modality": "text",
+    "context_window": 128000, "metadata_source": "seed"
+  }
+}

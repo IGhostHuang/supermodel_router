@@ -138,6 +138,8 @@ async def chat_completions(request: Request):
             )
         # 标记到 request.state (后续 record_usage 用)
         request.state.public_key_meta = public_meta
+        # v3.9.0 (Phase G): 把用户请求的 model 也存进 state, 中间件按 model 分组统计用量
+        request.state.requested_model = requested_model
     else:
         # 退到老的单 key 模式
         api_key = config.server.get("api_key", "")
@@ -160,8 +162,15 @@ async def chat_completions(request: Request):
     max_retry = config.routing.get("max_retry", 2)
     backoff_ms = config.routing.get("retry_backoff_ms", [0, 500])
     last_error = None
+    # v3.9.0 (Phase H): 4 策略轮询 (默认 round-robin-group)
+    from .model_groups import get_model_group_manager
+    mgm = get_model_group_manager()
+    groups = mgm.get_path_to_group_mapping() if mgm else {}
     chain = engine.pick_chain(requested_model, preferred_modalities=preferred_modalities,
-                              max_candidates=max(8, max_retry * 4))
+                              max_candidates=max(8, max_retry * 4),
+                              strategy=config.group_strategy(),
+                              groups=groups,
+                              group_weights=config.group_weights())
     if not chain:
         return JSONResponse(
             {"error": {"message": "No available models", "type": "routing_error"}},

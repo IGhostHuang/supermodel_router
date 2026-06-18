@@ -224,19 +224,51 @@ class PublicKeyManager:
     def check_model_filter(self, meta: Dict[str, Any], model: str) -> bool:
         """model_filter 白名单, True = 允许, False = 拒绝
 
-        支持三类匹配方式:
+        v3.9.0 (老大 16:55 拍): 加 2 类新语法
+        支持 6 类匹配方式:
         1. 完全相等 ``pattern == model``
         2. 前缀通配 ``prefix*`` → ``model.startswith(prefix)`` (原有行为)
         3. 后缀通配 ``*suffix`` → ``model.endswith(suffix)``
         4. 包含匹配 ``*sub*`` 或 ``sub`` → ``sub in model``
+        5. ``@provider`` (新) → 该 provider 全部 model (动态拉取)
+        6. ``group:<name>`` (新) → 解析 ModelGroup 包含的 model
 
-        这保持向后兼容, 并满足用户对 ``*:free`` 或 ``gpt-4*`` 等需求。
+        向后兼容: 老的 4 通配行为不变, 老的 key (*:free 等) 继续工作。
         """
         flt = meta.get("model_filter", [])
         if not flt:
             # 空白名单 = 所有模型均可用
             return True
         for pattern in flt:
+            # 5. @provider 语法 (v3.9.0)
+            if pattern.startswith("@"):
+                provider_name = pattern[1:].strip()
+                if not provider_name:
+                    continue
+                # model 格式: 'provider_name/...' 或纯 model_id
+                if "/" in model:
+                    actual_provider = model.split("/", 1)[0]
+                    if actual_provider == provider_name:
+                        return True
+                # 也允许纯 model_id 形式 (模糊匹配)
+                continue
+
+            # 6. group:<name> 语法 (v3.9.0)
+            if pattern.startswith("group:"):
+                group_name = pattern[6:].strip()  # 跳过 'group:' (6 字符)
+                if not group_name:
+                    continue
+                # 延迟 import 避免循环
+                from .model_groups import get_model_group_manager
+                mgm = get_model_group_manager()
+                if mgm is None:
+                    continue
+                group_models = mgm.resolve_group(group_name)
+                if model in group_models:
+                    return True
+                # 也尝试 provider/model 全路径匹配
+                continue
+
             # Exact match
             if pattern == model:
                 return True
@@ -263,10 +295,11 @@ class PublicKeyManager:
                 return True
         return False
 
-    def record_usage(self, key_hash: str, success: bool, tokens: int = 0):
-        """请求完成时记录 (success/fail + tokens)
+    def record_usage(self, key_hash: str, success: bool, tokens: int = 0, model_name: Optional[str] = None):
+        """请求完成时记录 (success/fail + tokens + 按 model 分组)
 
         v3.7.1 (P0 BUG-006 fix): 加 _dirty + _flush, 容器重启不丢 per-tenant 用量
+        v3.9.0 (Phase G): 加 model_name, O(1) 写 by_model dict, 不影响 middleware 主路径
         """
         with self._lock:
             u = self._usage.setdefault(key_hash, {})
@@ -277,7 +310,21 @@ class PublicKeyManager:
                 u["fail_calls"] = u.get("fail_calls", 0) + 1
             u["tokens"] = u.get("tokens", 0) + tokens
             u["last_used"] = time.time()
+            # v3.9.0 (Phase G): 按 model 累计 (R41 O(1) 写, 不影响 middleware 主路径)
+            if model_name:
+                by_model = u.setdefault("by_model", {})
+                by_model[model_name] = by_model.get(model_name, 0) + 1
             self._save_async()  # 标 dirty + 触发 debounce flush
+
+    def get_usage_by_model(self, key_hash: str) -> Dict[str, int]:
+        """v3.9.0 (Phase G): 按 model 分组的用量 (admin /v1/admin/public-keys/{name}/usage-by-model)
+
+        返回: {model_name: count}, 按 count 降序
+        """
+        with self._lock:
+            u = self._usage.get(key_hash, {})
+            by_model = u.get("by_model", {})
+            return dict(sorted(by_model.items(), key=lambda x: -x[1]))
 
     def get_all_usage(self) -> Dict[str, Any]:
         """全局用量汇总 (admin 用)"""
