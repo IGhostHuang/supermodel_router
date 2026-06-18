@@ -358,6 +358,71 @@ def classify_model(model_id: str, provider: str = "",
 
 # ── 能力评分 ──────────────────────────────────────────────
 
+# v3.8.0: context_window 7 档细分 (从高到低, 给高分)
+# 默认 bonus 表 (可被 config.classifier.context_window_bonus 覆盖)
+DEFAULT_CONTEXT_WINDOW_BONUS: list[tuple[int, int]] = [
+    (200_000, 20),  # 200K+ (Claude 200K / Gemini 1.5 Pro 1M 等)
+    (128_000, 14),  # 128K (GPT-4 Turbo)
+    (64_000, 10),   # 64K (GPT-4 早期)
+    (32_000, 7),    # 32K (GPT-4 32K / Claude 100K)
+    (16_000, 5),    # 16K (GPT-3.5 16K)
+    (8_000, 3),     # 8K
+    (4_000, 2),     # 4K
+]
+
+
+def _extract_context_window_from_extra(extra: dict | None) -> int:
+    """从 extra dict 抽 context_window (跟 models._extract_context_window 行为一致)
+
+    优先级:
+      1. extra.context_window (顶层)
+      2. extra.top_provider.context_length (openrouter nested)
+      3. extra.architecture.context_length (openrouter nested fallback)
+      4. 0 (未知)
+    """
+    if not extra or not isinstance(extra, dict):
+        return 0
+    v = extra.get("context_window")
+    if isinstance(v, (int, float)) and v > 0:
+        return int(v)
+    tp = extra.get("top_provider")
+    if isinstance(tp, dict):
+        v = tp.get("context_length")
+        if isinstance(v, (int, float)) and v > 0:
+            return int(v)
+    arch = extra.get("architecture")
+    if isinstance(arch, dict):
+        v = arch.get("context_length")
+        if isinstance(v, (int, float)) and v > 0:
+            return int(v)
+    return 0
+
+
+def get_context_window_bonus(config_obj=None) -> list[tuple[int, int]]:
+    """从 config.classifier.context_window_bonus 读, 兜底用内置 DEFAULT_CONTEXT_WINDOW_BONUS
+
+    config 格式 (list[dict]): [{"min": 200000, "bonus": 20}, {"min": 128000, "bonus": 14}, ...]
+    按 min 降序排列
+    """
+    if config_obj is None:
+        return list(DEFAULT_CONTEXT_WINDOW_BONUS)
+    cfg_section = config_obj.data.get("classifier") or {}
+    user_bonus = cfg_section.get("context_window_bonus")
+    if not user_bonus:
+        return list(DEFAULT_CONTEXT_WINDOW_BONUS)
+    try:
+        out = []
+        for item in user_bonus:
+            mn = int(item.get("min", 0))
+            bn = int(item.get("bonus", 0))
+            if mn > 0 and bn > 0:
+                out.append((mn, bn))
+        out.sort(key=lambda x: -x[0])  # 降序
+        return out if out else list(DEFAULT_CONTEXT_WINDOW_BONUS)
+    except Exception:
+        return list(DEFAULT_CONTEXT_WINDOW_BONUS)
+
+
 def compute_capability_score(model_id: str, modality: str,
                              extra: dict | None = None,
                              config_obj=None) -> float:
@@ -366,7 +431,7 @@ def compute_capability_score(model_id: str, modality: str,
       - 基类分 (modal 越强越高, 从 config 读, 兜底内置)
       - tier 加成 (turbo/pro/lite 等, 从 config 读, 兜底内置)
       - 自定义关键词加成 (用户 config 自定义)
-      - 上下文窗口 (越大越高)
+      - 上下文窗口 (越大越高, 7 档细分, 从 config 读, 兜底内置)
     config_obj = Config 实例, 传 None 用内置默认.
     """
     mid_lower = model_id.lower()
@@ -389,22 +454,14 @@ def compute_capability_score(model_id: str, modality: str,
             if keyword in mid_lower:
                 score += bonus
 
-    # OpenRouter 上下文长度
-    if extra:
-        ctx = None
-        if isinstance(extra.get("top_provider"), dict):
-            ctx = extra["top_provider"].get("context_length")
-        if not ctx and isinstance(extra.get("architecture"), dict):
-            ctx = extra["architecture"].get("context_length")
-        if ctx:
-            if ctx >= 200000:
-                score += 20          # 200K+ 超长上下文
-            elif ctx >= 128000:
-                score += 15          # 128K
-            elif ctx >= 32000:
-                score += 10          # 32K
-            elif ctx >= 16000:
-                score += 5           # 16K
+    # v3.8.0: 上下文窗口加分 (7 档细分, 可配置)
+    ctx = _extract_context_window_from_extra(extra)
+    if ctx:
+        bonus_table = get_context_window_bonus(config_obj)
+        for min_ctx, bonus in bonus_table:
+            if ctx >= min_ctx:
+                score += bonus
+                break  # 只取第一档 (最大)
 
     return max(0, min(100, score))
 

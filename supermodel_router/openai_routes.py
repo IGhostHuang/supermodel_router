@@ -227,6 +227,19 @@ async def chat_completions(request: Request):
         # v3.4.0: inject 上下文到下一 candidate 的 body
         if context_bridge and context_bridge.enabled and switch_history:
             current_body = context_bridge.inject_into_body(current_body, switch_history)
+        # v3.8.0: 按下一 candidate 的 context_window 压缩 body
+        if (context_bridge and context_bridge.compress_on_switch
+                and candidate.context_window > 0):
+            before_tokens = context_bridge.estimate_tokens(current_body)
+            compressed = context_bridge.compress_for_target(
+                current_body, candidate.context_window, before_tokens
+            )
+            if compressed is not current_body:  # 真发生了压缩
+                current_body = compressed
+                LOG.info("v3.8.0 compress on switch: → %s (target=%d, before=%d, after=%d, meta=%s)",
+                         route.full_model_path, candidate.context_window,
+                         before_tokens, context_bridge.estimate_tokens(current_body),
+                         current_body.get("_smr_compress", {}))
         LOG.info("v4 rotate (bridge): → %s (key_idx=%d, attempt=%d/%d, history=%d, smr_req_id=%s)",
                  route.full_model_path, candidate.key_index,
                  chain_idx + 1, len(chain), len(switch_history), smr_request_id[:8])

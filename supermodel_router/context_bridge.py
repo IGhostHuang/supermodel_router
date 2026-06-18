@@ -139,6 +139,12 @@ class ContextBridge:
         # v3.5.0: 切链 abort 默认开启 (防止旧模型慢回复晚到错配)
         self.abort_on_switch: bool = cfg.get("abort_on_switch", True)
 
+        # v3.8.0: 上下文压缩 (切链时按 target model context_window 压缩 body)
+        self.compress_on_switch: bool = cfg.get("compress_on_switch", True)  # 默认开
+        self.compress_overhead: float = float(cfg.get("compress_overhead", 0.8))  # 留 20% 给 response
+        self.compress_strategy: str = cfg.get("compress_strategy", "auto")  # "auto" / "paragraph_chunk" / "history_trim"
+        self.compress_keep_last: int = int(cfg.get("compress_keep_last_messages", 6))  # history_trim 时保留最近 K 条 (非 system)
+
         # 线程安全: in-memory stats
         self._lock = threading.RLock()
         self._stats = {
@@ -150,6 +156,9 @@ class ContextBridge:
             "current_history_size": 0,    # 当前活跃 request 的 history 大小 (峰值)
             "aborts_total": 0,            # v3.5.0: 切链 abort 次数
             "reviews_total": 0,           # v3.5.0: 主动盘点请求次数
+            # v3.8.0: 上下文压缩
+            "compressions_total": 0,      # 切链时压缩 body 次数
+            "tokens_saved_total": 0,      # 压缩节省的 tokens 累计
         }
 
         # v3.5.0: per-request 跟踪 (smr_request_id → 历史)
@@ -174,8 +183,18 @@ class ContextBridge:
                 self.sentinel_enabled = bool(cfg["sentinel_enabled"])
             if "inject_template" in cfg:
                 self.inject_template = str(cfg["inject_template"])
-            LOG.info("ContextBridge config updated: enabled=%s threshold=%ds max_history=%d",
-                     self.enabled, self.stale_threshold_s, self.max_history)
+            # v3.8.0: 压缩配置
+            if "compress_on_switch" in cfg:
+                self.compress_on_switch = bool(cfg["compress_on_switch"])
+            if "compress_overhead" in cfg:
+                self.compress_overhead = float(cfg["compress_overhead"])
+            if "compress_strategy" in cfg:
+                self.compress_strategy = str(cfg["compress_strategy"])
+            if "compress_keep_last_messages" in cfg:
+                self.compress_keep_last = int(cfg["compress_keep_last_messages"])
+            LOG.info("ContextBridge config updated: enabled=%s threshold=%ds max_history=%d compress=%s/%.2f",
+                     self.enabled, self.stale_threshold_s, self.max_history,
+                     self.compress_strategy, self.compress_overhead)
 
     def get_config(self) -> dict:
         return {
@@ -187,6 +206,11 @@ class ContextBridge:
             "max_tracked_requests": self._max_tracked_requests,  # v3.5.0
             "inject_template_preview": self.inject_template[:200],
             "version": self.version,
+            # v3.8.0: 压缩配置
+            "compress_on_switch": self.compress_on_switch,
+            "compress_overhead": self.compress_overhead,
+            "compress_strategy": self.compress_strategy,
+            "compress_keep_last_messages": self.compress_keep_last,
         }
 
     # ── 核心: 注入 system message ──
@@ -287,6 +311,190 @@ class ContextBridge:
     def get_stats(self) -> dict:
         with self._lock:
             return dict(self._stats)
+
+    # ── v3.8.0: Token 估算 + 上下文压缩 (切链时调用) ─────────
+
+    def estimate_tokens(self, body: dict) -> int:
+        """粗估 body 总 tokens (字符数 / 4)
+
+        用于切链前判断: 当前 body 是否超出目标 model 的 context_window
+        粗估公式: 中英文混合按 chars/4 (实际 1 token ≈ 4 chars English / 1.5 chars Chinese)
+        对切链判断够用, 严格 tokenize 用 tiktoken (留给未来)
+        """
+        if not body or not isinstance(body, dict):
+            return 0
+        total = 0
+        # system + user + assistant + tool messages
+        for msg in body.get("messages", []):
+            content = msg.get("content")
+            if isinstance(content, str):
+                total += len(content)
+            elif isinstance(content, list):
+                # multi-part content (e.g. text + image_url)
+                for part in content:
+                    if isinstance(part, dict) and part.get("type") == "text":
+                        total += len(part.get("text", ""))
+                    # image_url part 算 ~170 tokens (CLIP 经验值, OpenAI 文档)
+                    elif isinstance(part, dict) and part.get("type") == "image_url":
+                        total += 170 * 4  # 170 tokens ≈ 680 chars
+        # tools (function calling)
+        for tool in body.get("tools", []) or []:
+            if isinstance(tool, dict):
+                total += len(json.dumps(tool, ensure_ascii=False))
+        # response_format / 其他小字段
+        for k in ("response_format",):
+            v = body.get(k)
+            if isinstance(v, dict):
+                total += len(json.dumps(v, ensure_ascii=False))
+        return total // 4  # chars / 4 ≈ tokens
+
+    def compress_for_target(self, body: dict, target_window: int,
+                            current_total_tokens: int | None = None) -> dict:
+        """v3.8.0: 按目标 model context_window 压缩 body
+
+        策略 (3 档):
+          1. Pass-through: total ≤ target * overhead → 原样返回
+          2. 段落分批 (paragraph_chunk): 超长 user message 拆 N 段, 每段 ≤ chunk_tokens
+          3. 历史压缩 (history_trim): 旧 messages 摘要 (用 [TRIMMED n msgs] 标记), 保留 system + 最近 K 轮
+
+        Args:
+            body: 完整 chat body
+            target_window: 目标 model 的 context_window tokens
+            current_total_tokens: 已 estimate 好的 tokens (避免重复算)
+
+        Returns:
+            新 body (复制避免 mutate), 含 _smr_compress metadata
+        """
+        if not self.enabled or not self.compress_on_switch or not body or target_window <= 0:
+            return body
+
+        # 1. 算 tokens (如果没传)
+        if current_total_tokens is None:
+            current_total_tokens = self.estimate_tokens(body)
+
+        # 1.5. overhead 配置 (默认 0.8 = 留 20% 给 response)
+        overhead = 0.8
+        if isinstance(self.compress_overhead, (int, float)) and 0 < self.compress_overhead < 1:
+            overhead = self.compress_overhead
+
+        target_effective = int(target_window * overhead)
+
+        # 2. Pass-through: 总 tokens 已在预算内
+        if current_total_tokens <= target_effective:
+            return body
+
+        # 3. 段落分批 (针对超长单条 user message)
+        new_body = {**body, "messages": [dict(m) for m in body.get("messages", [])]}
+        messages = new_body["messages"]
+        # chunk_tokens 留 marker 余量: 短标记 ~12 chars (~3 tokens), 留 30 chars (~7 tokens) 给所有段
+        # 公式: chunk * 0.4 (单段) 但至少 500 tokens
+        chunk_tokens = max(500, min(2000, int(target_effective * 0.4)))
+        # 粗估: 把超长 message 拆后会有 N 段, 留 8 tokens/段 marker 余量
+        # N 粗估 = total_tokens / chunk_tokens + 1
+        est_n_chunks = max(2, current_total_tokens // chunk_tokens + 1)
+        marker_reserve_per_chunk_tokens = max(3, (est_n_chunks * 8) // est_n_chunks + 2)  # ~3-10 tokens
+        chunk_tokens_effective = chunk_tokens - marker_reserve_per_chunk_tokens
+        n_chunks = 0
+
+        for i, msg in enumerate(messages):
+            content = msg.get("content")
+            if not isinstance(content, str):
+                continue
+            msg_tokens = len(content) // 4
+            if msg_tokens <= chunk_tokens:
+                continue
+            # 拆段: 按 \n\n / 句号 / 空格 分段
+            chunks = self._split_into_chunks(content, chunk_tokens_effective * 4)
+            if len(chunks) <= 1:
+                continue
+            # ✅ v3.8.0 fix: 不新增 message, 把 chunks 拼回原 content
+            # 用短 marker "[续 N/M]\n\n" (~10 chars) 分隔, 避免 N 段 metadata 开销
+            # 让总 token 只减不增
+            n = len(chunks)
+            markers = "\n\n".join(f"[续 {j}/{n}]" for j in range(2, n + 1))
+            new_content = chunks[0]
+            if n > 1:
+                new_content += "\n\n" + markers + "\n\n" + "\n\n".join(chunks[1:])
+            messages[i] = {**msg, "content": new_content}
+            n_chunks += n - 1
+            break  # 只处理第 1 个超长 message (避免连环拆)
+
+        # 4. 历史压缩: 删旧 messages 留 system + 最近 K 轮
+        # ✅ v3.8.0 fix: history_trim 段无条件执行 (n_chunks > 0 也跑)
+        # 理由: paragraph_chunk 改结构, history_trim 删消息, 两者不冲突
+        # 但 n_trimmed=0 时不进 metadata (避免 noise)
+        n_trimmed = 0
+        if self.compress_strategy in ("history_trim", "auto"):
+            # 留 system (idx 0) + 最近 keep_last_messages 轮
+            keep_last = self.compress_keep_last
+            # 找 system message 索引
+            system_idx = -1
+            for idx, m in enumerate(messages):
+                if m.get("role") == "system":
+                    system_idx = idx
+                    break
+            # 计算要保留的 messages: system + 后 N 条
+            if len(messages) > keep_last + 1:  # +1 = system
+                # 保留 system + 最后 keep_last 条
+                if system_idx >= 0:
+                    kept = [messages[system_idx]] + messages[-keep_last:]
+                else:
+                    kept = messages[-keep_last:]
+                n_trimmed = len(messages) - len(kept)
+                messages = kept
+                new_body["messages"] = messages
+
+        # 5. 记录 stats
+        if n_chunks > 0 or n_trimmed > 0:
+            with self._lock:
+                self._stats["compressions_total"] = self._stats.get("compressions_total", 0) + 1
+                self._stats["tokens_saved_total"] = self._stats.get("tokens_saved_total", 0) + (current_total_tokens - self.estimate_tokens(new_body))
+
+        # 6. 加 _smr_compress metadata (供 debug / 审计)
+        if n_chunks > 0 or n_trimmed > 0:
+            new_body["_smr_compress"] = {
+                "target_window": target_window,
+                "effective_budget": target_effective,
+                "tokens_before": current_total_tokens,
+                "tokens_after": self.estimate_tokens(new_body),
+                "chunks_split": n_chunks,
+                "messages_trimmed": n_trimmed,
+                "strategy": "paragraph_chunk" if n_chunks > 0 else "history_trim",
+                "version": self.version,
+            }
+
+        return new_body
+
+    def _split_into_chunks(self, text: str, max_chars: int) -> list[str]:
+        """按 \\n\\n / 句号 / 空格 拆段, 每段 ≤ max_chars
+
+        优先按段落 (\n\n) → 句子 (. ! ? \n) → 单词 (空格) 拆
+        """
+        if len(text) <= max_chars:
+            return [text]
+        chunks: list[str] = []
+        remaining = text
+        while len(remaining) > max_chars:
+            # 优先按 \n\n 拆
+            split_at = remaining.rfind("\n\n", 0, max_chars)
+            if split_at <= 0:
+                # 按 . ! ? \n 拆
+                for sep in [". ", "! ", "? ", "。 ", "！", "？", "\n"]:
+                    split_at = remaining.rfind(sep, 0, max_chars)
+                    if split_at > 0:
+                        split_at += len(sep)
+                        break
+            if split_at <= 0:
+                # 按空格拆
+                split_at = remaining.rfind(" ", 0, max_chars)
+            if split_at <= 0:
+                # 实在拆不动, 硬切
+                split_at = max_chars
+            chunks.append(remaining[:split_at].rstrip())
+            remaining = remaining[split_at:].lstrip()
+        if remaining:
+            chunks.append(remaining)
+        return chunks
 
     def reset_stats(self):
         with self._lock:

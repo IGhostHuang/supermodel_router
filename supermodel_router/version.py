@@ -1,6 +1,26 @@
 """
 supermodel_router/version.py — 版本元数据 + GitHub release 检查
 
+v3.8.0 新增 (2026-06-18 老大拍):
+- 模型上下文窗口加分: 7 档细分 (4K/8K/16K/32K/64K/128K/200K+), 加分可配置
+  (config.classifier.context_window_bonus)
+- 上下文压缩 (切链时): 按目标 model context_window 限制, 3 策略 (pass-through / 段落分批 / 历史压缩)
+  1. Pass-through: total ≤ target * overhead (默认 0.8) → 原样
+  2. 段落分批 (paragraph_chunk): 超长 user message 拆 N 段, 每段 ≤ chunk_tokens
+  3. 历史压缩 (history_trim): 旧 messages 摘要, 保留 system + 最近 K 轮
+- ModelInfo + CandidateResult + RouteResult 新增 context_window 顶层字段
+- _extract_context_window helper (跟 provider 解耦, 优先顶层 → openrouter nested → 0)
+- /v1/admin/context_bridge 新 stats: compressions_total + tokens_saved_total
+- openai_routes.py 切链时调 compress_for_target, 含 _smr_compress metadata (debug 用)
+- 总开关: context_bridge.compress_on_switch (false = 不压缩)
+
+v3.7.x 修 (2026-06-18 老大拍):
+- v3.7.1: /v1/public/chat/completions 端点 + UI 版本号修正 (commit 8cff72c)
+- v3.7.2: 修 2 P0 (中间件 token 累计 / model_filter 通配) + 1 P2 (state 路径) + secret leak
+  防御 (commit 1c68ab2)
+  ⚠️ 1c68ab2 commit message 提 v3.7.2 但没改 version.py, UI 一直显示 v3.7.1
+  → v3.8.0 同步 bump version.py
+
 v3.6.0 新增 (2026-06-17 23:56 老大拍):
 - UI/UX 全面改版: 顶部 toolbar → 左侧 sidebar nav (Dashboard/Providers/Models/Keys/Stats/Config/Classifier/Version)
 - 模型列表分页 (每页 20 + 前/后/跳转)
@@ -46,7 +66,7 @@ from typing import Optional
 LOG = logging.getLogger("version")
 
 # 当前版本 (跟随 release tag)
-VERSION = "3.7.1"
+VERSION = "3.8.0"
 BUILD_DATE = "2026-06-18"
 GITHUB_REPO = "IGhostHuang/supermodel_router"  # 默认值, 可被 config.version_check.repo 覆盖
 RELEASE_CHECK_INTERVAL = 3600  # 1 小时检查一次

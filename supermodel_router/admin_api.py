@@ -134,6 +134,7 @@ async def admin_models(provider: str | None = None, pricing: str | None = None):
                 "modality": m.modality,
                 "modality_display": m.modality_display,
                 "capability_score": m.capability_score,
+                "context_window": m.context_window,  # v3.8.0: 上下文窗口 (0=未知)
                 "pricing": p,
                 "is_free": p == PRICING_FREE,
                 "base_url": ps.base_url,

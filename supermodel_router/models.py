@@ -85,6 +85,45 @@ def normalize_base_url(name: str, raw: str) -> str:
     return urlunparse((p.scheme, p.netloc, path, "", "", "")).rstrip("/")
 
 
+# ── v3.8.0: 上下文窗口提取 ───────────────────────────────
+
+def _extract_context_window(extra: dict | None) -> int:
+    """从 /v1/models 返回的 extra dict 抽 context_window (int tokens)
+
+    优先级 (跟 classifier.compute_capability_score 保持一致):
+      1. extra.context_window (顶层, 推荐)
+      2. extra.top_provider.context_length (openrouter 嵌套)
+      3. extra.architecture.context_length (openrouter 嵌套, fallback)
+      4. extra.max_context_tokens (其他 provider)
+      5. 0 (未知)
+
+    返回 0 表示未知, 切链时不压缩 + 不参与 capability_score 加分
+    """
+    if not extra or not isinstance(extra, dict):
+        return 0
+    # 1. 顶层 context_window
+    v = extra.get("context_window")
+    if isinstance(v, (int, float)) and v > 0:
+        return int(v)
+    # 2. openrouter nested: top_provider.context_length
+    tp = extra.get("top_provider")
+    if isinstance(tp, dict):
+        v = tp.get("context_length")
+        if isinstance(v, (int, float)) and v > 0:
+            return int(v)
+    # 3. openrouter nested: architecture.context_length
+    arch = extra.get("architecture")
+    if isinstance(arch, dict):
+        v = arch.get("context_length")
+        if isinstance(v, (int, float)) and v > 0:
+            return int(v)
+    # 4. 其他 provider: max_context_tokens
+    v = extra.get("max_context_tokens")
+    if isinstance(v, (int, float)) and v > 0:
+        return int(v)
+    return 0
+
+
 @dataclass
 class ModelInfo:
     id: str
@@ -99,6 +138,10 @@ class ModelInfo:
     modality: str = TEXT_ONLY             # 模态类型
     capability_score: float = 50.0         # 能力分 (0-100)
     modality_display: str = "📝 纯文本"    # 前端展示
+    # ── v3.8.0: 上下文窗口 (顶层字段, 跟 provider 解耦) ──
+    # 来源: extra.context_window (顶层) → extra.top_provider.context_length → extra.architecture.context_length → 0
+    # 0 表示未知, 不参与 scoring 加分 + 切链时不压缩
+    context_window: int = 0                # 模型可处理的最大 tokens
 
 
 @dataclass
@@ -261,6 +304,8 @@ class ModelRegistry:
             mid = m["id"]
             modality = classify_model(mid, ps.name, m)
             cap_score = compute_capability_score(mid, modality, m, config_obj=self.cfg)
+            # v3.8.0: 从 extra 抽 context_window (顶层 → openrouter nested → 默认 0)
+            ctx_window = _extract_context_window(m)
             ps.models.append(ModelInfo(
                 id=mid,
                 provider=ps.name,
@@ -268,11 +313,11 @@ class ModelRegistry:
                 object=m.get("object", "model"),
                 created=m.get("created", 0),
                 owned_by=m.get("owned_by", ""),
-                extra={k: v for k, v in m.items()
-                       if k not in ("id", "object", "created", "owned_by")},
+                extra={k: v for k, v in m.items() if k not in ("id", "object", "created", "owned_by")},
                 modality=modality,
                 capability_score=round(cap_score, 1),
                 modality_display=get_modality_display(modality),
+                context_window=ctx_window,
             ))
         ps.model_ids = [m.id for m in ps.models]
         ps.last_model_refresh = time.time()

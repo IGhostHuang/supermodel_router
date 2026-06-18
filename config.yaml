@@ -117,6 +117,17 @@ model_management:
 classifier:
   tier_bonus:
     pro: 35
+  # v3.8.0: 上下文窗口加分 (7 档细分, 可覆盖默认值)
+  # 默认: [(200K,20), (128K,14), (64K,10), (32K,7), (16K,5), (8K,3), (4K,2)]
+  # 改这里覆盖, 删整段恢复默认
+  # context_window_bonus:
+  #   - { min: 200000, bonus: 20 }
+  #   - { min: 128000, bonus: 14 }
+  #   - { min: 64000, bonus: 10 }
+  #   - { min: 32000, bonus: 7 }
+  #   - { min: 16000, bonus: 5 }
+  #   - { min: 8000, bonus: 3 }
+  #   - { min: 4000, bonus: 2 }
 context_bridge:
   enabled: true
   stale_threshold_seconds: 1800
@@ -125,3 +136,8 @@ context_bridge:
   abort_on_switch: true
   max_tracked_requests: 1000
   version: 3.5.0
+  # v3.8.0: 上下文压缩 (切链时按 target model context_window 压缩 body)
+  compress_on_switch: true                 # 总开关 (false = 不压缩, pass-through)
+  compress_overhead: 0.8                   # 留 20% 给 response
+  compress_strategy: auto                  # auto / paragraph_chunk / history_trim
+  compress_keep_last_messages: 6           # history_trim 时保留最近 K 条 (非 system)

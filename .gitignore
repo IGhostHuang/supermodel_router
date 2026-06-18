@@ -23,3 +23,9 @@ config.local.yaml
 state/
 *.state.json
 .env.local
+
+# Runtime state files (散在根目录, 跟 state/ 同类, 避免污染 git)
+engine_stats.json
+model_rules_state.json
+penalty_state.json
+public_keys_state.json
