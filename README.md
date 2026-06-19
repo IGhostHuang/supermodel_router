@@ -1,7 +1,17 @@
 # SMR (supermodel_router)
 
 > **SMR (前 FMR / free-model-router)** — OpenAI 兼容的多 provider LLM 路由网关
-> **v3.4.0** · 2026-06-17 · 独立运行模式（不集成到 Hermes）
+> **v3.10.0** · 2026-06-19 · 轮询 v5 + 模型分组向导 + 版本自更新
+
+---
+
+## 🎉 v3.10.0 新增 (2026-06-19) — 模型分组向导 + 轮询策略 v5
+
+**4 种 group-level 策略**: round-robin-group (默认) / flat / group-failover / group-weighted
+
+**分组向导持久化**: wizard 一键生成选择的 strategy 写入 config.yaml
+
+**优先级**: model-level routing 先选候选 → group-level 决定 group 内顺序
 
 ---
 
@@ -424,6 +434,8 @@ providers:
 
 ## 📜 版本历史
 
+- **v3.10.0 (2026-06-19)** — 轮询策略 v5: 4 种 group-level 策略 (round-robin-group/flat/group-failover/group-weighted); 分组向导持久化 (wizard strategy → config.yaml)
+- **v3.4.0 (2026-06-17)** — 上下文桥接 (chain rotation 过期标记); prompt 超时警告 (>30min 自动 system warning)
 - **v3.1.0 (2026-06-17)** — 轮询机制 v4 (高分优先 + key 轮询 + 跨 provider + 降分 + 周期复测); 多 key 真正轮询 (B1); exclude 正则 (B4); 错误消息干净 (B2); 版本管理 (C: /v1/admin/version + upgrade); penalty admin endpoints
 - **v3.0.0 (2026-06-16)** — 模态路由 + 质量评分 (capability_score + EWMA latency)
 - **v1.0.0 (SMR 阶段 2)** — 修复流式 chat 500 bug (560eb61)

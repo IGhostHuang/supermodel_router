@@ -14,7 +14,8 @@ services:
     volumes:
       # 配置 (entrypoint 需 :rw 写入占位符渲染的真 key, 改文件热重载生效, 无需重启容器)
       # 注意: 必须 :rw, 不然 entrypoint 渲染 secret 时 write 失败 (ro 会 silent skip)
-      - ./config.yaml:/app/config.yaml
+      # v3.10.1 修 BUG-002: 显式 :rw 避免被误改 :ro
+      - ./config.yaml:/app/config.yaml:rw
       # 💾 State 持久化 (老大拍 🅰️+💾 持久化优先)
       # 容器重建/升级 = state 不丢
       - ./state:/app/state

@@ -2400,7 +2400,7 @@ async function openServer(){
   document.getElementById('srvPort').value = srv.port || 6473;
   document.getElementById('srvApiKey').value = '';  // 不回显, 显式输入
   document.getElementById('srvApiKey').placeholder = srv.api_key ? '已设置 (留空不改)' : '可选, Bearer 鉴权';
-  document.getElementById('rtStrategy').value = rt.strategy || 'quality_weighted';
+  document.getElementById('rtStrategy').value = rt.strategy || 'flat';
   document.getElementById('rtFailover').value = rt.failover_threshold || 3;
   document.getElementById('rtRecovery').value = rt.recovery_interval || 300;
   document.getElementById('rtMaxRetry').value = rt.max_retry || 2;
@@ -2674,11 +2674,11 @@ function onPresetUrlChange(){
     <input id="srvApiKey" type="password" placeholder="可选, Bearer 鉴权">
 
     <h4 style="margin-top:14px;font-size:14px;color:#94a3b8">Routing</h4>
-    <label>Strategy (路由策略)</label>
+    <label>Strategy (路由策略, v3.10.1: 仅 flat 是真实现, 其他 2 个历史选项已废)</label>
     <select id="rtStrategy">
-      <option value="quality_weighted">quality_weighted (按质量评分)</option>
-      <option value="round-robin">round-robin (轮询)</option>
-      <option value="failover">failover (故障切换)</option>
+      <option value="flat">flat (全局降序, v3.10.1 默认 — 老 v4 行为)</option>
+      <option value="round-robin">round-robin (轮询, 已废, 走 flat)</option>
+      <option value="failover">failover (故障切换, 已废, 走 flat)</option>
     </select>
     <label>Failover Threshold (连续失败次数触发 degraded)</label>
     <input id="rtFailover" type="number" min="1" value="3">
