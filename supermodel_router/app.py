@@ -74,7 +74,7 @@ async def lifespan(app: FastAPI):
     if _mms is not None:
         all_models = registry.get_models()  # List[ModelInfo]
         merged = _mms.merge_bulk(all_models)
-        LOG.info("Phase I: merged metadata into %d models", merged)
+        LOG.info("Phase I: merged metadata into %d models (BUG-005 fallback active)", merged)
     engine = RouteEngine(config, registry)
 
     # v3.4.0: ContextBridge — 上下文桥接 + 过期标记 (老大 22:00 拍)

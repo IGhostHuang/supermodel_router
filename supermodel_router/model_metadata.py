@@ -48,14 +48,31 @@ class ModelMetadataStore:
         self._load_static()
 
     def _load_static(self):
-        """启动时读 metadata.json"""
+        """启动时读 metadata.json
+
+        v3.10.1 修 BUG-005: 同时支持平铺 + 嵌套 schema (向后兼容)
+        - 平铺 (v3.10.0 seed): {model_id: metadata, ...} 或 {_version, model_id: metadata, ...}
+        - 嵌套: {_version, models: {model_id: metadata, ...}}
+        自动检测: 顶层有 "models" key = 嵌套, 否则 = 平铺
+        """
         if not self._meta_file.exists():
             LOG.info("ModelMetadataStore: no static file, starting empty")
             return
         try:
             data = json.loads(self._meta_file.read_text(encoding="utf-8"))
-            self._static = data.get("models", {})
-            LOG.info("ModelMetadataStore: loaded %d static entries", len(self._static))
+            # 检测 schema 类型
+            if isinstance(data.get("models"), dict):
+                # 嵌套: {"_version": ..., "models": {model_id: ...}}
+                self._static = data["models"]
+                LOG.info("ModelMetadataStore: loaded %d static entries (nested schema)", len(self._static))
+            else:
+                # 平铺: {model_id: ...} 或 {_version, model_id: ...}
+                # 过滤 _version / _comment 元数据 key
+                self._static = {
+                    k: v for k, v in data.items()
+                    if not k.startswith("_") and isinstance(v, dict)
+                }
+                LOG.info("ModelMetadataStore: loaded %d static entries (flat schema)", len(self._static))
         except Exception as e:
             LOG.warning("ModelMetadataStore: load failed (%s), starting empty", e)
 
@@ -246,9 +263,21 @@ _metadata_store: Optional[ModelMetadataStore] = None
 
 def init_model_metadata_store(state_dir: str = ".") -> ModelMetadataStore:
     global _metadata_store
+    # v3.10.1 修 BUG-005 第二层: state_dir 存在但 model_metadata.json 不在时
+    # 也 fallback 到 ./state (Docker /app/state 可能是 sibling 沙盒遗留空目录)
+    from pathlib import Path
+    candidate = Path(state_dir)
+    meta_file = candidate / "model_metadata.json"
+    if not candidate.exists() or not meta_file.exists():
+        local_fallback = Path("./state")
+        if local_fallback.exists() and (local_fallback / "model_metadata.json").exists():
+            LOG.info("ModelMetadataStore: state_dir=%s 缺 model_metadata.json, fallback 到 %s",
+                     state_dir, local_fallback)
+            state_dir = str(local_fallback)
     _metadata_store = ModelMetadataStore(state_dir=state_dir)
     _metadata_store.load_engine_stats()  # 启动时回填 EWMA
-    LOG.info("ModelMetadataStore initialized: state_dir=%s", state_dir)
+    LOG.info("ModelMetadataStore initialized: state_dir=%s, _static=%d",
+             state_dir, len(_metadata_store._static))
     return _metadata_store
 
 

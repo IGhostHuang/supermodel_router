@@ -32,7 +32,7 @@ test_models.py
 
 # Dev artifacts
 *.tar.gz
-pip-cache/
+# pip-cache 必须保留 — Dockerfile 用它离线装依赖 (老大拍 DNS 限制)
 hot-cache/
 README.md
 docs/sandbox-reports/
@@ -47,4 +47,4 @@ docs/sandbox-reports/
 Dockerfile
 docker-compose.yml
 .dockerignore
-docker-entrypoint.sh
+# docker-entrypoint.sh 必须打包进 image (跟 Dockerfile COPY 配套)

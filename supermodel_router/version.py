@@ -3,18 +3,17 @@ supermodel_router/version.py — 版本元数据 + GitHub release 检查
 
 v3.10.0 (2026.06.19 老大拍 3 项全满足, 一气呵成):
 - 4 轮询策略并存 (model-level + group-level 双层):
-  * model-level: routing.strategy (老 v3.9.0 字段)
-    - quality_weighted (默认)
-    - flat (v4 老策略, 降序)
-    - balanced
-  * group-level: routing.group_strategy (v3.10.0 新字段, 默认 round-robin-group)
-    - round-robin-group: 默认, group 内轮询, group 间 round-robin
-    - flat: 全局降序
-    - group-failover: 按 group 优先级
-    - group-weighted: 按 group_weights 加权随机
-- 优先级: model-level 先选候选 -> group-level 决定 group 顺序
-- config.yaml 默认 round-robin-group, UI /v1/admin/routing PUT 可改
-- wizard UI 一键生成 group 时可选 4 策略 (UI 覆盖 config 默认)
+  - model-level: routing.strategy (老 v3.9.0 字段, 实际只 1 个实现)
+      - flat (默认, 全局降序; 老 v4 行为)
+    * group-level: routing.group_strategy (v3.10.0 新字段, 默认 round-robin-group)
+      - round-robin-group: 默认, group 内轮询, group 间 round-robin
+      - flat: 全局降序
+      - group-failover: 按 group 优先级
+      - group-weighted: 按 group_weights 加权随机
+  - 优先级: model-level 先选候选 -> group-level 决定 group 顺序
+  - config.yaml 默认 round-robin-group + strategy: flat, UI /v1/admin/routing PUT 可改
+  - wizard UI 一键生成 group 时可选 4 策略 (UI 覆盖 config 默认)
+  - v3.10.1 修 BUG-001: 删 quality_weighted/balanced (未实现, 静默 fallback)
 
 v3.10.0 新增 (2026.06.18 老大拍 A 一气呵成 + 数据持久化):
 - 模型分组向导器: 13 preset + 5 维自定义筛选 + 批量勾选 + 策略 dropdown

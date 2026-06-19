@@ -14,10 +14,10 @@ LABEL description="SuperModel Router — 多 Provider / 多 Key / 智能路由"
 # 工作目录
 WORKDIR /app
 
-# 安装依赖 (分层缓存) — 使用预下载的 wheels 避免 DNS 问题
+# 安装依赖 (分层缓存) — 标准 pip install
+# v3.10.1 修 BUG-003: 删 pip-cache 离线假设 (目录不存在, --no-index 强制离线会失败)
 COPY requirements.txt .
-COPY pip-cache/ /tmp/pip-cache/
-RUN pip install --no-cache-dir --no-index --find-links /tmp/pip-cache -r requirements.txt && rm -rf /tmp/pip-cache
+RUN pip install --no-cache-dir -r requirements.txt
 
 # 复制项目
 COPY supermodel_router/ supermodel_router/
