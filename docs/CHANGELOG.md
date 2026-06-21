@@ -99,3 +99,32 @@
 > 内部代号 free-model-router, 已废弃
 
 ---
+
+---
+
+## v3.11.0 (2026-06-21)
+
+**v0.9 + v1.0 易经算法集成 — 体·用·时 3 件套**
+
+### 🚀 New
+- 5 provider 卦位映射 (`config.yaml v0_9_integration`)
+  - minimax-cn=离/南/8/火   newapi=乾/西北/9/金
+  - freemodel=震/东/3/木    openrouter=兑/西/4/金
+  - local=坎/北/7/水        中央 5=元任务心跳
+- `/admin/9-gong` dashboard: 8 卦布局 + 12 时辰火候 + 五行精确化
+- 3 蒸馏精华赋能路由: 体 (8 卦) + 用 (1-9 数) + 时 (12 时辰)
+- SKILL.md 3 必含章节 (§炼己 / §大象 / §逆运算)
+- TROUBLESHOOTING.md (7 风险排错 SOP)
+- docker-compose.yml: admin_ui.py + dashboard HTML 体积挂载
+
+### 🐛 Fixed
+- 9 还 7 返: v3.4→v3.10 共 9 版本回还 + c52f3e0 修 7 个 BUG
+- 5b/venv/PAT/gh-cred/GH-httpx 生产防御加固
+
+### ⚡ Performance
+- 3 cron 自动化: by-five-element / by-san-yi / by-fire-候 (每周一)
+- 8 卦 dashboard 热重载 (体积挂载, 0 重启)
+
+### 📚 Docs
+- TROUBLESHOOTING.md: 容器内/5b/venv/体积/健康/模型/PAT 7 风险
+- SKILL.md: 按 v0.9 模板 (§炼己 + §大象 + §逆运算)

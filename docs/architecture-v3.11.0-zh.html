@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SMR v3.11.0 — 架构图 (中文版)</title>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Noto Sans SC', 'JetBrains Mono', monospace;
+      background: #020617;
+      min-height: 100vh;
+      padding: 2rem;
+      color: white;
+    }
+    .container { max-width: 1200px; margin: 0 auto; }
+    .header { margin-bottom: 2rem; }
+    .header-row { display: flex; align-items: center; gap: 1rem; margin-bottom: 0.5rem; }
+    .pulse-dot {
+      width: 12px; height: 12px; background: #22d3ee; border-radius: 50%;
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+    h1 { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.025em; }
+    .subtitle { color: #94a3b8; font-size: 0.875rem; margin-left: 1.75rem; }
+    .diagram-container {
+      background: rgba(15, 23, 42, 0.5);
+      border-radius: 1rem; border: 1px solid #1e293b;
+      padding: 1.5rem; overflow-x: auto;
+    }
+    svg { width: 100%; min-width: 900px; display: block; }
+    .cards {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1rem; margin-top: 2rem;
+    }
+    .card {
+      background: rgba(15, 23, 42, 0.5); border-radius: 0.75rem;
+      border: 1px solid #1e293b; padding: 1.25rem;
+    }
+    .card-header { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem; }
+    .card-dot { width: 8px; height: 8px; border-radius: 50%; }
+    .card-dot.cyan { background: #22d3ee; }
+    .card-dot.emerald { background: #34d399; }
+    .card-dot.violet { background: #a78bfa; }
+    .card-dot.amber { background: #fbbf24; }
+    .card-dot.rose { background: #fb7185; }
+    .card h3 { font-size: 0.875rem; font-weight: 600; }
+    .card ul { list-style: none; color: #94a3b8; font-size: 0.75rem; line-height: 1.6; }
+    .card li { margin-bottom: 0.375rem; }
+    .footer { text-align: center; margin-top: 1.5rem; color: #475569; font-size: 0.75rem; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <div class="header">
+      <div class="header-row">
+        <div class="pulse-dot"></div>
+        <h1>SuperModel 路由器 v3.11.0 — 架构图</h1>
+        <p style="font-size:14px;color:#60a5fa;margin-top:4px;margin-bottom:8px;">集成 v0.9 + v1.0 易经算法: 体(8 卦) + 用(1-9) + 时(12 时辰) — 5 provider 卦位映射 + 9 还 7 返 + 中央 5 心跳</p>
+      </div>
+      <p class="subtitle">OpenAI 兼容的 LLM API 网关 · 多家厂商聚合 · 4 种策略并存 · 数据持久化 · 同端口升级</p>
+    </div>
+
+    <!-- Main Diagram -->
+    <div class="diagram-container">
+      <svg viewBox="0 0 1100 720">
+        <defs>
+          <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#64748b" />
+          </marker>
+          <marker id="arrowhead-cyan" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#22d3ee" />
+          </marker>
+          <marker id="arrowhead-rose" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#fb7185" />
+          </marker>
+          <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+            <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1e293b" stroke-width="0.5"/>
+          </pattern>
+        </defs>
+
+        <rect width="100%" height="100%" fill="url(#grid)" />
+
+        <!-- ============================================================
+             第 1 层: 客户端应用 (青色)
+             ============================================================ -->
+        <rect x="30" y="40" width="1040" height="80" rx="8" fill="rgba(8, 51, 68, 0.2)" stroke="#22d3ee" stroke-width="1" stroke-dasharray="6,3"/>
+        <text x="46" y="60" fill="#22d3ee" font-size="11" font-weight="600">第 1 层 · 客户端应用 (任何 OpenAI SDK 都能用)</text>
+
+        <rect x="50" y="70" width="120" height="40" rx="6" fill="rgba(8, 51, 68, 0.4)" stroke="#22d3ee" stroke-width="1.5"/>
+        <text x="110" y="86" fill="white" font-size="11" font-weight="600" text-anchor="middle">Claude Code</text>
+        <text x="110" y="100" fill="#94a3b8" font-size="8" text-anchor="middle">Anthropic SDK</text>
+
+        <rect x="190" y="70" width="120" height="40" rx="6" fill="rgba(8, 51, 68, 0.4)" stroke="#22d3ee" stroke-width="1.5"/>
+        <text x="250" y="86" fill="white" font-size="11" font-weight="600" text-anchor="middle">Cursor IDE</text>
+        <text x="250" y="100" fill="#94a3b8" font-size="8" text-anchor="middle">OpenAI SDK</text>
+
+        <rect x="330" y="70" width="120" height="40" rx="6" fill="rgba(8, 51, 68, 0.4)" stroke="#22d3ee" stroke-width="1.5"/>
+        <text x="390" y="86" fill="white" font-size="11" font-weight="600" text-anchor="middle">Python 程序</text>
+        <text x="390" y="100" fill="#94a3b8" font-size="8" text-anchor="middle">openai-python</text>
+
+        <rect x="470" y="70" width="120" height="40" rx="6" fill="rgba(8, 51, 68, 0.4)" stroke="#22d3ee" stroke-width="1.5"/>
+        <text x="530" y="86" fill="white" font-size="11" font-weight="600" text-anchor="middle">TypeScript</text>
+        <text x="530" y="100" fill="#94a3b8" font-size="8" text-anchor="middle">openai-node</text>
+
+        <rect x="610" y="70" width="120" height="40" rx="6" fill="rgba(8, 51, 68, 0.4)" stroke="#22d3ee" stroke-width="1.5"/>
+        <text x="670" y="86" fill="white" font-size="11" font-weight="600" text-anchor="middle">自研智能体</text>
+        <text x="670" y="100" fill="#94a3b8" font-size="8" text-anchor="middle">curl / HTTP</text>
+
+        <rect x="750" y="70" width="180" height="40" rx="6" fill="rgba(8, 51, 68, 0.4)" stroke="#22d3ee" stroke-width="1.5"/>
+        <text x="840" y="86" fill="white" font-size="11" font-weight="600" text-anchor="middle">管理后台</text>
+        <text x="840" y="100" fill="#94a3b8" font-size="8" text-anchor="middle">/admin/ui 浏览器</text>
+
+        <!-- ============================================================
+             第 2 层: SMR 网关 :6473 (翠绿色)
+             ============================================================ -->
+        <rect x="30" y="150" width="1040" height="220" rx="10" fill="rgba(6, 78, 59, 0.1)" stroke="#34d399" stroke-width="1.5" stroke-dasharray="8,4"/>
+        <text x="46" y="172" fill="#34d399" font-size="11" font-weight="600">第 2 层 · SMR 网关 :6473 (FastAPI, 19 个模块, 11072 行代码)</text>
+
+        <!-- 路由处理 (4 个模块) -->
+        <rect x="50" y="190" width="160" height="50" rx="6" fill="rgba(6, 78, 59, 0.4)" stroke="#34d399" stroke-width="1.5"/>
+        <text x="130" y="208" fill="white" font-size="11" font-weight="600" text-anchor="middle">对话路由</text>
+        <text x="130" y="222" fill="#94a3b8" font-size="8" text-anchor="middle">/v1/chat/completions</text>
+        <text x="130" y="234" fill="#94a3b8" font-size="8" text-anchor="middle">openai_routes · 584 行</text>
+
+        <rect x="220" y="190" width="160" height="50" rx="6" fill="rgba(6, 78, 59, 0.4)" stroke="#34d399" stroke-width="1.5"/>
+        <text x="300" y="208" fill="white" font-size="11" font-weight="600" text-anchor="middle">公开接口</text>
+        <text x="300" y="222" fill="#94a3b8" font-size="8" text-anchor="middle">/v1/models, /v1/health</text>
+        <text x="300" y="234" fill="#94a3b8" font-size="8" text-anchor="middle">public_api · 349 行</text>
+
+        <rect x="390" y="190" width="160" height="50" rx="6" fill="rgba(6, 78, 59, 0.4)" stroke="#34d399" stroke-width="1.5"/>
+        <text x="470" y="208" fill="white" font-size="11" font-weight="600" text-anchor="middle">管理接口</text>
+        <text x="470" y="222" fill="#94a3b8" font-size="8" text-anchor="middle">25+ 管理端点</text>
+        <text x="470" y="234" fill="#94a3b8" font-size="8" text-anchor="middle">admin_api · 2147 行</text>
+
+        <rect x="560" y="190" width="160" height="50" rx="6" fill="rgba(6, 78, 59, 0.4)" stroke="#34d399" stroke-width="1.5"/>
+        <text x="640" y="208" fill="white" font-size="11" font-weight="600" text-anchor="middle">管理界面</text>
+        <text x="640" y="222" fill="#94a3b8" font-size="8" text-anchor="middle">/admin/ui 网页</text>
+        <text x="640" y="234" fill="#94a3b8" font-size="8" text-anchor="middle">admin_ui · 2817 行</text>
+
+        <!-- 引擎核心 -->
+        <rect x="730" y="185" width="330" height="65" rx="6" fill="rgba(6, 78, 59, 0.6)" stroke="#34d399" stroke-width="2"/>
+        <text x="895" y="208" fill="white" font-size="13" font-weight="700" text-anchor="middle">路由引擎 (engine.py · 861 行)</text>
+        <text x="895" y="225" fill="#a7f3d0" font-size="9" text-anchor="middle">分类 → 选路 → 重试 → 汇总</text>
+        <text x="895" y="240" fill="#94a3b8" font-size="8" text-anchor="middle">4 种模型级策略 × 4 种分组级策略</text>
+
+        <!-- 子模块 -->
+        <rect x="50" y="255" width="160" height="50" rx="6" fill="rgba(6, 78, 59, 0.3)" stroke="#34d399" stroke-width="1.5"/>
+        <text x="130" y="273" fill="white" font-size="11" font-weight="600" text-anchor="middle">分类器</text>
+        <text x="130" y="287" fill="#94a3b8" font-size="8" text-anchor="middle">等级加分 + 模态识别</text>
+        <text x="130" y="298" fill="#94a3b8" font-size="8" text-anchor="middle">classifier · 517 行</text>
+
+        <rect x="220" y="255" width="160" height="50" rx="6" fill="rgba(6, 78, 59, 0.3)" stroke="#34d399" stroke-width="1.5"/>
+        <text x="300" y="273" fill="white" font-size="11" font-weight="600" text-anchor="middle">模型分组 + 筛选</text>
+        <text x="300" y="287" fill="#94a3b8" font-size="8" text-anchor="middle">白名单 + 5 维筛选</text>
+        <text x="300" y="298" fill="#94a3b8" font-size="8" text-anchor="middle">342 + 135 行 (v3.11.0 新)</text>
+
+        <rect x="390" y="255" width="160" height="50" rx="6" fill="rgba(6, 78, 59, 0.3)" stroke="#34d399" stroke-width="1.5"/>
+        <text x="470" y="273" fill="white" font-size="11" font-weight="600" text-anchor="middle">分组向导</text>
+        <text x="470" y="287" fill="#94a3b8" font-size="8" text-anchor="middle">13 种预设场景</text>
+        <text x="470" y="298" fill="#94a3b8" font-size="8" text-anchor="middle">group_wizard · 164 行 (新)</text>
+
+        <rect x="560" y="255" width="160" height="50" rx="6" fill="rgba(6, 78, 59, 0.3)" stroke="#34d399" stroke-width="1.5"/>
+        <text x="640" y="273" fill="white" font-size="11" font-weight="600" text-anchor="middle">模型元数据</text>
+        <text x="640" y="287" fill="#94a3b8" font-size="8" text-anchor="middle">静态标注 + 实时打分</text>
+        <text x="640" y="298" fill="#94a3b8" font-size="8" text-anchor="middle">model_metadata · 256 行</text>
+
+        <rect x="730" y="255" width="160" height="50" rx="6" fill="rgba(6, 78, 59, 0.3)" stroke="#34d399" stroke-width="1.5"/>
+        <text x="810" y="273" fill="white" font-size="11" font-weight="600" text-anchor="middle">上下文桥接</text>
+        <text x="810" y="287" fill="#94a3b8" font-size="8" text-anchor="middle">1800 秒保留 + 中断标记</text>
+        <text x="810" y="298" fill="#94a3b8" font-size="8" text-anchor="middle">context_bridge · 669 行</text>
+
+        <rect x="900" y="255" width="160" height="50" rx="6" fill="rgba(6, 78, 59, 0.3)" stroke="#34d399" stroke-width="1.5"/>
+        <text x="980" y="273" fill="white" font-size="11" font-weight="600" text-anchor="middle">配置 + 模型</text>
+        <text x="980" y="287" fill="#94a3b8" font-size="8" text-anchor="middle">YAML 解析 + 数据校验</text>
+        <text x="980" y="298" fill="#94a3b8" font-size="8" text-anchor="middle">config + models · 354+543</text>
+
+        <!-- ============================================================
+             第 3 层: 提供商池 (琥珀色)
+             ============================================================ -->
+        <rect x="30" y="395" width="1040" height="140" rx="10" fill="rgba(120, 53, 15, 0.08)" stroke="#fbbf24" stroke-width="1" stroke-dasharray="8,4"/>
+        <text x="46" y="415" fill="#fbbf24" font-size="11" font-weight="600">第 3 层 · 提供商池 (4 家上游, 多 Key 轮询, 401 自动跳过, 5xx 自动重试)</text>
+
+        <rect x="50" y="430" width="220" height="80" rx="6" fill="rgba(120, 53, 15, 0.3)" stroke="#fbbf24" stroke-width="1.5"/>
+        <text x="160" y="450" fill="white" font-size="13" font-weight="700" text-anchor="middle">OpenRouter</text>
+        <text x="160" y="465" fill="#94a3b8" font-size="9" text-anchor="middle">openrouter.ai</text>
+        <text x="160" y="478" fill="#94a3b8" font-size="8" text-anchor="middle">1 个 Key (73 字符)</text>
+        <text x="160" y="491" fill="#a7f3d0" font-size="8" text-anchor="middle">✓ 已加载 24 个模型</text>
+        <text x="160" y="504" fill="#fbbf24" font-size="7" text-anchor="middle">规则: 包含 -free 的免费模型</text>
+
+        <rect x="290" y="430" width="220" height="80" rx="6" fill="rgba(120, 53, 15, 0.3)" stroke="#fbbf24" stroke-width="1.5"/>
+        <text x="400" y="450" fill="white" font-size="13" font-weight="700" text-anchor="middle">NewAPI</text>
+        <text x="400" y="465" fill="#94a3b8" font-size="9" text-anchor="middle">2154.17b331.com</text>
+        <text x="400" y="478" fill="#94a3b8" font-size="8" text-anchor="middle">1 个占位符 (待激活)</text>
+        <text x="400" y="491" fill="#fcd34d" font-size="8" text-anchor="middle">⚠ 等待真 Key</text>
+        <text x="400" y="504" fill="#fbbf24" font-size="7" text-anchor="middle">规则: 只用 mainrouter</text>
+
+        <rect x="530" y="430" width="220" height="80" rx="6" fill="rgba(120, 53, 15, 0.2)" stroke="#fbbf24" stroke-width="1.5" stroke-dasharray="4,4"/>
+        <text x="640" y="450" fill="white" font-size="13" font-weight="700" text-anchor="middle">AIHubMix</text>
+        <text x="640" y="465" fill="#94a3b8" font-size="9" text-anchor="middle">aihubmix.com</text>
+        <text x="640" y="478" fill="#94a3b8" font-size="8" text-anchor="middle">已停用</text>
+        <text x="640" y="491" fill="#64748b" font-size="8" text-anchor="middle">○ 备用</text>
+        <text x="640" y="504" fill="#fbbf24" font-size="7" text-anchor="middle">规则: 排除 -legacy 模型</text>
+
+        <rect x="770" y="430" width="220" height="80" rx="6" fill="rgba(120, 53, 15, 0.2)" stroke="#fbbf24" stroke-width="1.5" stroke-dasharray="4,4"/>
+        <text x="880" y="450" fill="white" font-size="13" font-weight="700" text-anchor="middle">火山方舟</text>
+        <text x="880" y="465" fill="#94a3b8" font-size="9" text-anchor="middle">ark.cn-beijing.volces.com</text>
+        <text x="880" y="478" fill="#94a3b8" font-size="8" text-anchor="middle">已停用</text>
+        <text x="880" y="491" fill="#64748b" font-size="8" text-anchor="middle">○ 备用</text>
+        <text x="880" y="504" fill="#fbbf24" font-size="7" text-anchor="middle">规则: 包含豆包系列</text>
+
+        <!-- ============================================================
+             第 4 层: 上游 LLM API (灰色)
+             ============================================================ -->
+        <rect x="30" y="555" width="1040" height="80" rx="8" fill="rgba(30, 41, 59, 0.2)" stroke="#94a3b8" stroke-width="1" stroke-dasharray="6,3"/>
+        <text x="46" y="575" fill="#94a3b8" font-size="11" font-weight="600">第 4 层 · 上游大模型 API</text>
+
+        <rect x="50" y="585" width="120" height="35" rx="6" fill="rgba(30, 41, 59, 0.5)" stroke="#94a3b8" stroke-width="1.5"/>
+        <text x="110" y="601" fill="white" font-size="11" font-weight="600" text-anchor="middle">OpenAI</text>
+        <text x="110" y="614" fill="#94a3b8" font-size="8" text-anchor="middle">GPT-4o / o1</text>
+
+        <rect x="190" y="585" width="120" height="35" rx="6" fill="rgba(30, 41, 59, 0.5)" stroke="#94a3b8" stroke-width="1.5"/>
+        <text x="250" y="601" fill="white" font-size="11" font-weight="600" text-anchor="middle">Anthropic</text>
+        <text x="250" y="614" fill="#94a3b8" font-size="8" text-anchor="middle">Claude 3.5/4</text>
+
+        <rect x="330" y="585" width="120" height="35" rx="6" fill="rgba(30, 41, 59, 0.5)" stroke="#94a3b8" stroke-width="1.5"/>
+        <text x="390" y="601" fill="white" font-size="11" font-weight="600" text-anchor="middle">Google</text>
+        <text x="390" y="614" fill="#94a3b8" font-size="8" text-anchor="middle">Gemini 2.5 Pro</text>
+
+        <rect x="470" y="585" width="120" height="35" rx="6" fill="rgba(30, 41, 59, 0.5)" stroke="#94a3b8" stroke-width="1.5"/>
+        <text x="530" y="601" fill="white" font-size="11" font-weight="600" text-anchor="middle">DeepSeek</text>
+        <text x="530" y="614" fill="#94a3b8" font-size="8" text-anchor="middle">V3 / R1</text>
+
+        <rect x="610" y="585" width="120" height="35" rx="6" fill="rgba(30, 41, 59, 0.5)" stroke="#94a3b8" stroke-width="1.5"/>
+        <text x="670" y="601" fill="white" font-size="11" font-weight="600" text-anchor="middle">Meta</text>
+        <text x="670" y="614" fill="#94a3b8" font-size="8" text-anchor="middle">Llama 3.3 70B</text>
+
+        <rect x="750" y="585" width="120" height="35" rx="6" fill="rgba(30, 41, 59, 0.5)" stroke="#94a3b8" stroke-width="1.5"/>
+        <text x="810" y="601" fill="white" font-size="11" font-weight="600" text-anchor="middle">Mistral</text>
+        <text x="810" y="614" fill="#94a3b8" font-size="8" text-anchor="middle">Mixtral / Codestral</text>
+
+        <rect x="890" y="585" width="160" height="35" rx="6" fill="rgba(30, 41, 59, 0.5)" stroke="#94a3b8" stroke-width="1.5"/>
+        <text x="970" y="601" fill="white" font-size="11" font-weight="600" text-anchor="middle">其他 12 家</text>
+        <text x="970" y="614" fill="#94a3b8" font-size="8" text-anchor="middle">通义 / 豆包 / Cohere</text>
+
+        <!-- ============================================================
+             箭头
+             ============================================================ -->
+        <!-- 客户端 → SMR -->
+        <line x1="380" y1="110" x2="380" y2="190" stroke="#22d3ee" stroke-width="1.5" marker-end="url(#arrowhead-cyan)"/>
+        <text x="395" y="155" fill="#22d3ee" font-size="9">HTTPS 请求</text>
+        <text x="395" y="170" fill="#22d3ee" font-size="9">:6473/v1/*</text>
+
+        <!-- SMR → 提供商池 -->
+        <line x1="380" y1="305" x2="380" y2="430" stroke="#34d399" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        <text x="395" y="375" fill="#34d399" font-size="9">转发到各家上游</text>
+
+        <!-- 提供商池 → 上游 -->
+        <line x1="380" y1="510" x2="380" y2="585" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        <text x="395" y="555" fill="#94a3b8" font-size="9">调大模型 API</text>
+
+        <!-- ============================================================
+             底部: 状态 + 配置 + 密钥 (右侧)
+             ============================================================ -->
+        <!-- 状态文件 -->
+        <rect x="170" y="660" width="220" height="50" rx="6" fill="rgba(76, 29, 149, 0.4)" stroke="#a78bfa" stroke-width="1.5"/>
+        <text x="280" y="678" fill="white" font-size="11" font-weight="600" text-anchor="middle">状态文件 (4 个, 永久保存)</text>
+        <text x="280" y="692" fill="#94a3b8" font-size="8" text-anchor="middle">公钥 + 惩罚 + 分组规则 + 引擎统计</text>
+        <text x="280" y="703" fill="#94a3b8" font-size="8" text-anchor="middle">升级 100% 保留</text>
+
+        <!-- 模型元数据 -->
+        <rect x="410" y="660" width="220" height="50" rx="6" fill="rgba(76, 29, 149, 0.4)" stroke="#a78bfa" stroke-width="1.5"/>
+        <text x="520" y="678" fill="white" font-size="11" font-weight="600" text-anchor="middle">模型元数据文件</text>
+        <text x="520" y="692" fill="#94a3b8" font-size="8" text-anchor="middle">21 个种子 + 实时打分 + 自动标签</text>
+        <text x="520" y="703" fill="#94a3b8" font-size="8" text-anchor="middle">质量 / 速度 / 推理能力</text>
+
+        <!-- 真密钥 -->
+        <rect x="650" y="660" width="220" height="50" rx="6" fill="rgba(136, 19, 55, 0.4)" stroke="#fb7185" stroke-width="1.5"/>
+        <text x="760" y="678" fill="white" font-size="11" font-weight="600" text-anchor="middle">真 Key 文件 (chmod 600)</text>
+        <text x="760" y="692" fill="#94a3b8" font-size="8" text-anchor="middle">openrouter (73 字符)</text>
+        <text x="760" y="703" fill="#fb7185" font-size="7" text-anchor="middle">启动时渲染占位符</text>
+
+        <!-- SMR ↔ 状态 -->
+        <line x1="280" y1="305" x2="280" y2="658" stroke="#a78bfa" stroke-width="1" stroke-dasharray="4,4" marker-end="url(#arrowhead)"/>
+        <text x="295" y="500" fill="#a78bfa" font-size="8">读写</text>
+
+        <!-- SMR ↔ 元数据 -->
+        <line x1="520" y1="305" x2="520" y2="658" stroke="#a78bfa" stroke-width="1" stroke-dasharray="4,4" marker-end="url(#arrowhead)"/>
+
+        <!-- SMR ↔ 真 Key (启动时) -->
+        <line x1="760" y1="305" x2="760" y2="658" stroke="#fb7185" stroke-width="1" stroke-dasharray="4,4" marker-end="url(#arrowhead-rose)"/>
+        <text x="775" y="500" fill="#fb7185" font-size="8">启动时读一次</text>
+
+        <!-- ============================================================
+             图例
+             ============================================================ -->
+        <text x="900" y="40" fill="white" font-size="10" font-weight="600">图例</text>
+        <rect x="900" y="52" width="16" height="10" rx="2" fill="rgba(8, 51, 68, 0.4)" stroke="#22d3ee" stroke-width="1"/>
+        <text x="922" y="60" fill="#94a3b8" font-size="8">客户端</text>
+        <rect x="900" y="68" width="16" height="10" rx="2" fill="rgba(6, 78, 59, 0.4)" stroke="#34d399" stroke-width="1"/>
+        <text x="922" y="76" fill="#94a3b8" font-size="8">SMR 网关</text>
+        <rect x="900" y="84" width="16" height="10" rx="2" fill="rgba(120, 53, 15, 0.3)" stroke="#fbbf24" stroke-width="1"/>
+        <text x="922" y="92" fill="#94a3b8" font-size="8">提供商</text>
+        <rect x="900" y="100" width="16" height="10" rx="2" fill="rgba(30, 41, 59, 0.5)" stroke="#94a3b8" stroke-width="1"/>
+        <text x="922" y="108" fill="#94a3b8" font-size="8">上游模型</text>
+        <rect x="900" y="116" width="16" height="10" rx="2" fill="rgba(76, 29, 149, 0.4)" stroke="#a78bfa" stroke-width="1"/>
+        <text x="922" y="124" fill="#94a3b8" font-size="8">状态数据</text>
+        <rect x="900" y="132" width="16" height="10" rx="2" fill="rgba(136, 19, 55, 0.4)" stroke="#fb7185" stroke-width="1"/>
+        <text x="922" y="140" fill="#94a3b8" font-size="8">真密钥</text>
+      </svg>
+    </div>
+
+    <!-- Info Cards -->
+    <div class="cards">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-dot emerald"></div>
+          <h3>4 种策略并存 (双层)</h3>
+        </div>
+        <ul>
+          <li>• <strong>模型级</strong>: 平铺 / 轮询 / 质量加权(默认) / 失败转移</li>
+          <li>• <strong>分组级</strong>: 平铺 / 分组轮询(默认) / 分组失败转移 / 分组加权</li>
+          <li>• 两层正交, 不互斥, 同时生效</li>
+          <li>• 配置: <code>routing.strategy</code> + <code>routing.group_strategy</code></li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div class="card-dot cyan"></div>
+          <h3>13 种向导预设 (v3.11.0 新)</h3>
+        </div>
+        <ul>
+          <li>• <code>长上下文高质量</code> / <code>32k 平衡</code></li>
+          <li>• <code>200k 超长</code> / <code>快速响应</code></li>
+          <li>• <code>速度质量平衡</code> / <code>高质量</code></li>
+          <li>• <code>顶级旗舰</code> / <code>图像生成</code> / <code>视觉理解</code></li>
+          <li>• <code>多模态</code> / <code>强推理</code></li>
+          <li>• <code>代码专精</code> / <code>预算友好</code></li>
+          <li>• 创建的分组自动加 <code>wizard_</code> 前缀</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div class="card-dot violet"></div>
+          <h3>数据持久化 (头等大事)</h3>
+        </div>
+        <ul>
+          <li>• 5 个状态文件 — 升级 100% 保留</li>
+          <li>• <code>secrets/&lt;厂商&gt;</code> 真 Key 文件 (权限 600)</li>
+          <li>• 老格式自动迁移到新格式</li>
+          <li>• 同端口升级: <code>docker compose up -d</code> 不丢数据</li>
+          <li>• 验过 v3.8.1 升 v3.11.0 @ :6473</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div class="card-dot amber"></div>
+          <h3>5 维自定义筛选 (v3.11.0 新)</h3>
+        </div>
+        <ul>
+          <li>• <strong>厂商</strong> — 限定 openrouter / newapi 等</li>
+          <li>• <strong>最小上下文</strong> — 例: 100k 以上</li>
+          <li>• <strong>最低质量</strong> — 0 到 1 分</li>
+          <li>• <strong>最低速度</strong> — 0 到 1 分</li>
+          <li>• <strong>模态</strong> — 文本 / 图像 / 音频 / 视频 / 多模态</li>
+          <li>• <strong>标签</strong> — 包含任一关键词</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div class="card-dot rose"></div>
+          <h3>密钥隔离 + 安全</h3>
+        </div>
+        <ul>
+          <li>• 配置用占位符 <code>&lt;厂商_KEY_PLACEHOLDER&gt;</code></li>
+          <li>• 真 Key 单独存 <code>secrets/&lt;厂商&gt;</code> 文件 (权限 600)</li>
+          <li>• 启动时自动渲染</li>
+          <li>• 不进 Git, 不进日志, 不进镜像</li>
+          <li>• 6 维度审计 Key 干净</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div class="card-dot emerald"></div>
+          <h3>部署 + 升级</h3>
+        </div>
+        <ul>
+          <li>• Docker 镜像: <code>supermodel_router:v3.11.0</code></li>
+          <li>• 网络模式: host (直接 :6473)</li>
+          <li>• 升级前快照: <code>.backups/</code> 卷</li>
+          <li>• <code>docker compose up -d</code> 升级保留数据</li>
+          <li>• 二进制 21MB / 源码 venv 两种模式</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <p class="footer">
+      SMR v3.11.0 (2026-06-19) · 容器 <code>5b8cb93e40cc</code> @ <code>:6473</code> · 24 个模型 · 4 个 API Key 保留
+    </p>
+  </div>
+</body>
+</html>

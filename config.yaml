@@ -50,14 +50,7 @@ routing:
   quality_weights:
     success_rate: 0.6
     latency: 0.4
-  # v3.9.0 (Phase H): group-based 轮询策略 (跟 mgm.model_groups 协作)
-  # group_strategy: 4 选项, 默认 round-robin-group
-  #   - flat: 老 v4 行为, 全局按综合分降序 (忽略 model_groups)
-  #   - round-robin-group: 按 group 分桶, 桶间轮询 (新 default)
-  #   - group-failover: 按 group 优先级, group A 全失败才 group B
-  #   - group-weighted: 按 group_weights 加权随机决定 group 顺序
   group_strategy: round-robin-group
-  # v3.9.0 (Phase H): group-weighted 策略专用, group_name → weight (高 weight 先抽)
   group_weights: {}
 providers:
   openrouter:
@@ -136,3 +129,69 @@ context_bridge:
   compress_overhead: 0.8
   compress_strategy: auto
   compress_keep_last_messages: 6
+v0_9_integration:
+  version: '0.9'
+  integration_date: '2026-06-21'
+  provider_trigram:
+    minimax-cn:
+      trigram: 离
+      hou_tian_position: 南
+      xian_tian_number: 8
+      wu_xing: 火 (二七合)
+      san_yi: 周易 (未来)
+      fire_hou: 午时履 (11-13)
+      role: 主路由 (m3 默认)
+    newapi:
+      trigram: 乾
+      hou_tian_position: 西北
+      xian_tian_number: 9
+      wu_xing: 金 (四九合)
+      san_yi: 周易 (未来)
+      fire_hou: 戌时大有 (19-21)
+      role: 主力 backup
+    freemodel:
+      trigram: 震
+      hou_tian_position: 东
+      xian_tian_number: 3
+      wu_xing: 木 (三八合)
+      san_yi: 周易 (未来)
+      fire_hou: 子时屯 (23-1)
+      role: 紧急 fallback
+    openrouter:
+      trigram: 兑
+      hou_tian_position: 西
+      xian_tian_number: 4
+      wu_xing: 金 (四九合)
+      san_yi: 周易 (未来)
+      fire_hou: 酉时同人 (17-19)
+      role: free 兜底
+    local:
+      trigram: 坎
+      hou_tian_position: 北
+      xian_tian_number: 7
+      wu_xing: 水 (一六合)
+      san_yi: 周易 (未来)
+      fire_hou: 亥时未济 (21-23)
+      role: 本地独立
+  center_5:
+    meaning: 虚无/元任务心跳
+    xian_tian_number: 5
+    wu_xing: 中央 (无所属, 兼金木水火土)
+    role: SMR 端到端 -z ping 验真 + 5b SOP 主动 ls 兜底
+  fire_hou_12:
+    子时 (23-1): 屯 (启动任务, 险中能动)
+    丑时 (1-3): 蒙 (养阳, 学习温养)
+    寅时 (3-5): 需 (待时, 等待资源)
+    卯时 (5-7): 讼 (争胜, 竞争比较)
+    辰时 (7-9): 师 (借阳, 借力协调)
+    巳时 (9-11): 比 (顺阳, 跟从附和)
+    午时 (11-13): 履 (履虎尾, 危险谨慎)
+    未时 (13-15): 泰 (通和, 通畅平衡)
+    申时 (15-17): 否 (闭塞, 阻塞等待)
+    酉时 (17-19): 同人 (混俗, 协作混合)
+    戌时 (19-21): 大有 (富有, 完成收获)
+    亥时 (21-23): 未济 (循环, 未完成)
+  reference:
+    vault_spec: 04-spec/10-SMR-v311-v09集成-2026-06-21.md
+    distill_3line: v0.9 + v1.0 = 体 (8 卦) + 用 (1-9) + 时 (12 时辰) = 给 SMR 算法加 3 件套灵魂
+    9 还 7 返: c52f3e0 v3.10.1 = 7 返 (4 BUG 修) + 3.4-3.10 = 9 还 (9 主版本)
