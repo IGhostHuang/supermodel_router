@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>派活 Dashboard 9 宫布局 + 12 时辰火候 (v0.9)</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+    color: #eee;
+    min-height: 100vh;
+    padding: 20px;
+  }
+  h1, h2, h3 { color: #f0c040; text-align: center; margin-bottom: 12px; }
+  h1 { font-size: 24px; }
+  h2 { font-size: 18px; }
+  h3 { font-size: 14px; }
+
+  /* 9 宫布局 (戴九履一) */
+  .palace-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: repeat(3, 1fr);
+    gap: 8px;
+    max-width: 600px;
+    margin: 20px auto;
+    aspect-ratio: 1;
+  }
+  .palace {
+    background: rgba(255, 255, 255, 0.05);
+    border: 2px solid #444;
+    border-radius: 8px;
+    padding: 12px;
+    text-align: center;
+    transition: all 0.3s ease;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    position: relative;
+  }
+  .palace:hover {
+    background: rgba(255, 255, 255, 0.15);
+    transform: scale(1.05);
+    box-shadow: 0 0 20px rgba(240, 192, 64, 0.4);
+  }
+  .palace.center {
+    background: radial-gradient(circle, #f0c040 0%, #b8860b 100%);
+    border-color: #f0c040;
+    color: #000;
+    font-weight: bold;
+  }
+  .palace.fired { border-color: #ff6347; animation: pulse 2s infinite; }
+  .palace.queued { border-color: #ffd700; }
+  .palace.success { border-color: #4caf50; }
+
+  @keyframes pulse {
+    0%, 100% { box-shadow: 0 0 8px rgba(255, 99, 71, 0.4); }
+    50% { box-shadow: 0 0 20px rgba(255, 99, 71, 0.8); }
+  }
+
+  .hex-name { font-size: 32px; font-weight: bold; }
+  .hex-num { font-size: 14px; color: #f0c040; margin-top: 4px; }
+  .hex-fiveline { font-size: 11px; color: #aaa; margin-top: 2px; }
+  .center .hex-name { font-size: 28px; }
+
+  /* 12 时辰火候 */
+  .hourly-timeline {
+    display: grid;
+    grid-template-columns: repeat(12, 1fr);
+    gap: 4px;
+    max-width: 1000px;
+    margin: 20px auto;
+  }
+  .hour-slot {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid #444;
+    border-radius: 4px;
+    padding: 6px 2px;
+    text-align: center;
+    font-size: 11px;
+    transition: all 0.3s;
+  }
+  .hour-slot.current {
+    background: rgba(240, 192, 64, 0.3);
+    border-color: #f0c040;
+    box-shadow: 0 0 10px rgba(240, 192, 64, 0.6);
+  }
+  .hour-slot .time { font-size: 10px; color: #f0c040; }
+  .hour-slot .name { font-size: 14px; font-weight: bold; margin: 2px 0; }
+  .hour-slot .desc { font-size: 9px; color: #888; }
+
+  /* 整体布局 */
+  .container { max-width: 1200px; margin: 0 auto; }
+  .section { background: rgba(0,0,0,0.3); border-radius: 8px; padding: 16px; margin: 16px 0; }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media (max-width: 768px) { .grid-2 { grid-template-columns: 1fr; } }
+
+  /* 任务列表 */
+  .task-list { font-size: 12px; }
+  .task {
+    background: rgba(255, 255, 255, 0.05);
+    border-left: 3px solid #4caf50;
+    padding: 6px 10px;
+    margin: 4px 0;
+    border-radius: 4px;
+    display: flex;
+    justify-content: space-between;
+  }
+  .task.urgent { border-color: #ff6347; }
+  .task.pending { border-color: #ffd700; }
+
+  /* v0.9 段 */
+  .quote {
+    font-style: italic;
+    color: #f0c040;
+    text-align: center;
+    margin: 12px 0;
+    font-size: 12px;
+    opacity: 0.8;
+  }
+  .info { text-align: center; color: #aaa; font-size: 12px; margin: 8px 0; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>🎯 派活 Dashboard — 9 宫布局 + 12 时辰火候 (v0.9)</h1>
+  <div class="quote">"后天八卦图为体, 先天八卦数为用" — 邵雍 (周易与预测学 L860)</div>
+
+  <!-- 9 宫布局 (戴九履一, 洛书) -->
+  <div class="section">
+    <h2>九宫 (洛书戴九履一)</h2>
+    <div class="palace-grid">
+      <div class="palace" id="palace-巽" data-hex="巽" data-num="4">
+        <div class="hex-name">巽</div>
+        <div class="hex-num">先天 2 · 后天 东南</div>
+        <div class="hex-fiveline">木 · 3+8 合</div>
+      </div>
+      <div class="palace" id="palace-离" data-hex="离" data-num="9">
+        <div class="hex-name">离</div>
+        <div class="hex-num">先天 8 · 后天 南</div>
+        <div class="hex-fiveline">火 · 2+7 合</div>
+      </div>
+      <div class="palace" id="palace-坤" data-hex="坤" data-num="2">
+        <div class="hex-name">坤</div>
+        <div class="hex-num">先天 6 · 后天 西南</div>
+        <div class="hex-fiveline">土 · 5+10 合</div>
+      </div>
+      <div class="palace" id="palace-震" data-hex="震" data-num="3">
+        <div class="hex-name">震</div>
+        <div class="hex-num">先天 3 · 后天 东</div>
+        <div class="hex-fiveline">木 · 3+8 合</div>
+      </div>
+      <div class="palace center" id="palace-center" data-hex="中央" data-num="5">
+        <div class="hex-name">中</div>
+        <div class="hex-num">5 · 元任务</div>
+        <div class="hex-fiveline">虚无 / 心跳</div>
+      </div>
+      <div class="palace" id="palace-兑" data-hex="兑" data-num="7">
+        <div class="hex-name">兑</div>
+        <div class="hex-num">先天 4 · 后天 西</div>
+        <div class="hex-fiveline">金 · 4+9 合</div>
+      </div>
+      <div class="palace" id="palace-艮" data-hex="艮" data-num="8">
+        <div class="hex-name">艮</div>
+        <div class="hex-num">先天 1 · 后天 东北</div>
+        <div class="hex-fiveline">土 · 5+10 合</div>
+      </div>
+      <div class="palace" id="palace-坎" data-hex="坎" data-num="1">
+        <div class="hex-name">坎</div>
+        <div class="hex-num">先天 7 · 后天 北</div>
+        <div class="hex-fiveline">水 · 1+6 合</div>
+      </div>
+      <div class="palace" id="palace-乾" data-hex="乾" data-num="6">
+        <div class="hex-name">乾</div>
+        <div class="hex-num">先天 9 · 后天 西北</div>
+        <div class="hex-fiveline">金 · 4+9 合</div>
+      </div>
+    </div>
+    <div class="info">点击卦位 → 查看该方位任务 / 中央 5 = 虚无模式 / 元任务心跳</div>
+  </div>
+
+  <!-- 12 时辰火候 -->
+  <div class="section">
+    <h2>⏰ 12 时辰火候 (子时屯 → 亥时未济)</h2>
+    <div class="hourly-timeline" id="hourly-timeline">
+      <div class="hour-slot" data-hour="23-1"><div class="time">子 23-1</div><div class="name">屯</div><div class="desc">启动</div></div>
+      <div class="hour-slot" data-hour="1-3"><div class="time">丑 1-3</div><div class="name">蒙</div><div class="desc">养阳</div></div>
+      <div class="hour-slot" data-hour="3-5"><div class="time">寅 3-5</div><div class="name">需</div><div class="desc">待时</div></div>
+      <div class="hour-slot" data-hour="5-7"><div class="time">卯 5-7</div><div class="name">讼</div><div class="desc">争胜</div></div>
+      <div class="hour-slot" data-hour="7-9"><div class="time">辰 7-9</div><div class="name">师</div><div class="desc">借阳</div></div>
+      <div class="hour-slot" data-hour="9-11"><div class="time">巳 9-11</div><div class="name">比</div><div class="desc">顺阳</div></div>
+      <div class="hour-slot" data-hour="11-13"><div class="time">午 11-13</div><div class="name">履</div><div class="desc">履虎</div></div>
+      <div class="hour-slot" data-hour="13-15"><div class="time">未 13-15</div><div class="name">泰</div><div class="desc">通和</div></div>
+      <div class="hour-slot" data-hour="15-17"><div class="time">申 15-17</div><div class="name">否</div><div class="desc">闭塞</div></div>
+      <div class="hour-slot" data-hour="17-19"><div class="time">酉 17-19</div><div class="name">同人</div><div class="desc">混俗</div></div>
+      <div class="hour-slot" data-hour="19-21"><div class="time">戌 19-21</div><div class="name">大有</div><div class="desc">富有</div></div>
+      <div class="hour-slot" data-hour="21-23"><div class="time">亥 21-23</div><div class="name">未济</div><div class="desc">循环</div></div>
+    </div>
+    <div class="info">v0.9 64 卦火候时序: "朔旦屯值事, 至暮蒙当受. 昼夜合一卦" — 参同契 L5424</div>
+  </div>
+
+  <!-- 任务列表 (左右分栏) -->
+  <div class="grid-2">
+    <div class="section">
+      <h3>📋 当前活跃任务</h3>
+      <div class="task-list" id="active-tasks">
+        <div class="task urgent">
+          <span>🔴 紧急: v0.9 → v1.0 派活 dashboard 部署</span>
+          <span>5b</span>
+        </div>
+        <div class="task pending">
+          <span>🟡 待办: 派活 dashboard 9 宫布局 HTML</span>
+          <span>30min</span>
+        </div>
+        <div class="task">
+          <span>🟢 64 卦火候时序 cron 部署</span>
+          <span>1h</span>
+        </div>
+      </div>
+    </div>
+    <div class="section">
+      <h3>🆕 v0.9 关键新洞见</h3>
+      <ol style="font-size: 12px; line-height: 1.8; padding-left: 20px;">
+        <li>后天八卦图为体, 先天八卦数为用 (邵雍)</li>
+        <li>先天八卦 = 邵雍 1011-1077 作 (重大历史修正)</li>
+        <li>三易 (连山/归藏/周易) = 时间维度</li>
+        <li>数往者顺, 知来者逆 (顺逆双轨的根源)</li>
+        <li>天地之数 55 = 河图五行精确化</li>
+        <li>量子计算可仅通过测量完成 (虚无模式终极)</li>
+        <li>八卦相错 = 4 对对偶</li>
+        <li>三易三层架构 (不易/变易/简易)</li>
+      </ol>
+    </div>
+  </div>
+
+  <div class="info">
+    v0.9 易经本源算法 | 15 大新洞见 + 15 大新机制 + 4 层架构
+    <br>
+    道解周易 + 周易集解补释 + 周易与预测学 + 神秘八卦 + 量子计算与量子信息 (5 本精读 + 4 本原书)
+  </div>
+</div>
+
+<script>
+// 高亮当前时辰
+const now = new Date();
+const hour = now.getHours();
+const slots = document.querySelectorAll('.hour-slot');
+slots.forEach(slot => {
+  const range = slot.dataset.hour.split('-').map(Number);
+  const start = range[0];
+  const end = range[1];
+  if (start < end) {
+    if (hour >= start && hour < end) slot.classList.add('current');
+  } else {
+    if (hour >= start || hour < end) slot.classList.add('current');
+  }
+});
+
+// 卦位点击 → 显示该方位任务
+document.querySelectorAll('.palace').forEach(palace => {
+  palace.addEventListener('click', () => {
+    const hex = palace.dataset.hex;
+    const num = palace.dataset.num;
+    const pos = palace.querySelector('.hex-num')?.textContent || '';
+    alert(`卦位: ${hex}\n${pos}\n\nv0.9 点击查看 ${hex} 方位的任务列表 (todo)`);
+  });
+});
+</script>
+</body>
+</html>

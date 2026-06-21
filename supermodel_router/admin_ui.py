@@ -2815,3 +2815,17 @@ function closeUsageByModel(){
 @router.get("/admin/", response_class=HTMLResponse)
 async def admin_page():
     return HTMLResponse(content=ADMIN_HTML)
+
+
+@router.get("/admin/9-gong", response_class=HTMLResponse)
+async def admin_9gong():
+    """v3.11 集成 v0.9: 派活 dashboard 8 卦布局 (戴九履一) + 12 时辰火候
+
+    来源: vault/05-practical/03-dispatch-dashboard-v09-九宫布局-12时辰火候-2026-06-21.html
+    蒸馏精华: 体 (8 卦) + 用 (1-9) + 时 (12 时辰) = SMR 算法灵魂
+    """
+    from pathlib import Path as P
+    dashboard_path = P(__file__).parent / "static" / "dashboard-9gong.html"
+    if not dashboard_path.exists():
+        return HTMLResponse("<h1>8 卦 dashboard HTML 缺</h1><p>需要复制到 static/dashboard-9gong.html</p>", status_code=500)
+    return HTMLResponse(dashboard_path.read_text(encoding='utf-8'))

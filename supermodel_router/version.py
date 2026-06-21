@@ -1,6 +1,19 @@
 """
 supermodel_router/version.py — 版本元数据 + GitHub release 检查
 
+v3.11.0 (2026.06.21 v0.9+ v1.0 易经算法集成):
+- 3 蒸馏精华赋能 SMR 核心路由: 体 (后天八卦 8 卦 dashboard) + 用 (先天八卦 1-9 数) + 时 (12 时辰火候)
+- 5 provider 卦位映射 (config.yaml v0_9_integration.provider_trigram):
+  - minimax-cn=离/南/8/火/午时履 / newapi=乾/西北/9/金/戌时大有
+  - freemodel=震/东/3/木/子时屯 / openrouter=兑/西/4/金/酉时同人
+  - local=坎/北/7/水/亥时未济 / 中央 5=元任务心跳
+- /admin/9-gong 路由: 派活 dashboard 8 卦布局 (戴九履一) + 12 时辰火候 + 五行精确化
+- 9 还 7 返: 代码 refactor (3.4→3.10 = 9 版回还) + 核心 BUG 修 (c52f3e0 = 7 返, 5b+venv+PAT+gh-cred+GH-httpx)
+- 3 cron 自动化: by-five-element / by-san-yi / by-fire-候 (每周一)
+- docker-compose.yml 加 admin_ui.py + dashboard HTML 体积挂载
+- TROUBLESHOOTING.md: 7 风险排错 SOP (全推到容器内/5b/venv/体积/健康/模型/PAT)
+- SKILL.md: §炼己/§大象/§逆运算 3 必含章节
+
 v3.10.0 (2026.06.19 老大拍 3 项全满足, 一气呵成):
 - 4 轮询策略并存 (model-level + group-level 双层):
   - model-level: routing.strategy (老 v3.9.0 字段, 实际只 1 个实现)
@@ -97,8 +110,8 @@ from typing import Optional
 LOG = logging.getLogger("version")
 
 # 当前版本 (跟随 release tag)
-VERSION = "3.10.0"
-BUILD_DATE = "2026-06-18"
+VERSION = "3.11.0"
+BUILD_DATE = "2026-06-21"
 
 GITHUB_REPO = "IGhostHuang/supermodel_router"  # 默认值, 可被 config.version_check.repo 覆盖
 RELEASE_CHECK_INTERVAL = 3600  # 1 小时检查一次

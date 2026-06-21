@@ -16,6 +16,10 @@ services:
       # 注意: 必须 :rw, 不然 entrypoint 渲染 secret 时 write 失败 (ro 会 silent skip)
       # v3.10.1 修 BUG-002: 显式 :rw 避免被误改 :ro
       - ./config.yaml:/app/config.yaml:rw
+      # v3.11 集成 v0.9: admin UI 8 卦 dashboard 路由 (admin_ui.py 改动, 热重载)
+      - ./supermodel_router/admin_ui.py:/app/supermodel_router/admin_ui.py:ro
+      # v3.11 集成 v0.9: 8 卦 dashboard 静态 HTML
+      - ./supermodel_router/static/dashboard-9gong.html:/app/supermodel_router/static/dashboard-9gong.html:ro
       # 💾 State 持久化 (老大拍 🅰️+💾 持久化优先)
       # 容器重建/升级 = state 不丢
       - ./state:/app/state
