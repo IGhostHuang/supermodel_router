@@ -5,9 +5,18 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: supermodel_router:v3.10.0
+    # R56 实战坑修法 (老大 6/22 12:50 钦定): 本地 docker 用真 key, push 时 sync_keys.py 替换
+    # Bug 1 修法: 改 v3.10.0 → v3.11.0, 跟 git HEAD ea65806 一致 (v3.11.0 完整后端 + UI)
+    image: supermodel_router:v3.11.0
     container_name: supermodel_router
     restart: unless-stopped
+    # R55 实战坑 9 次累计修法 (老大 6/22 13:02 拍 "继续打磨"): 撤回 host mode
+    # host mode + 清华镜像还是 DNS 失败 (12:58-13:00 实战)
+    # 改用 dns: 字段 (bridge 模式, 容器内用 8.8.8.8 解析)
+    network_mode: bridge
+    dns:
+      - 8.8.8.8
+      - 114.114.114.114
     ports:
       # 2026-06-18 23:55 升级: v3.10.0 同端口升级 v3.9.0 → v3.10.0, 客户端 0 改动
       - "6473:6473"

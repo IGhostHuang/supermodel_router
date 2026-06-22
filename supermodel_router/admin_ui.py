@@ -1000,11 +1000,17 @@ async function loadModels(){
   toast(`已获取 ${n} 个模型`);
   refresh();
 }
+// R56 实战坑修法 (老大 6/22 钦定): 每点一下按钮都触发版本检测 = 真凶
+// = checkVersion 没限频, 切到 version 视图 = toast 每次都弹
+// 修法: 加 lastVersionToastTime 60s 限频, 60s 内同 update 不重复 toast
+let lastVersionToastTime = 0;
+let lastVersionToastTag = null;
 async function checkVersion(forceCheck=false){
   const v=await api('/v1/admin/version'+`?force_check=${forceCheck}`);
-  renderVersion(v);
+  renderVersion(v, forceCheck);
 }
-function renderVersion(v){
+// R56 实战坑修法: function 接收 forceCheck 参数, 60s 限频用
+function renderVersion(v, forceCheck=false){
   const cur=v.current||{};
   const latest=v.latest_release||null;
   const verText=cur.version||v.current||'-';
@@ -1014,8 +1020,17 @@ function renderVersion(v){
       ? `<span style="color:#ff9800">⬆ ${verText}</span>`
       : `<span style="color:#4caf50">✓ ${verText}</span>`;
   }
+  // R56 实战坑修法 (老大 6/22 钦定): 每点一下按钮都触发版本检测 = 真凶
+  // = toast 没限频, 切到 version 视图 = toast 每次都弹
+  // 修法: 60s 限频 + tag 匹配, 同 update 不重复 toast
   if(v.has_update && latest){
-    toast(`发现新版本 ${latest.tag||latest.name||''}`,true);
+    const now = Date.now();
+    const tag = latest.tag||latest.name||'';
+    if (now - lastVersionToastTime > 60000 || lastVersionToastTag !== tag) {
+      toast(`发现新版本 ${tag}`, true);
+      lastVersionToastTime = now;
+      lastVersionToastTag = tag;
+    }
   }
   // 弹窗
   let html=`<div class="modal-overlay" id="versionModal" onclick="this.remove()">

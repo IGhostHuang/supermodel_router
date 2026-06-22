@@ -16,8 +16,9 @@ WORKDIR /app
 
 # 安装依赖 (分层缓存) — 标准 pip install
 # v3.10.1 修 BUG-003: 删 pip-cache 离线假设 (目录不存在, --no-index 强制离线会失败)
+# R55 实战坑修法 (老大 6/22 12:56 拍 🅰️): docker daemon DNS 不通 pypi.org, 改清华 pip 镜像
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install -i https://pypi.tuna.tsinghua.edu.cn/simple --no-cache-dir -r requirements.txt
 
 # 复制项目
 COPY supermodel_router/ supermodel_router/
