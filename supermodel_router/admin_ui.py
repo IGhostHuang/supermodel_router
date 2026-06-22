@@ -233,7 +233,7 @@ body{display:flex;gap:0;padding:0;max-width:none;min-height:100vh;background:#0a
 <body>
 <!-- 左侧 sidebar nav (v3.6.0) -->
 <div class="sidebar">
-  <h1><span class="logo">⚡</span> SMR v3.10.0</h1>
+  <h1><span class="logo">⚡</span> SMR v3.11.0</h1>
   <div class="nav-item active" data-view="dashboard" onclick="showView('dashboard')">
     <span class="icon">📊</span> 仪表盘
   </div>
