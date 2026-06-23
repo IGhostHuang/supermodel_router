@@ -245,7 +245,7 @@ body{display:flex;gap:0;padding:0;max-width:none;min-height:100vh;background:#0a
 <body>
 <!-- 左侧 sidebar nav (v3.6.0) -->
 <div class="sidebar">
-  <h1><span class="logo">⚡</span> SMR v3.11.0</h1>
+  <h1><span class="logo">⚡</span> SMR v__SMR_VERSION__</h1>
   <div class="nav-item active" data-view="dashboard" onclick="showView('dashboard')">
     <span class="icon">📊</span> 仪表盘
   </div>
@@ -2851,7 +2851,8 @@ function closeUsageByModel(){
 @router.get("/admin", response_class=HTMLResponse)
 @router.get("/admin/", response_class=HTMLResponse)
 async def admin_page():
-    return HTMLResponse(content=ADMIN_HTML)
+    from .version import VERSION as _V
+    return HTMLResponse(content=ADMIN_HTML.replace("__SMR_VERSION__", _V))
 
 
 @router.get("/admin/9-gong", response_class=HTMLResponse)
