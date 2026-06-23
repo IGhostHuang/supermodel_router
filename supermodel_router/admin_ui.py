@@ -856,7 +856,7 @@ function showView(view){
   else if(view === 'publicapi') renderPublicApiView();
   else if(view === 'modelgroups') renderModelGroupsView();
   else if(view === 'wizard') loadWizard();
-  else if(view === 'models') { /* keep current page */ }
+  else if(view === 'models' && lastModelsData){ renderModels(lastModelsData); }
 }
 
 // v3.6.0: API Keys 独立管理视图 (Phase G)
@@ -1144,7 +1144,7 @@ function renderDashboard(h, m, s, mo, prov){
   const enabledCount = providers.filter(p=>p.enabled!==false).length;
   const disabledCount = providers.length - enabledCount;
   const totalModels = (m?.data || m?.models || []).length;
-  const freeModels = (m?.data || m?.models || []).filter(x=>x.pricing_type==='free' || x.pricing==='free' || x.is_free).length;
+  const freeModels = (m?.data || m?.models || []).filter(x=>x.pricing_type==='free' || x.pricing==='free' || x.pricing_type==='limited_free' || x.pricing==='limited_free' || x.is_free).length;
 
   // Stats 汇总
   let totalCalls=0, successCalls=0, failCalls=0, dailyTokens=0, latencySum=0, latencyCount=0;
@@ -1207,6 +1207,32 @@ function renderDashboard(h, m, s, mo, prov){
   }
 }
 
+
+function getPricingInfo(m){
+  const pricing = m?.pricing_type || m?.pricing || (m?.is_free ? 'free' : 'unknown');
+  const detail = m?.pricing_detail || {};
+  const desc = detail.description || (pricing === 'limited_free'
+    ? 'Cloudflare 托管开源模型；统一走 Neurons 计费体系；共享每日 10000 免费额度；UTC 0 点重置'
+    : pricing === 'free' ? '免费模型'
+    : pricing === 'paid' ? '按供应商规则计费'
+    : '未识别价格规则');
+  if(pricing === 'limited_free'){
+    return {pricing, color:'#38bdf8', text:'🎁 免费额度', sub:'Neurons', desc};
+  }
+  if(pricing === 'free') return {pricing, color:'#4ade80', text:'🆓 免费', sub:'', desc};
+  if(pricing === 'paid') return {pricing, color:'#fbbf24', text:'💰 收费', sub:'', desc};
+  if(pricing === 'mixed') return {pricing, color:'#a78bfa', text:'🌓 混合', sub:'', desc};
+  return {pricing, color:'#888', text:'❓ 未知', sub:'', desc};
+}
+function renderPricingBadge(m){
+  const pi = getPricingInfo(m);
+  const sub = pi.sub ? `<small style="display:block;color:#94a3b8;font-size:10px;margin-top:2px">${pi.sub}</small>` : '';
+  return `<span title="${escapeHtml(pi.desc)}" style="color:${pi.color};font-weight:600">${pi.text}${sub}</span>`;
+}
+function escapeHtml(s){
+  return String(s||'').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+}
+
 // v3.6.0: 模型分页
 function renderModels(data){
   const t=document.getElementById('modelTable');
@@ -1227,15 +1253,12 @@ function renderModels(data){
     const sc=m.capability_score||0;
     const pct=Math.min(sc,100);
     const color=sc>=80?'#4ade80':sc>=50?'#fbbf24':'#f87171';
-    // pricing 字段: 'free'/'paid'/'unknown' 或 pricing_type: 'free'/'paid'/'mixed'
-    const pricing = m.pricing_type || m.pricing || (m.is_free?'free':'unknown');
-    const priceColor = pricing==='free'?'#4ade80':pricing==='paid'?'#fbbf24':'#888';
-    const priceText = pricing==='free'?'🆓 free':pricing==='paid'?'💰 paid':(pricing==='mixed'?'🌓 mixed':'❓ unknown');
+    const priceBadge = renderPricingBadge(m);
     return `<tr>
       <td>${m.id}</td>
       <td><span class="provider-tag">${m.provider||'?'}</span></td>
       <td><span class="modality-tag ${renderModalityClass(m.modality)}">${m.modality_display||m.modality||'?'}</span></td>
-      <td><span style="color:${priceColor}">${priceText}</span></td>
+      <td>${priceBadge}</td>
       <td><span class="score-bar" style="width:${pct*0.7}px;background:${color}"></span>${sc}</td>
     </tr>`;
   }).join('');
@@ -1288,14 +1311,12 @@ function changePageSize(n){
       const sc=m.capability_score||0;
       const pct=Math.min(sc,100);
       const color=sc>=80?'#4ade80':sc>=50?'#fbbf24':'#f87171';
-      const pricing = m.pricing_type || m.pricing || (m.is_free?'free':'unknown');
-      const priceColor = pricing==='free'?'#4ade80':pricing==='paid'?'#fbbf24':'#888';
-      const priceText = pricing==='free'?'🆓 free':pricing==='paid'?'💰 paid':(pricing==='mixed'?'🌓 mixed':'❓ unknown');
+      const priceBadge = renderPricingBadge(m);
       return `<tr>
         <td>${m.id}</td>
         <td><span class="provider-tag">${m.provider||'?'}</span></td>
         <td><span class="modality-tag ${renderModalityClass(m.modality)}">${m.modality_display||m.modality||'?'}</span></td>
-        <td><span style="color:${priceColor}">${priceText}</span></td>
+        <td>${priceBadge}</td>
         <td><span class="score-bar" style="width:${pct*0.7}px;background:${color}"></span>${sc}</td>
       </tr>`;
     }).join('');
@@ -1328,14 +1349,12 @@ function goPageN(p, sz){
     const sc=m.capability_score||0;
     const pct=Math.min(sc,100);
     const color=sc>=80?'#4ade80':sc>=50?'#fbbf24':'#f87171';
-    const pricing = m.pricing_type || m.pricing || (m.is_free?'free':'unknown');
-    const priceColor = pricing==='free'?'#4ade80':pricing==='paid'?'#fbbf24':'#888';
-    const priceText = pricing==='free'?'🆓 free':pricing==='paid'?'💰 paid':(pricing==='mixed'?'🌓 mixed':'❓ unknown');
+    const priceBadge = renderPricingBadge(m);
     return `<tr>
       <td>${m.id}</td>
       <td><span class="provider-tag">${m.provider||'?'}</span></td>
       <td><span class="modality-tag ${renderModalityClass(m.modality)}">${m.modality_display||m.modality||'?'}</span></td>
-      <td><span style="color:${priceColor}">${priceText}</span></td>
+      <td>${priceBadge}</td>
       <td><span class="score-bar" style="width:${pct*0.7}px;background:${color}"></span>${sc}</td>
     </tr>`;
   }).join('');
@@ -1522,29 +1541,7 @@ function renderModalityClass(modality){
   const cls={'text-only':'modality-text-only','multimodal':'modality-multimodal',
     'image-gen':'modality-image-gen','video-gen':'modality-video-gen','audio-gen':'modality-audio-gen'};
   return cls[modality]||'modality-text-only';
-}
-function renderModels(data){
-  const t=document.getElementById('modelTable');
-  const models=(data?.data||[]).filter(m=>!filterModality||m.modality===filterModality);
-  document.getElementById('modelCount').textContent=`(${models.length})`;
-  if(models.length===0){
-    t.innerHTML='<tr><td colspan="4" style="color:#666;text-align:center;padding:20px">无模型</td></tr>';
-    return;
-  }
-  t.innerHTML=models.map(m=>{
-    const sc=m.capability_score||0;
-    const pct=Math.min(sc,100);
-    const color=sc>=80?'#4ade80':sc>=50?'#fbbf24':'#f87171';
-    return `<tr>
-      <td>${m.id}</td>
-      <td><span class="provider-tag">${m.provider||'?'}</span></td>
-      <td><span class="modality-tag ${renderModalityClass(m.modality)}">${m.modality_display||m.modality||'?'}</span></td>
-      <td><span class="score-bar" style="width:${pct*0.7}px;background:${color}"></span>${sc}</td>
-    </tr>`;
-  }).join('');
-}
-
-// v3.6.0: 复制 provider (Phase F)
+}// v3.6.0: 复制 provider (Phase F)
 async function cloneProvider(name){
   const newName = prompt(`复制 provider "${name}" 为新 provider.\n请输入新名称:`, name+'_copy');
   if(!newName || newName === name) return;
@@ -1741,10 +1738,10 @@ async function renderRoutes(){
     g.innerHTML=r.routes.map(rt=>`<div class="route-item">${rt}</div>`).join('');
   } else {
     g.innerHTML=r.routes.map(rt=>{
-      const pricingColor = rt.pricing==='free' ? '#4caf50' : rt.pricing==='paid' ? '#ff9800' : '#888';
+      const pi = getPricingInfo(rt);
       return `<div class="route-item">
         <span class="route-path">${rt.route}</span>
-        <span class="route-pricing" style="color:${pricingColor}">${rt.pricing}</span>
+        <span class="route-pricing" title="${escapeHtml(pi.desc)}" style="color:${pi.color}">${pi.text}</span>
       </div>`;
     }).join('');
   }
