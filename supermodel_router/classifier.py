@@ -36,8 +36,31 @@ FREE_PROVIDERS: set[str] = {
     "vllm",              # 本地
     "nvidia-nim-local",  # 本地 NIM
     "modelscope",        # 魔塔平台免费模型
+    "model-scope",
+    "model_scope",
+    "魔塔",
+    "魔塔平台",
     "魔塔免费模型",       # 老大配置里的中文 provider 名
 }
+
+# provider/source 名可能来自配置中文名、大小写、短横线/下划线或别名；先归一化再判价。
+MODELSCOPE_PROVIDER_MARKERS: tuple[str, ...] = (
+    "modelscope", "model-scope", "model_scope", "model scope",
+    "魔塔", "魔搭",
+)
+
+
+def normalize_pricing_provider(provider_name: str) -> str:
+    """Normalize provider/source names for pricing classification.
+
+    ModelScope/魔塔在配置里常出现大小写、短横线、下划线或中文名；这些都按
+    免费 provider 处理。未知 provider 不伪装免费，后续 UI 统一二值显示为收费。
+    """
+    pn = (provider_name or "").strip().lower()
+    compact = re.sub(r"[\s_-]+", "", pn)
+    if any(marker in pn for marker in MODELSCOPE_PROVIDER_MARKERS) or "modelscope" in compact:
+        return "modelscope"
+    return pn
 
 # 已知付费 provider (默认都是付费, 除非模型名带 free 关键词)
 PAID_PROVIDERS: set[str] = {
@@ -178,7 +201,7 @@ def pricing_detail(provider_name: str, model_id: str) -> dict:
         return {"pricing": PRICING_FREE, "label": "免费", "description": "免费模型"}
     if pricing == PRICING_PAID:
         return {"pricing": PRICING_PAID, "label": "收费", "description": "按供应商规则计费"}
-    return {"pricing": PRICING_UNKNOWN, "label": "未知", "description": "未识别价格规则"}
+    return {"pricing": PRICING_UNKNOWN, "label": "收费", "description": "未识别免费规则，按收费展示"}
 
 
 def classify_pricing(provider_name: str, model_id: str) -> str:
@@ -194,7 +217,7 @@ def classify_pricing(provider_name: str, model_id: str) -> str:
        - 其他 → paid (默认保守)
     4. 其他 (未知 provider) → unknown
     """
-    pn = (provider_name or "").lower()
+    pn = normalize_pricing_provider(provider_name)
     mid = (model_id or "").lower()
     if is_cloudflare_limited_free(mid):
         return PRICING_LIMITED_FREE

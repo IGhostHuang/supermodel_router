@@ -51,6 +51,11 @@ def init(app_registry, app_engine, app_model_manager, start_time, app_bridge: Co
     context_bridge = app_bridge
 
 
+def _pricing_display(pricing: str) -> str:
+    """UI-facing binary price label: only 免费 / 收费."""
+    return "免费" if pricing in {"free", "limited_free"} else "收费"
+
+
 def _refresh_async(reg, tag: str = "manual", only: str | None = None):
     """v3.6: 异步刷新 model registry (不阻塞 HTTP 响应)
     tag: 日志标记 (add:openai / delete:anthropic / refresh:openrouter)
@@ -122,7 +127,8 @@ async def admin_routes():
                 score = None
             out.append({
                 "route": r, "provider": p, "model": mid,
-                "pricing": pricing, "pricing_type": pricing, "pricing_detail": price_info,
+                "pricing": pricing, "pricing_type": pricing, "pricing_display": _pricing_display(pricing),
+                "pricing_detail": price_info,
                 "is_free": pricing in {PRICING_FREE, PRICING_LIMITED_FREE},
                 "context_window": ctx, "score": score,
             })
@@ -156,6 +162,7 @@ async def admin_models(provider: str | None = None, pricing: str | None = None):
                 "context_window": m.context_window,  # v3.8.0: 上下文窗口 (0=未知)
                 "pricing": p,
                 "pricing_type": p,
+                "pricing_display": _pricing_display(p),
                 "pricing_detail": price_info,
                 "is_free": p in {PRICING_FREE, PRICING_LIMITED_FREE},
                 "base_url": ps.base_url,
@@ -1368,7 +1375,8 @@ async def admin_model_groups_create(payload: dict):
         )
     except ValueError as e:
         return JSONResponse({"error": str(e)}, status_code=400)
-    return JSONResponse({"ok": True, "group": group.to_dict()})
+    group_dict = group.to_dict()
+    return JSONResponse({"ok": True, "group": group_dict, "model_count": group_dict.get("model_count", 0)})
 
 
 @router.get("/v1/admin/model-groups/stats")
@@ -1392,7 +1400,9 @@ async def admin_model_groups_get(name: str):
     if not g:
         return JSONResponse({"error": f"group '{name}' not found"}, status_code=404)
     resolved = mgm.resolve_group(name)
-    return JSONResponse({"group": g, "resolved_models": resolved})
+    if isinstance(g, dict):
+        g = {**g, "model_count": len(resolved), "resolved_sample": resolved[:5]}
+    return JSONResponse({"group": g, "resolved_models": resolved, "count": len(resolved)})
 
 
 @router.put("/v1/admin/model-groups/{name}")

@@ -180,6 +180,18 @@ tr:hover td{background:#1a1a24}
 .route-item{display:flex;justify-content:space-between;align-items:center;padding:6px 10px;background:#0f0f13;border-radius:4px;margin-bottom:4px;font-size:12px;font-family:ui-monospace,monospace}
 .route-path{color:#e0e0e0}
 .route-pricing{font-size:10px;padding:1px 6px;border-radius:3px;font-weight:500;background:#1a1a24}
+.group-card{background:linear-gradient(135deg,#111827 0%,#0f172a 100%);border:1px solid #263244;border-radius:12px;padding:14px 16px;margin-bottom:10px;box-shadow:0 8px 22px rgba(0,0,0,.22);transition:transform .16s ease,border-color .16s ease,box-shadow .16s ease}
+.group-card:hover{transform:translateY(-1px);border-color:#5b8def;box-shadow:0 12px 30px rgba(91,141,239,.12)}
+.group-card-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
+.group-title{font-size:15px;font-weight:700;color:#e5e7eb;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.group-count{display:inline-flex;align-items:center;gap:4px;background:#172554;color:#93c5fd;border:1px solid #1d4ed8;padding:3px 9px;border-radius:999px;font-size:11px;font-weight:700}
+.group-desc{font-size:12px;color:#94a3b8;margin-top:5px;max-width:760px;line-height:1.5}
+.group-patterns{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+.group-patterns code,.group-samples code{background:#020617;border:1px solid #1f2937;color:#bfdbfe;padding:2px 6px;border-radius:5px;font-size:11px}
+.group-samples{margin-top:9px;font-size:12px;color:#94a3b8;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.group-actions{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.modal-bg.show .modal,.modal-bg.open .modal{animation:modalPop .16s ease-out}
+@keyframes modalPop{from{opacity:.6;transform:translateY(8px) scale(.98)}to{opacity:1;transform:none}}
 /* v3.6 动效: toast 滑入 */
 .toast{transition:all .3s ease}
 /* v3.6 模态动效 */
@@ -382,24 +394,24 @@ body{display:flex;gap:0;padding:0;max-width:none;min-height:100vh;background:#0a
 <!-- 视图: 对外 API (v3.7.0 新增) -->
 <div class="view" id="view-publicapi">
   <h2 class="view-title">🌐 对外 API 多 Key 管理</h2>
-  <p class="view-subtitle">Per-tenant API key · 速率限制 · 模型白名单 · 用量追踪</p>
+  <p class="view-subtitle">租户 Key · 速率限制 · 模型白名单 · 用量追踪</p>
   <div class="section-header">
     <div class="provider-toolbar">
-      <button class="btn-sm primary" onclick="openCreatePublicKey()">➕ 创建 Key</button>
+      <button class="btn-sm primary" onclick="openCreatePublicKey()">➕ 创建 KEY</button>
       <button class="btn-sm" onclick="renderPublicApiView()">🔄 刷新</button>
     </div>
   </div>
   <div class="stats-grid" id="publicApiSummary"><div class="loading">加载中...</div></div>
-  <h3 style="font-size:14px;color:#888;margin:20px 0 10px">所有 Key</h3>
+  <h3 style="font-size:14px;color:#888;margin:20px 0 10px">所有 KEY</h3>
   <div id="publicKeyList"><div class="loading">加载中...</div></div>
 
   <div style="margin-top:30px;padding:16px;background:#0f0f13;border-radius:8px;font-size:12px;color:#888">
     <strong>💡 对外 API 使用说明</strong><br>
-    • 创建后只显示一次原 key, 之后只能重新生成<br>
-    • 每个 key 独立追踪 total/success/fail/tokens<br>
+    • 创建后只显示一次原 KEY，之后只能重新生成<br>
+    • 每个 KEY 独立追踪 total/success/fail/tokens<br>
     • 速率限制: sliding window 60s 内 rpm 计数<br>
     • 模型白名单: 空 = 全部允许, 否则只允许列表内<br>
-    • 客户端调用: <code>Authorization: Bearer *** 即可
+    • 客户端调用: <code>Authorization: Bearer ***</code> 即可
   </div>
 </div>
 
@@ -962,7 +974,7 @@ async function api(path, opts={}){
 async function refresh(){
   const [h,m,r,s,mo,prov,v]=await Promise.all([
     api('/v1/health').catch(e=>({error:e.message})),
-    api('/v1/models').catch(e=>({data:[]})),
+    api('/v1/admin/models').catch(e=>({models:[], total:0})),
     api('/v1/admin/routes').catch(e=>({routes:[]})),
     api('/v1/admin/stats').catch(e=>({})),
     api('/v1/admin/modalities').catch(e=>({})),
@@ -1209,25 +1221,26 @@ function renderDashboard(h, m, s, mo, prov){
 
 
 function getPricingInfo(m){
-  const pricing = m?.pricing_type || m?.pricing || (m?.is_free ? 'free' : 'unknown');
+  const raw = String(m?.pricing_type || m?.pricing || '').toLowerCase();
   const detail = m?.pricing_detail || {};
-  const desc = detail.description || (pricing === 'limited_free'
-    ? 'Cloudflare 托管开源模型；统一走 Neurons 计费体系；共享每日 10000 免费额度；UTC 0 点重置'
-    : pricing === 'free' ? '免费模型'
-    : pricing === 'paid' ? '按供应商规则计费'
-    : '未识别价格规则');
+  const detailPricing = String(detail.pricing || '').toLowerCase();
+  const pricing = detailPricing || raw || (m?.is_free === true ? 'free' : 'paid');
+  const desc = detail.description || (pricing === 'free' ? '免费模型' : pricing === 'limited_free' ? '有免费额度，超额后按平台规则计费' : '收费模型');
   if(pricing === 'limited_free'){
-    return {pricing, color:'#38bdf8', text:'🎁 免费额度', sub:'Neurons', desc};
+    const quota = detail.quota || {};
+    const quotaText = quota.free_daily ? `每日 ${quota.free_daily} ${quota.unit || ''} 免费额度` : '有限免费额度';
+    const resetText = quota.reset ? ` · ${quota.reset} 重置` : '';
+    return {pricing:'free', color:'#4ade80', bg:'rgba(74,222,128,.12)', text:'免费', sub:'', desc:`${desc} · ${quotaText}${resetText}`};
   }
-  if(pricing === 'free') return {pricing, color:'#4ade80', text:'🆓 免费', sub:'', desc};
-  if(pricing === 'paid') return {pricing, color:'#fbbf24', text:'💰 收费', sub:'', desc};
-  if(pricing === 'mixed') return {pricing, color:'#a78bfa', text:'🌓 混合', sub:'', desc};
-  return {pricing, color:'#888', text:'❓ 未知', sub:'', desc};
+  if(pricing === 'free'){
+    return {pricing:'free', color:'#4ade80', bg:'rgba(74,222,128,.12)', text:'免费', sub:'', desc};
+  }
+  return {pricing:'paid', color:'#fbbf24', bg:'rgba(251,191,36,.12)', text:'收费', sub:'', desc};
 }
 function renderPricingBadge(m){
   const pi = getPricingInfo(m);
-  const sub = pi.sub ? `<small style="display:block;color:#94a3b8;font-size:10px;margin-top:2px">${pi.sub}</small>` : '';
-  return `<span title="${escapeHtml(pi.desc)}" style="color:${pi.color};font-weight:600">${pi.text}${sub}</span>`;
+  const sub = pi.sub ? `<span style="font-size:10px;opacity:.78;margin-left:4px;font-weight:600">${escapeHtml(pi.sub)}</span>` : '';
+  return `<span class="pricing-badge pricing-${pi.pricing}" title="${escapeHtml(pi.desc)}" style="display:inline-flex;align-items:center;color:${pi.color};background:${pi.bg};border:1px solid ${pi.color}55;border-radius:8px;padding:4px 8px;font-weight:700;line-height:1.15">${pi.text}${sub}</span>`;
 }
 function escapeHtml(s){
   return String(s||'').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
@@ -1909,8 +1922,8 @@ let lastModelGroups = null;  // 缓存 model-groups (给白名单编辑器用)
 //   - 智能建议: 输入时联想现有 model
 // ============================================================
 
-async function loadModelGroupsCache(){
-  if(lastModelGroups) return lastModelGroups;
+async function loadModelGroupsCache(force=false){
+  if(lastModelGroups && !force) return lastModelGroups;
   const r = await api('/v1/admin/model-groups');
   lastModelGroups = r.groups || [];
   return lastModelGroups;
@@ -1957,7 +1970,7 @@ async function showPublicKeyModal(existing){
   const enabledProviders = providers.filter(p => p.enabled).map(p => p.name);
 
   const html = `
-<div class="modal-bg" id="publicKeyModal" onclick="if(event.target===this)closePublicKeyModal()">
+<div class="modal-bg show" id="publicKeyModal" onclick="if(event.target===this)closePublicKeyModal()">
   <div class="modal" style="max-width:780px;max-height:90vh;overflow-y:auto">
     <h3>${isEdit ? '✏️ 编辑 Key: '+name : '➕ 创建对外 API Key'}</h3>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:8px">
@@ -2154,46 +2167,49 @@ async function resetPublicKeyUsage(name){
 // ============================================================
 
 async function renderModelGroupsView(){
-  await loadModelGroupsCache();
+  await loadModelGroupsCache(true);
   const groups = lastModelGroups || [];
-  // 摘要
   const total = groups.length;
   const enabled = groups.filter(g => g.enabled !== false).length;
-  const totalModels = groups.reduce((s, g) => s + (g.model_count || 0), 0);
-  document.getElementById('modelGroupsSummary').innerHTML = `
-    <div class="stat-card"><div class="label">总分组</div><div class="value">${total}</div></div>
-    <div class="stat-card"><div class="label">已启用</div><div class="value">${enabled}</div></div>
-    <div class="stat-card"><div class="label">解析 model 总数</div><div class="value">${totalModels}</div></div>
-  `;
-  // 列表
+  const totalModels = groups.reduce((s, g) => s + Number(g.model_count || 0), 0);
+  const summaryEl = document.getElementById('modelGroupsSummary');
+  if(summaryEl){
+    summaryEl.innerHTML = `
+      <div class="stat-card"><div class="label">总分组</div><div class="value">${total}</div><div class="delta">group:* 白名单可引用</div></div>
+      <div class="stat-card"><div class="label">已启用</div><div class="value">${enabled}</div><div class="delta">停用 ${total-enabled}</div></div>
+      <div class="stat-card"><div class="label">匹配模型</div><div class="value">${totalModels}</div><div class="delta">按每个分组实时解析</div></div>
+    `;
+  }
   const listEl = document.getElementById('modelGroupsList');
+  if(!listEl) return;
   if(groups.length === 0){
-    listEl.innerHTML = '<div class="empty-state">🏷️ 暂无 model group, 点 "➕ 创建分组" 开始</div>';
+    listEl.innerHTML = '<div class="empty-state">🏷️ 暂无模型分组，点击上方「➕ 创建分组」开始；例如 pattern 写 <code>qwen.*</code> 或 <code>openai/.*gpt.*</code></div>';
     return;
   }
   listEl.innerHTML = groups.map(g => {
-    const patterns = (g.patterns || []).map(p => `<code style="background:#1e293b;padding:1px 4px;border-radius:3px">${p.replace(/</g,'&lt;')}</code>`).join(' ');
-    const samples = (g.resolved_sample || []).slice(0, 3).map(m => `<code style="background:#0f172a;padding:1px 4px;border-radius:3px;font-size:10px">${m.replace(/</g,'&lt;')}</code>`).join(' ');
-    const more = (g.model_count || 0) > 3 ? ` <span class="text-muted">+${g.model_count - 3}</span>` : '';
+    const safeName = escapeHtml(g.name);
+    const jsName = JSON.stringify(g.name || '');
+    const count = Number(g.model_count || 0);
+    const patterns = (g.patterns || []).map(p => `<code>${escapeHtml(p)}</code>`).join(' ');
+    const samples = (g.resolved_sample || []).slice(0, 5).map(m => `<code>${escapeHtml(m)}</code>`).join(' ');
+    const more = count > 5 ? `<span class="text-muted">+${count - 5}</span>` : '';
     const statusBadge = g.enabled !== false
-      ? '<span style="background:#10b981;color:#fff;padding:2px 6px;border-radius:4px;font-size:10px">启用</span>'
-      : '<span style="background:#64748b;color:#fff;padding:2px 6px;border-radius:4px;font-size:10px">停用</span>';
-    return `<div class="provider-card" style="margin-bottom:8px">
-      <div class="row" style="justify-content:space-between">
+      ? '<span class="provider-badge badge-ok">启用</span>'
+      : '<span class="provider-badge badge-disabled">停用</span>';
+    return `<div class="group-card">
+      <div class="group-card-head">
         <div>
-          <strong>🏷️ group:${g.name}</strong> ${statusBadge}
-          <span class="text-muted" style="font-size:12px;margin-left:8px">${(g.description || '').replace(/</g,'&lt;')}</span>
+          <div class="group-title"><span>🏷️ group:${safeName}</span>${statusBadge}<span class="group-count">${count} models</span></div>
+          <div class="group-desc">${escapeHtml(g.description || '未填写描述')}</div>
         </div>
-        <div class="row" style="gap:4px">
-          <button class="btn-sm" onclick="showResolvedGroup('${g.name}')" title="查看当前匹配的所有 model">🔍 解析</button>
-          <button class="btn-sm" onclick="openEditModelGroup('${g.name}')">✏️ 编辑</button>
-          <button class="btn-sm danger" onclick="deleteModelGroup('${g.name}')">🗑️</button>
+        <div class="group-actions">
+          <button class="btn-sm" onclick='showResolvedGroup(${jsName})' title="查看当前匹配的所有 model">🔍 解析</button>
+          <button class="btn-sm" onclick='openEditModelGroup(${jsName})'>✏️ 编辑</button>
+          <button class="btn-sm danger" onclick='deleteModelGroup(${jsName})'>🗑️ 删除</button>
         </div>
       </div>
-      <div style="margin-top:6px;font-size:12px">
-        <span class="text-muted">patterns:</span> ${patterns}<br>
-        <span class="text-muted">resolved (${g.model_count || 0}):</span> ${samples}${more}
-      </div>
+      <div class="group-patterns"><span class="text-muted">patterns:</span> ${patterns || '<span class="text-muted">空</span>'}</div>
+      <div class="group-samples"><span class="text-muted">样本:</span> ${samples || '<span class="text-muted">无匹配模型</span>'}${more}</div>
     </div>`;
   }).join('');
 }
@@ -2215,16 +2231,16 @@ async function showModelGroupModal(existing){
   const description = existing?.description || '';
   const enabled = existing?.enabled !== false;
   const html = `
-<div class="modal-bg" id="modelGroupModal" onclick="if(event.target===this)closeModelGroupModal()">
+<div class="modal-bg show" id="modelGroupModal" onclick="if(event.target===this)closeModelGroupModal()">
   <div class="modal" style="max-width:600px">
-    <h3>${isEdit ? '✏️ 编辑分组: '+name : '➕ 创建 model group'}</h3>
+    <h3>${isEdit ? '✏️ 编辑分组: '+escapeHtml(name) : '➕ 创建模型分组'}</h3>
     <label>名称 * <span class="text-muted">(字母数字/-/_)</span></label>
-    <input id="mgName" value="${name.replace(/"/g,'&quot;')}" ${isEdit?'disabled':''} placeholder="e.g. claude-sonnet">
+    <input id="mgName" value="${name.replace(/"/g,'&quot;')}" ${isEdit?'disabled':''} placeholder="例如 qwen-free 或 long-context">
     <label style="margin-top:10px;display:block">patterns (正则列表, 1 行 1 个) *</label>
     <textarea id="mgPatterns" rows="5" style="width:100%;font-family:monospace;font-size:13px"
-              placeholder="claude-3-5.*&#10;claude-3-haiku.*">${patterns.join('\n').replace(/</g,'&lt;')}</textarea>
+              placeholder="qwen.*&#10;openai/.*gpt.*&#10;.*:free$">${patterns.join('\n').replace(/</g,'&lt;')}</textarea>
     <label style="margin-top:10px;display:block">描述</label>
-    <input id="mgDesc" value="${description.replace(/"/g,'&quot;')}" placeholder="e.g. Claude 3.x 系列">
+    <input id="mgDesc" value="${description.replace(/"/g,'&quot;')}" placeholder="例如 Qwen 系列 / 免费模型 / 长上下文模型">
     <label style="margin-top:10px;display:block">状态</label>
     <select id="mgEnabled" style="width:200px">
       <option value="true" ${enabled?'selected':''}>✅ 启用</option>
@@ -2268,7 +2284,7 @@ async function submitModelGroupModal(isEdit){
       body: JSON.stringify({name, patterns, description, enabled}),
     });
     if(r.error){ toast('❌ '+r.error, false); return; }
-    toast(`✅ group '${name}' 已创建 (匹配 ${r.model_count||0} models)`);
+    toast(`✅ group '${name}' 已创建 (匹配 ${(r.group&&r.group.model_count)||r.model_count||0} models)`);
   }
   lastModelGroups = null;  // 清缓存
   closeModelGroupModal();
@@ -2290,9 +2306,9 @@ async function showResolvedGroup(name){
   const r = await api('/v1/admin/model-groups/'+encodeURIComponent(name)+'/resolve');
   const list = (r.resolved_models || []).map(m => `<code style="display:inline-block;background:#0f172a;padding:2px 6px;border-radius:3px;margin:2px;font-size:11px">${m.replace(/</g,'&lt;')}</code>`).join('');
   const html = `
-<div class="modal-bg" onclick="this.remove()">
+<div class="modal-bg show" onclick="this.remove()">
   <div class="modal" style="max-width:700px" onclick="event.stopPropagation()">
-    <h3>🔍 group:${name} 解析结果 (${(r.resolved_models||[]).length} models)</h3>
+    <h3>🔍 group:${escapeHtml(name)} 解析结果 (${(r.resolved_models||[]).length} models)</h3>
     <div style="max-height:60vh;overflow-y:auto;padding:8px;background:#0f172a;border-radius:6px">
       ${list || '<div class="text-muted">无匹配 model (检查 patterns 或 provider 是否已加载)</div>'}
     </div>
@@ -2305,6 +2321,15 @@ async function showResolvedGroup(name){
   div.innerHTML = html;
   document.body.appendChild(div.firstElementChild);
 }
+
+// Inline onclick hooks: keep model-group buttons clickable even if the dashboard JS is
+// later bundled/minified under stricter scope rules.
+window.openCreateModelGroup = openCreateModelGroup;
+window.openEditModelGroup = openEditModelGroup;
+window.closeModelGroupModal = closeModelGroupModal;
+window.submitModelGroupModal = submitModelGroupModal;
+window.deleteModelGroup = deleteModelGroup;
+window.showResolvedGroup = showResolvedGroup;
 
 // ============================================================
 // Tier Bonus / Classifier 管理
