@@ -7,7 +7,7 @@ services:
       dockerfile: Dockerfile
     # R56 实战坑修法 (老大 6/22 12:50 钦定): 本地 docker 用真 key, push 时 sync_keys.py 替换
     # Bug 1 修法: 改 v3.10.0 → v3.11.0, 跟 git HEAD ea65806 一致 (v3.11.0 完整后端 + UI)
-    image: supermodel_router:v3.11.0
+    image: supermodel_router:v3.13.0
     container_name: supermodel_router
     restart: unless-stopped
     # R55 实战坑 9 次累计修法 (老大 6/22 13:02 拍 "继续打磨"): 撤回 host mode

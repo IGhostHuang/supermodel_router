@@ -39,7 +39,7 @@ modality_auto_routing:
   - multimodal
   - text-only
 routing:
-  strategy: quality_weighted
+  strategy: flat
   failover_threshold: 3
   recovery_interval: 300
   max_retry: 2
@@ -50,7 +50,7 @@ routing:
   quality_weights:
     success_rate: 0.6
     latency: 0.4
-  group_strategy: round-robin-group
+  group_strategy: group-weighted
   group_weights: {}
 providers:
   openrouter:
@@ -58,22 +58,30 @@ providers:
     base_url: https://openrouter.ai/api/v1
     api_keys:
     - <OPENROUTER_API_KEY_PLACEHOLDER>
+    - <OPENROUTER_API_KEY_PLACEHOLDER>
     model_rules:
       mode: pattern
-      pattern: .*-free$|.*free.*
-      exclude: []
+      pattern: free
     max_concurrent: 2
+    health_check_interval: 300
+  nvidia:
+    enabled: true
+    base_url: https://integrate.api.nvidia.com/v1
+    api_keys:
+    - <NVIDIA_API_KEY_PLACEHOLDER>
+    - <NVIDIA_API_KEY_PLACEHOLDER>
+    - <NVIDIA_API_KEY_PLACEHOLDER>
+    model_rules:
+      mode: all
+    max_concurrent: 3
     health_check_interval: 300
   newapi:
     enabled: true
     base_url: https://2154.17b331.com/v1
     api_keys:
-    - <NEWAPI_API_KEY_PLACEHOLDER>
+    - <API_KEY_PLACEHOLDER>
     model_rules:
-      mode: include
-      include:
-      - mainrouter
-      exclude: []
+      mode: all
     max_concurrent: 3
     health_check_interval: 300
   volc_ark:
@@ -82,9 +90,37 @@ providers:
     api_keys:
     - <VOLC_ARK_API_KEY_PLACEHOLDER>
     model_rules:
-      mode: all
+      mode: include
+      include:
+      - ark-code-latest
+      - GLM-5.2
+      - DeepSeek-V4-Pro
+      - Kimi-K2.7-Code
+      - Doubao-Seed-2.0-pro
+      - Doubao-Seed-2.0-Code
+      - DeepSeek-V4-Flash
+      - MiniMax-M3
+      - Kimi-K2.6
+      - MiniMax-M2.7
     max_concurrent: 5
     health_check_interval: 300
+  魔塔免费模型:
+    base_url: https://api-inference.modelscope.cn/v1
+    api_keys:
+    - <MODELSCOPE_API_KEY_PLACEHOLDER>
+    model_rules:
+      mode: pattern
+    max_concurrent: 3
+    enabled: true
+  cloudflare:
+    base_url: https://api.cloudflare.com/client/v4/accounts/46074539b24bfe7d72371b36cc4c1e2a/ai/v1
+    api_keys:
+    - <CLOUDFLARE_API_KEY_PLACEHOLDER>
+    model_rules:
+      mode: pattern
+      pattern: '@cf'
+    max_concurrent: 3
+    enabled: true
 model_management:
   enabled: true
   state_dir: /app/state
