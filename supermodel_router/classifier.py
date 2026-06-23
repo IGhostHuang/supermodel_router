@@ -25,6 +25,7 @@ EMBEDDING = "embedding"
 
 # v3.6: 模型收费类型 (provider 层面 + 模型名关键词)
 PRICING_FREE = "free"
+PRICING_LIMITED_FREE = "limited_free"  # Cloudflare @cf/*: 每日 10000 Neurons 免费额度, UTC 0 点重置
 PRICING_PAID = "paid"
 PRICING_UNKNOWN = "unknown"
 
@@ -34,6 +35,8 @@ FREE_PROVIDERS: set[str] = {
     "lm-studio",         # 本地
     "vllm",              # 本地
     "nvidia-nim-local",  # 本地 NIM
+    "modelscope",        # 魔塔平台免费模型
+    "魔塔免费模型",       # 老大配置里的中文 provider 名
 }
 
 # 已知付费 provider (默认都是付费, 除非模型名带 free 关键词)
@@ -147,9 +150,41 @@ def get_modality_base_score(config_obj=None) -> dict[str, int]:
 
 # ── v3.6: 模型收费类型分类 ───────────────────────────────
 
+def is_cloudflare_limited_free(model_id: str) -> bool:
+    """Cloudflare Workers AI 托管开源模型: 模型名/id 以 @cf/ 开头。
+
+    这类模型不是“无限免费”, 而是统一走 Neurons 计费体系,
+    共享每日 10000 免费额度, UTC 0 点重置。
+    """
+    return (model_id or "").strip().lower().startswith("@cf/")
+
+
+def pricing_detail(provider_name: str, model_id: str) -> dict:
+    """返回 UI 可直接展示的价格/额度详情。"""
+    pricing = classify_pricing(provider_name, model_id)
+    if pricing == PRICING_LIMITED_FREE:
+        return {
+            "pricing": PRICING_LIMITED_FREE,
+            "label": "免费额度",
+            "description": "Cloudflare 托管开源模型；统一走 Neurons 计费体系；共享每日 10000 免费额度；UTC 0 点重置",
+            "quota": {
+                "unit": "Neurons",
+                "free_daily": 10000,
+                "shared": True,
+                "reset": "UTC 0 点",
+            },
+        }
+    if pricing == PRICING_FREE:
+        return {"pricing": PRICING_FREE, "label": "免费", "description": "免费模型"}
+    if pricing == PRICING_PAID:
+        return {"pricing": PRICING_PAID, "label": "收费", "description": "按供应商规则计费"}
+    return {"pricing": PRICING_UNKNOWN, "label": "未知", "description": "未识别价格规则"}
+
+
 def classify_pricing(provider_name: str, model_id: str) -> str:
     """v3.6: 判断模型收费类型
     规则:
+    0. model_id 以 @cf/ 开头 → limited_free (Cloudflare Neurons 每日 10000 免费额度, UTC 0 点重置)
     1. provider 在 FREE_PROVIDERS → free
     2. provider 在 PAID_PROVIDERS:
        - 模型名含 free 关键词 → free
@@ -161,6 +196,8 @@ def classify_pricing(provider_name: str, model_id: str) -> str:
     """
     pn = (provider_name or "").lower()
     mid = (model_id or "").lower()
+    if is_cloudflare_limited_free(mid):
+        return PRICING_LIMITED_FREE
     if pn in FREE_PROVIDERS:
         return PRICING_FREE
     # 任何 provider 只要模型名带 free 关键词 → free

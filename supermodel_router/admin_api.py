@@ -102,13 +102,14 @@ async def admin_routes():
     """v3.6: 路由列表 + 模型详情 (含 pricing_type)
     v3.8.0: 加 context_window + capability_score (从 classifier 拿)
     """
-    from .classifier import classify_pricing, compute_capability_score
+    from .classifier import classify_pricing, compute_capability_score, pricing_detail, PRICING_FREE, PRICING_LIMITED_FREE
     out = []
     for r in registry.all_routes():
         # r 格式: "provider/model_id"
         if "/" in r:
             p, mid = r.split("/", 1)
             pricing = classify_pricing(p, mid)
+            price_info = pricing_detail(p, mid)
             # ✅ v3.8.0: 加 context_window + score
             try:
                 model = registry.get_model(p, mid)
@@ -121,7 +122,9 @@ async def admin_routes():
                 score = None
             out.append({
                 "route": r, "provider": p, "model": mid,
-                "pricing": pricing, "context_window": ctx, "score": score,
+                "pricing": pricing, "pricing_type": pricing, "pricing_detail": price_info,
+                "is_free": pricing in {PRICING_FREE, PRICING_LIMITED_FREE},
+                "context_window": ctx, "score": score,
             })
         else:
             out.append({"route": r, "provider": "?", "model": r, "pricing": "unknown"})
@@ -134,13 +137,14 @@ async def admin_models(provider: str | None = None, pricing: str | None = None):
     query: ?provider=openrouter 过滤 provider
            ?pricing=free       过滤收费类型
     """
-    from .classifier import classify_pricing, PRICING_FREE
+    from .classifier import classify_pricing, pricing_detail, PRICING_FREE, PRICING_LIMITED_FREE
     out = []
     for ps in registry._providers.values():
         if provider and ps.name != provider:
             continue
         for m in ps.models:
             p = classify_pricing(ps.name, m.id)
+            price_info = pricing_detail(ps.name, m.id)
             if pricing and p != pricing:
                 continue
             out.append({
@@ -151,7 +155,9 @@ async def admin_models(provider: str | None = None, pricing: str | None = None):
                 "capability_score": m.capability_score,
                 "context_window": m.context_window,  # v3.8.0: 上下文窗口 (0=未知)
                 "pricing": p,
-                "is_free": p == PRICING_FREE,
+                "pricing_type": p,
+                "pricing_detail": price_info,
+                "is_free": p in {PRICING_FREE, PRICING_LIMITED_FREE},
                 "base_url": ps.base_url,
             })
     return JSONResponse({"models": out, "total": len(out)})
