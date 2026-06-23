@@ -93,7 +93,13 @@ async def lifespan(app: FastAPI):
     registry.register_refresh_callback(model_manager.on_refresh)
 
     # v3.9.0: ModelGroupManager 同步 registry model 列表 (跨 provider 解析)
-    from .model_groups import get_model_group_manager
+    # manager 必须在首次 _sync_mgm() 前初始化；否则 startup refresh 已完成但
+    # known_models 仍为空，/v1/admin/model-groups 会返回 stale/错误 model_count。
+    from .model_groups import init_model_group_manager, get_model_group_manager
+    state_dir = config.data.get("model_management", {}).get("state_dir", ".")
+    init_model_group_manager(state_dir=state_dir)
+    LOG.info("ModelGroupManager v3.9.0 initialized (state_dir=%s)", state_dir)
+
     def _sync_mgm():
         try:
             mgm = get_model_group_manager()
@@ -101,18 +107,14 @@ async def lifespan(app: FastAPI):
                 return
             provider_models: Dict[str, List[str]] = {}
             for pname, ps in registry._providers.items():
-                mids = []
-                for m in ps.models:
-                    mids.append(m.id)
-                provider_models[pname] = mids
+                provider_models[pname] = [m.id for m in ps.models]
             mgm.set_known_models(provider_models)
             LOG.info("ModelGroupManager: synced %d providers / %d total models",
                      len(provider_models), sum(len(v) for v in provider_models.values()))
         except Exception:
             LOG.exception("ModelGroupManager sync failed")
     registry.register_refresh_callback(_sync_mgm)
-    # v3.10.0 (Phase I+J bug fix): register 时 callback 已注册, 但 startup refresh 之前已完成.
-    # 立即手动调一次 sync, 确保 _known_models_provider 不空 (resolve_group 依赖)
+    # startup refresh 已经完成；manager 初始化后必须立即同步一次。
     _sync_mgm()
 
     config.start_watcher()
@@ -164,13 +166,7 @@ async def lifespan(app: FastAPI):
     admin_api_init(registry, engine, model_manager, _start_time, context_bridge)
     # v3.7.0: 对外 API 多 key 管理 (per-tenant)
     from .public_api import init_public_key_manager
-    state_dir = config.data.get("model_management", {}).get("state_dir", ".")
     init_public_key_manager(state_dir=state_dir)
-
-    # v3.9.0: Model Groups 管理 (跨 provider 解析 + 轮询规则)
-    from .model_groups import init_model_group_manager
-    init_model_group_manager(state_dir=state_dir)
-    LOG.info("ModelGroupManager v3.9.0 initialized (state_dir=%s)", state_dir)
 
     # v3.10.0 (Phase I): Model Metadata Store (quality/speed/reasoning/tags 元数据)
     from .model_metadata import init_model_metadata_store, get_model_metadata_store

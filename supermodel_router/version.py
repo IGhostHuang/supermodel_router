@@ -110,8 +110,8 @@ from typing import Optional
 LOG = logging.getLogger("version")
 
 # 当前版本 (跟随 release tag)
-VERSION = "3.11.0"
-BUILD_DATE = "2026-06-21"
+VERSION = "3.13.0"
+BUILD_DATE = "2026-06-22"
 
 GITHUB_REPO = "IGhostHuang/supermodel_router"  # 默认值, 可被 config.version_check.repo 覆盖
 RELEASE_CHECK_INTERVAL = 3600  # 1 小时检查一次

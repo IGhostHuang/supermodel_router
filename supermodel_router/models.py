@@ -294,6 +294,7 @@ class ModelRegistry:
         pattern = ps.model_rules.get("pattern", "")
         include_set = set(ps.model_rules.get("include", []))
         exclude_patterns = ps.model_rules.get("exclude", [])  # v4 修复: 当正则处理
+        free_only = ps.model_rules.get("free_only", False)  # R57 实战坑修法 2 (老大 6/22 钦定 C): 加 free_only 字段, 自动判断价格
 
         filtered = []
         for m in models:
@@ -303,6 +304,13 @@ class ModelRegistry:
                 re.search(p, mid, re.IGNORECASE) for p in exclude_patterns
             ):
                 continue
+            # R57 实战坑修法 2: free_only 过滤 (openrouter 检查 pricing, nvidia 端点已过滤)
+            if free_only and ps.name == "openrouter":
+                pricing = m.get("pricing", {}) or {}
+                prompt_p = str(pricing.get("prompt", "1"))
+                completion_p = str(pricing.get("completion", "1"))
+                if not (prompt_p == "0" and completion_p == "0"):
+                    continue
             if mode == "all":
                 filtered.append(m)
             elif mode == "pattern":
