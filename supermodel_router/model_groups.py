@@ -141,9 +141,20 @@ class ModelGroupManager:
             return group
 
     def list_groups(self) -> List[dict]:
-        """列出所有 group (按 name 排序)"""
+        """列出所有 group (按 name 排序, 含实时解析计数与样本).
+
+        UI 依赖这里的 model_count/resolved_sample 展示每个分组自己的真实匹配数。
+        不能返回全局总数, 也不能返回 stale cache。
+        """
         with self._lock:
-            return [g.to_dict() for g in sorted(self._groups.values(), key=lambda x: x.name)]
+            items = []
+            for g in sorted(self._groups.values(), key=lambda x: x.name):
+                resolved = self._resolve_group_unlocked(g.name, g.patterns) if g.enabled else []
+                g.model_count = len(resolved)
+                d = g.to_dict()
+                d["resolved_sample"] = resolved[:5]
+                items.append(d)
+            return items
 
     def get_group(self, name: str) -> Optional[dict]:
         with self._lock:
@@ -199,9 +210,10 @@ class ModelGroupManager:
             self._known_models_provider = {
                 p: set(ms) for p, ms in provider_models.items()
             }
-            # 重新解析所有 group 的 model_count
+            # 重新解析所有 group 的 model_count。注意这里必须是 len(list),
+            # 重新解析所有 group 的 model_count；每个 group 独立 resolve，缓存 int 数量。
             for g in self._groups.values():
-                g.model_count = self._resolve_group_unlocked(g.name, g.patterns)
+                g.model_count = len(self._resolve_group_unlocked(g.name, g.patterns))
 
     def resolve_group(self, name: str) -> List[str]:
         """解析 group → 实际 model 列表 (provider/model_id 格式)
