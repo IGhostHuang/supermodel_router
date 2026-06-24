@@ -19,8 +19,17 @@ v3.18.0 (2026.06.25 老大拍 "smr quota recover/status 走 Admin UI 不写 CLI"
   * GET  /v1/admin/quota/status            → 所有 model 配额状态 (path/quota_type/skip_until/remaining)
   * POST /v1/admin/quota/recover/{path:path} → 手动清单个 model 的配额 skip (续费后场景)
   * 增强 POST /v1/admin/provider-health/re-enable/{name} 加 clear_quota 参数 (默认 true)
+- admin_ui.py 配额卡片 (quota-card):
+  * 顶部 toolbar 黄告警条 (🪫 N 个 model 待续费) + 类型 chip 分布 (monthly/daily/weekly)
+  * 每行 [💳 已续费] 按钮 → POST /v1/admin/quota/recover/{path}
+  * 0 个 quota model 时显示绿色 "🟢 配额状态正常"
+  * quota-type 5 类 chip 颜色: monthly=红 / weekly=橙 / daily=黄 / token_plan=蓝 / balance=紫
 - 设计: 配额耗尽 = 长 SKIP (避免每次 cooldown 到期后 429 反复重试), admin UI 续费后一键清
-- 配套 admin_ui.py: 新增 🪫 配额状态卡片 + 续费后一键清按钮
+
+v3.19.0 (2026.06.25 老大拍 "admin UI 配额卡片修复 + Bug fix"):
+- admin_ui.py 修 bug: refresh() destructuring 漏 q → 加 `,q` (10th api call /v1/admin/quota/status)
+- processModelHealth 加 renderQuotaCard() 调用 (保证 quota card 跟 health 同步刷新, 避免 toolbar 渲染时序问题)
+- 同 A-3 浏览器验真: 黄色 quota-card 完整显示 3 个 quota model + 类型 chip + [💳 已续费] 按钮
 
 v3.17.0 (2026.06.24 老大拍 "API 调用统一的模型名, SMR 内部路由决定实际模型"):
 - 新增 model alias 机制 (统一路由名称, client 不关心实际 provider/model)
@@ -231,7 +240,7 @@ from typing import Optional
 LOG = logging.getLogger("version")
 
 # 当前版本 (跟随 release tag)
-VERSION = "3.18.0"
+VERSION = "3.19.0"
 BUILD_DATE = "2026-06-25"
 
 GITHUB_REPO = "IGhostHuang/supermodel_router"  # 默认值, 可被 config.version_check.repo 覆盖
