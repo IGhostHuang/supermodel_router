@@ -198,6 +198,104 @@ tr:hover td{background:#1a1a24}
 .modal-bg{transition:opacity .2s ease}
 .modal{transition:transform .2s ease}
 
+/* v3.14.0: key 弹窗 + 复制按钮 + 警告框 (修"无法复制" + UI 强化) */
+.key-notice-box{background:linear-gradient(135deg,#3b0d0d 0%,#1a1a24 100%);border:1px solid #ef4444;border-radius:8px;padding:12px 16px;margin-bottom:14px;display:flex;align-items:flex-start;gap:10px}
+.key-notice-icon{font-size:24px;line-height:1}
+.key-notice-title{color:#fca5a5;font-weight:600;margin-bottom:2px;font-size:14px}
+.key-notice-desc{color:#fecaca;font-size:12px;line-height:1.5}
+.key-display-box{background:#020617;border:1px solid #334155;border-radius:6px;padding:14px 16px;margin:8px 0;font-family:ui-monospace,'SF Mono','Monaco',monospace;font-size:14px;color:#4ade80;word-break:break-all;user-select:all;cursor:text;line-height:1.6}
+.key-display-box:focus{outline:2px solid #5b8def;outline-offset:2px}
+.key-action-row{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+.btn-copy{background:#1e40af;color:#fff;border:1px solid #3b5bdb;padding:9px 18px;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:6px;transition:all .15s ease}
+.btn-copy:hover{background:#2563eb;transform:translateY(-1px);box-shadow:0 4px 12px rgba(37,99,235,.4)}
+.btn-copy:active{transform:translateY(0)}
+.btn-copy.copied{background:#0d3d24;border-color:#4ade80;color:#4ade80}
+.btn-download{background:#0f172a;color:#94a3b8;border:1px solid #334155;padding:9px 14px;border-radius:6px;font-size:13px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;transition:all .15s ease}
+.btn-download:hover{background:#1e293b;color:#e0e0e0}
+.rpm-shortcut-group{display:flex;gap:4px;margin-top:4px}
+.rpm-shortcut{padding:5px 10px;font-size:11px;border-radius:5px;background:#0f172a;border:1px solid #334155;color:#94a3b8;cursor:pointer;transition:all .12s ease;font-family:inherit}
+.rpm-shortcut:hover{background:#1e293b;color:#e0e0e0;border-color:#475569}
+.rpm-shortcut.active{background:#1e3a8a;color:#bfdbfe;border-color:#3b5bdb}
+.rpm-shortcut.unlimited{background:#0d3d24;color:#4ade80;border-color:#0d3d24}
+.rpm-shortcut.unlimited:hover{background:#14532d;color:#86efac}
+.rpm-hint{font-size:11px;margin-top:4px;color:#94a3b8;display:flex;align-items:center;gap:4px}
+.provider-tag{font-size:10px;padding:2px 8px;background:#1e3a8a;color:#bfdbfe;border-radius:10px;font-weight:500}
+
+/* v3.15.0: 模型健康度 badge (老大 2026-06-24 钦定) */
+.health-badge{font-size:10px;padding:2px 7px;border-radius:10px;font-weight:600;cursor:help;display:inline-flex;align-items:center;gap:3px;white-space:nowrap}
+.health-healthy{background:#0d3d24;color:#4ade80}
+.health-degraded{background:#3d2e0d;color:#fbbf24}
+.health-skip{background:#3a1a1a;color:#f87171;animation:healthSkipPulse 2s ease-in-out infinite}
+.health-half-open{background:#0d2e3d;color:#5b8def;animation:healthProbePulse 1.5s ease-in-out infinite}
+@keyframes healthSkipPulse{0%,100%{opacity:1}50%{opacity:.65}}
+@keyframes healthProbePulse{0%,100%{opacity:1}50%{opacity:.7}}
+.health-summary-bar{display:flex;gap:6px;margin:8px 0 12px;flex-wrap:wrap;align-items:center;font-size:12px}
+.health-summary-item{display:inline-flex;align-items:center;gap:4px;padding:4px 10px;background:#0f0f13;border:1px solid #333;border-radius:12px}
+.health-summary-item .count{font-weight:600}
+.health-summary-item.healthy{color:#4ade80;border-color:#0d3d24}
+.health-summary-item.degraded{color:#fbbf24;border-color:#3d2e0d}
+.health-summary-item.skip{color:#f87171;border-color:#3a1a1a}
+.health-summary-item.half_open{color:#5b8def;border-color:#0d2e3d}
+.health-tooltip{font-family:monospace;font-size:11px;line-height:1.5}
+
+/* v3.16.0: provider 自动禁用警告 + 健康度 mini summary */
+.provider-health-warn{background:linear-gradient(135deg,#3b0d0d 0%,#1a1a24 100%);border:1px solid #ef4444;border-radius:8px;padding:10px 14px;margin:8px 0;font-size:12px;line-height:1.5}
+.provider-health-warn .warn-title{color:#fca5a5;font-weight:600;margin-bottom:4px;display:flex;align-items:center;gap:6px}
+.provider-health-warn .warn-reason{color:#fecaca;font-family:monospace;font-size:11px;word-break:break-word}
+.provider-health-soon{background:linear-gradient(135deg,#3d2e0d 0%,#1a1a24 100%);border:1px solid #fbbf24;border-radius:8px;padding:8px 12px;margin:8px 0;font-size:12px;color:#fde68a}
+.provider-health-mini{display:flex;gap:4px;margin-top:4px;font-size:10px;align-items:center}
+.provider-health-mini .mini-chip{padding:2px 6px;border-radius:8px;font-weight:600}
+.provider-health-mini .mini-chip.h{background:#0d3d24;color:#4ade80}
+.provider-health-mini .mini-chip.d{background:#3d2e0d;color:#fbbf24}
+.provider-health-mini .mini-chip.s{background:#3a1a1a;color:#f87171}
+.provider-health-mini .mini-chip.ho{background:#0d2e3d;color:#5b8def}
+
+/* v3.18.0: 配额耗尽警告 + 续费一键清卡片 */
+.quota-card{background:linear-gradient(135deg,#3b3d0d 0%,#1a1a24 100%);border:1px solid #facc15;border-radius:8px;padding:12px 16px;margin:10px 0;font-size:12px;line-height:1.6;animation:quotaPulse 4s ease-in-out infinite}
+@keyframes quotaPulse{0%,100%{border-color:#facc15}50%{border-color:#fde047}}
+.quota-card .quota-title{color:#fde047;font-weight:600;margin-bottom:8px;display:flex;align-items:center;gap:6px;font-size:13px}
+.quota-card .quota-summary{color:#fef9c3;margin-bottom:8px}
+.quota-card .quota-list{margin-top:8px;border-top:1px dashed #fbbf24;padding-top:8px}
+.quota-card .quota-row{display:flex;align-items:center;gap:8px;padding:4px 0;font-family:monospace;font-size:11px;color:#fde68a;border-bottom:1px solid #2d2d1a}
+.quota-card .quota-row:last-child{border-bottom:none}
+.quota-card .quota-type{display:inline-block;padding:1px 6px;border-radius:6px;font-size:10px;font-weight:600;background:#3d2e0d;color:#fde047}
+.quota-card .quota-type.monthly{background:#3a1a1a;color:#fca5a5}
+.quota-card .quota-type.weekly{background:#3d2e0d;color:#fdba74}
+.quota-card .quota-type.daily{background:#3d3a0d;color:#fde047}
+.quota-card .quota-type.token_plan{background:#0d2e3d;color:#7dd3fc}
+.quota-card .quota-type.balance{background:#2e0d3d;color:#d8b4fe}
+.quota-card .quota-path{flex:1;word-break:break-all;color:#fef9c3}
+.quota-card .quota-remaining{color:#fbbf24;font-weight:600;min-width:60px;text-align:right}
+.quota-card .quota-actions{display:flex;gap:4px}
+.quota-card .quota-empty{color:#4ade80;font-style:italic}
+
+/* v3.14.0: 模型列表 toolbar + filter bar + 改进空状态 */
+.models-toolbar{display:flex;gap:10px;align-items:center;margin:12px 0 14px;flex-wrap:wrap}
+.models-search{flex:1;min-width:220px;background:#0f0f13;border:1px solid #333;color:#e0e0e0;padding:9px 14px;border-radius:8px;font-size:13px;font-family:inherit;transition:border-color .15s ease,box-shadow .15s ease}
+.models-search::placeholder{color:#666}
+.models-search:focus{outline:none;border-color:#5b8def;box-shadow:0 0 0 3px rgba(91,141,239,.15)}
+.models-sort{display:flex;gap:0;align-items:stretch;background:#0f0f13;border:1px solid #333;border-radius:8px;overflow:hidden}
+.models-select{background:transparent;border:none;border-right:1px solid #333;color:#e0e0e0;padding:9px 12px;font-size:12px;cursor:pointer;font-family:inherit;min-width:110px}
+.models-select:focus{outline:none;background:#1a1a24}
+.models-sort-btn{background:transparent;border:none;color:#5b8def;padding:9px 14px;font-size:12px;cursor:pointer;font-weight:600;transition:background .12s ease}
+.models-sort-btn:hover{background:#1a1a24}
+.models-reset-btn{background:transparent;border:1px solid #333;color:#888;padding:9px 14px;border-radius:8px;font-size:12px;transition:all .12s ease}
+.models-reset-btn:hover{border-color:#5b8def;color:#5b8def;background:rgba(91,141,239,.08)}
+.models-filter-bar{display:flex;flex-direction:column;gap:10px;margin-bottom:16px;padding:14px 16px;background:#0f0f13;border:1px solid #1a1a24;border-radius:10px}
+.filter-group{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.filter-label{font-size:11px;color:#888;font-weight:600;text-transform:uppercase;letter-spacing:.5px;min-width:60px;display:inline-flex;align-items:center;gap:6px}
+.filter-clear{color:#666;cursor:pointer;font-size:14px;line-height:1;padding:0 4px;border-radius:4px;transition:all .12s ease;display:inline-block}
+.filter-clear:hover{color:#f87171;background:rgba(248,113,113,.1)}
+.provider-filter{display:flex;gap:4px;flex-wrap:wrap}
+.provider-filter .chip{padding:4px 10px}
+.provider-filter .chip.selected{background:#5b8def;color:#fff;border-color:#5b8def}
+/* 改进空状态 (v3.14.0) */
+.empty-state{padding:40px 20px;text-align:center;color:#666;font-size:13px;background:#0f0f13;border:1px dashed #333;border-radius:10px;margin:10px 0}
+.empty-state .empty-icon{font-size:36px;margin-bottom:8px;opacity:.6}
+.empty-state .empty-title{color:#a0a0b0;font-size:14px;font-weight:600;margin-bottom:4px}
+.empty-state .empty-desc{color:#666;font-size:12px;margin-bottom:12px;line-height:1.5}
+.empty-state .empty-action{margin-top:8px}
+
 /* v3.6.0 左侧 sidebar 导航 ──────────────────────── */
 body{display:flex;gap:0;padding:0;max-width:none;min-height:100vh;background:#0a0a0e}
 .sidebar{width:220px;background:#0f0f13;border-right:1px solid #1a1a24;padding:18px 0;position:fixed;top:0;left:0;bottom:0;overflow-y:auto;z-index:50}
@@ -327,13 +425,35 @@ body{display:flex;gap:0;padding:0;max-width:none;min-height:100vh;background:#0a
   <div class="provider-grid" id="providerGrid"><div class="loading">加载中...</div></div>
 </div>
 
-<!-- 视图: Models -->
+<!-- 视图: Models (v3.14.0: 多维筛选 + 排序 + 搜索) -->
 <div class="view" id="view-models">
   <h2 class="view-title">🤖 模型列表 <span style="font-size:13px;color:#666" id="modelCount"></span></h2>
-  <p class="view-subtitle">分页浏览所有可用模型 (按能力分排序)</p>
-  <div class="modality-filter" id="modalityFilter"></div>
+  <p class="view-subtitle">多维筛选 + 实时搜索 + 自定义排序</p>
+  <div class="models-toolbar">
+    <input type="text" id="modelSearch" class="models-search" placeholder="🔍 搜索 model id / provider..." oninput="setSearch(this.value)">
+    <div class="models-sort">
+      <select id="modelSortBy" class="models-select" onchange="setSortBy(this.value)" title="排序字段">
+        <option value="capability">按能力分</option>
+        <option value="context">按上下文</option>
+        <option value="name">按模型名</option>
+        <option value="price">按价格</option>
+      </select>
+      <button id="sortOrderBtn" class="models-sort-btn" onclick="toggleSortOrder()" title="切换升降序">↓ 降序</button>
+    </div>
+    <button class="btn-sm models-reset-btn" onclick="resetAllModelFilters()" title="清空所有筛选">↺ 重置</button>
+  </div>
+  <div class="models-filter-bar">
+    <div class="filter-group">
+      <span class="filter-label">分类</span>
+      <div class="modality-filter" id="modalityFilter"></div>
+    </div>
+    <div class="filter-group">
+      <span class="filter-label">Provider <span class="filter-clear" onclick="clearProviderFilter()">×</span></span>
+      <div class="provider-filter" id="providerFilter"></div>
+    </div>
+  </div>
   <div id="modelSection">
-    <table><thead><tr><th>Model</th><th>Provider</th><th>分类</th><th>价格</th><th>能力分</th></tr></thead><tbody id="modelTable"></tbody></table>
+    <table><thead><tr><th>Model</th><th>Provider</th><th>分类</th><th>价格</th><th>能力分</th><th>🏥 健康度</th></tr></thead><tbody id="modelTable"></tbody></table>
   </div>
   <div class="pagination" id="modelPagination"></div>
 </div>
@@ -842,11 +962,22 @@ function escapeHtml(s) {
 <script>
 const BASE = '';
 let filterModality = '';
+let filterProviders = new Set();   // v3.14.0: Provider 多选筛选
+let filterSearch = '';              // v3.14.0: 搜索框 (model id / provider)
+// v3.15.0: 模型健康度 (从 /v1/admin/model-health 拉, 5min 缓存)
+let lastModelHealth = {};           // path → health record
+let lastModelHealthFetch = 0;       // 上次拉取时间戳 (秒)
+let modelHealthSummary = null;       // summary {total_models, by_state}
+// v3.16.0: provider 健康度 (从 /v1/admin/provider-health 拉)
+let lastProviderHealth = {providers: [], summary: {}, config: {}};
+let lastQuotaStatus = {summary: {total_quota_models: 0, by_type: {}}, quota_models: []};  // v3.18.0
+let sortBy = 'capability';          // v3.14.0: capability / context / name / price
+let sortOrder = 'desc';             // v3.14.0: asc / desc
 
 // v3.6.0: 视图状态
 let currentView = 'dashboard';
 let currentPage = 0;
-const PAGE_SIZE = 20;
+let PAGE_SIZE = 20;                 // v3.14.0: 改 const → let 支持每页大小切换
 let lastModelsData = null;
 let lastStatsData = null;
 let lastVersionData = null;
@@ -868,7 +999,7 @@ function showView(view){
   else if(view === 'publicapi') renderPublicApiView();
   else if(view === 'modelgroups') renderModelGroupsView();
   else if(view === 'wizard') loadWizard();
-  else if(view === 'models' && lastModelsData){ renderModels(lastModelsData); }
+  else if(view === 'models' && lastModelsData){ renderModels(); }
 }
 
 // v3.6.0: API Keys 独立管理视图 (Phase G)
@@ -956,10 +1087,17 @@ async function removeKeyByIndex(provider, idx){
   }
 }
 
-function toast(msg, ok=true){
+function toast(msg, ok=true, kind=null){
   const t=document.getElementById('toast');
-  t.textContent=(ok?'✅ ':'❌ ')+msg;
-  t.style.borderColor=ok?'#0d3b1e':'#3b0d0d';
+  // kind: 'success' (默认) | 'error' | 'warning' | 'info'
+  const _kind = kind || (ok ? 'success' : 'error');
+  const icon = {success:'✅', error:'❌', warning:'⚠️', info:'ℹ️'}[_kind] || '✅';
+  t.textContent = icon + ' ' + msg;
+  const color = {success:'#0d3b1e', error:'#3b0d0d', warning:'#3d2e0d', info:'#0d2e3d'}[_kind];
+  t.style.borderColor = color;
+  t.style.background = _kind === 'warning' ? 'linear-gradient(135deg, #3d2e0d 0%, #1a1a24 100%)'
+                       : _kind === 'info' ? 'linear-gradient(135deg, #0d2e3d 0%, #1a1a24 100%)'
+                       : t.style.background || '#1a1a24';
   t.classList.add('show');
   setTimeout(()=>t.classList.remove('show'),2500);
 }
@@ -972,7 +1110,7 @@ async function api(path, opts={}){
   return r.json();
 }
 async function refresh(){
-  const [h,m,r,s,mo,prov,v]=await Promise.all([
+  const [h,m,r,s,mo,prov,v,mh,ph,q]=await Promise.all([
     api('/v1/health').catch(e=>({error:e.message})),
     api('/v1/admin/models').catch(e=>({models:[], total:0})),
     api('/v1/admin/routes').catch(e=>({routes:[]})),
@@ -980,11 +1118,19 @@ async function refresh(){
     api('/v1/admin/modalities').catch(e=>({})),
     api('/v1/admin/providers').catch(e=>({providers:[]})),
     api('/v1/admin/version').catch(e=>({current:{version:'3.6.0'}})),
+    api('/v1/admin/model-health').catch(e=>({health:{}, summary:{total_models:0,by_state:{healthy:0,degraded:0,skip:0,half_open:0}}})),
+    api('/v1/admin/provider-health').catch(e=>({providers:[], summary:{}, config:{}})),  // v3.16.0
+    api('/v1/admin/quota/status').catch(e=>({summary:{total_quota_models:0,by_type:{}}, quota_models:[]})),  // v3.18.0
   ]);
+  processModelHealth(mh);  // v3.15.0: 健康度 cache + summary bar
+  lastProviderHealth = ph || lastProviderHealth;  // v3.16.0: provider 健康度
+  lastQuotaStatus = q || lastQuotaStatus;  // v3.18.0: 配额状态
   renderHealth(h);
+  renderQuotaCard();  // v3.18.0: 配额卡片
   renderDashboard(h, m, s, mo, prov);
   renderModalities(mo);
   renderRoutesData(r);
+  processModelHealth(mh);  // v3.15.0: 健康度 cache + summary bar
   // 切到 providers 视图时单独刷, 这里不刷避免与 provFilter 冲突
   if(currentView === 'providers'){
     renderProviders(prov);
@@ -993,9 +1139,11 @@ async function refresh(){
   lastVersionData = v;
   lastStatsData = s;
   lastModelsData = m;
+  // v3.14.0: Provider 筛选 chip 动态生成 (基于当前 data)
+  renderProviderFilter();
   // models 视图: 立即渲染第一页
   if(currentView === 'models'){
-    renderModels(m);
+    renderModels();
   }
   // 同步 sidebar 底部版本
   const verEl = document.getElementById('navVer');
@@ -1123,6 +1271,28 @@ async function renderProviders(h){
     const knownTag=isKnown?'<span class="provider-tag" title="内置已知 provider, base_url 自动补全">⭐ known</span>':'';
     const mode=p.model_rules?.mode||'all';
     const modeTag=`<span class="provider-tag">${mode}</span>`;
+    // v3.16.0: provider 健康度摘要 (找 cache)
+    const ph = (lastProviderHealth.providers||[]).find(x => x.provider === p.name) || {};
+    const ms = ph.model_states || {};
+    const healthMini = (ms.total||0) > 0
+      ? `<div class="provider-health-mini">`
+        + `<span class="mini-chip h">✅ ${ms.healthy||0}</span>`
+        + `<span class="mini-chip d">⚠️ ${ms.degraded||0}</span>`
+        + `<span class="mini-chip s">🚫 ${ms.skip||0}</span>`
+        + `<span class="mini-chip ho">⏳ ${ms.half_open||0}</span>`
+        + `</div>`
+      : '';
+    // 自动禁用警告 (如果有 disabled_reason)
+    let autoDisableWarn = '';
+    if(!enabled && ph.disabled_reason){
+      autoDisableWarn = `<div class="provider-health-warn">
+        <div class="warn-title">🚫 自动禁用 (v3.16.0 健康度检测)</div>
+        <div class="warn-reason">${escapeHtml(ph.disabled_reason)}</div>
+        ${ph.disabled_at ? `<div class="warn-reason" style="margin-top:4px;opacity:0.7">禁用时间: ${new Date(ph.disabled_at*1000).toLocaleString('zh-CN')}</div>` : ''}
+      </div>`;
+    } else if(ph.will_disable_in && ph.will_disable_in > 0){
+      autoDisableWarn = `<div class="provider-health-soon">⚠️ 即将自动禁用: 还有 ${Math.round(ph.will_disable_in/3600)} 小时 (所有 model SKIP ${Math.round(ph.oldest_skip_age_seconds/86400)} 天 / 阈值 ${Math.round((lastProviderHealth.config?.provider_disable_threshold_seconds||604800)/86400)} 天)</div>`;
+    }
     return `<div class="provider-card ${enabled?'':'disabled'}">
       <div class="provider-info">
         <div class="provider-name">${p.name}${knownTag}${modeTag}</div>
@@ -1132,6 +1302,8 @@ async function renderProviders(h){
           <span title="并发槽数">⚡ ${p.max_concurrent||3}</span>
           ${p.key_fingerprint?`<span title="key 指纹">${p.key_fingerprint}</span>`:''}
         </div>
+        ${healthMini}
+        ${autoDisableWarn}
       </div>
       <div class="provider-actions">
         ${badge}
@@ -1140,13 +1312,22 @@ async function renderProviders(h){
         <button class="btn-sm" onclick="cloneProvider('${p.name}')" title="复制为新 provider">📋 复制</button>
         ${enabled
           ? `<button class="btn-sm" onclick="disableProvider('${p.name}')">⏸ 停用</button>`
-          : `<button class="btn-sm primary" onclick="enableProvider('${p.name}')">▶ 启用</button>`}
+          : `<button class="btn-sm primary" onclick="reEnableProvider('${p.name}')" title="v3.16.0: re-enable 同时清该 provider 所有 model health">▶ 启用</button>`}
         ${!enabled
           ? `<button class="btn-sm danger" onclick="hardDeleteProvider('${p.name}')" title="彻底删除 (仅对已停用)">🗑️ 删除</button>`
           : ''}
       </div>
     </div>`;
   }).join('');
+}
+
+async function reEnableProvider(name){
+  // v3.16.0: 用新端点 /v1/admin/provider-health/re-enable/{name} (清 health + re-enable)
+  if(!confirm(`▶ Re-enable provider '${name}'?\n\n会清该 provider 所有 model 健康度记录, 下次调用会重新探测 (HELPFUL if 之前是自动禁用)。`)) return;
+  const r = await api('/v1/admin/provider-health/re-enable/'+encodeURIComponent(name), {method:'POST'});
+  if(r.error){ toast('❌ '+r.error, false); return; }
+  toast(`✅ '${name}' 已 re-enable, 清了 ${r.models_reset} 个 model health`);
+  await refresh();
 }
 
 // v3.6.0: Dashboard 渲染
@@ -1242,24 +1423,203 @@ function renderPricingBadge(m){
   const sub = pi.sub ? `<span style="font-size:10px;opacity:.78;margin-left:4px;font-weight:600">${escapeHtml(pi.sub)}</span>` : '';
   return `<span class="pricing-badge pricing-${pi.pricing}" title="${escapeHtml(pi.desc)}" style="display:inline-flex;align-items:center;color:${pi.color};background:${pi.bg};border:1px solid ${pi.color}55;border-radius:8px;padding:4px 8px;font-weight:700;line-height:1.15">${pi.text}${sub}</span>`;
 }
+
+// ============================================================
+// v3.15.0: 模型健康度 badge + summary bar (老大 2026-06-24 钦定)
+// ============================================================
+
+function processModelHealth(mhResp){
+  // refresh() 收到 /v1/admin/model-health 响应 → 缓存 + 更新 summary
+  if(!mhResp) return;
+  lastModelHealth = mhResp.health || {};
+  modelHealthSummary = mhResp.summary || null;
+  lastModelHealthFetch = Date.now() / 1000;
+  renderHealthSummaryBar();
+  renderQuotaCard();  // v3.18.0: 同时刷新 quota card (跟 health 同步, 避免 toolbar 渲染时序问题)
+}
+
+function renderHealthBadge(m){
+  // m.provider + m.id = path (跟 server 端一致)
+  const path = `${m.provider||'?'}/${m.id}`;
+  const h = lastModelHealth[path];
+  if(!h){
+    // 没数据 → 灰色 "无记录" (此 model 从未被路由过)
+    return `<span class="health-badge" style="background:#1a1a24;color:#666" title="${escapeHtml(path)}\n尚未被路由调用, 无健康度数据">— 未调用</span>`;
+  }
+  const state = h.state || 'healthy';
+  const map = {
+    healthy: { cls:'health-healthy', icon:'✅', label:'健康', extra:`成功率 ${h.rolling_success_rate?.toFixed?.(0) ?? '?'}% · EWMA ${h.ewma_latency_ms?.toFixed?.(0) ?? 0}ms` },
+    degraded: { cls:'health-degraded', icon:'⚠️', label:'降级', extra:`连续失败 ${h.consecutive_fails} · 成功率 ${h.rolling_success_rate?.toFixed?.(0) ?? '?'}%` },
+    skip: { cls:'health-skip', icon:'🚫', label:'跳过', extra:`冷却中 ${h.skip_remaining_seconds?.toFixed?.(0) ?? 0}s · 第 ${h.skip_count} 次` },
+    half_open: { cls:'health-half-open', icon:'⏳', label:'探测', extra:`后台 probe 中 · 上次 ${h.last_probe_success ? '成功' : '失败'}` },
+  };
+  const info = map[state] || map.healthy;
+  const tooltip = `${escapeHtml(path)}\n${info.label}: ${info.extra}\n总调用 ${h.total_calls} · 成功 ${h.total_success} · 失败 ${h.total_fail}`;
+  return `<span class="health-badge ${info.cls}" title="${escapeHtml(tooltip)}">${info.icon} ${info.label}</span>`;
+}
+
+function renderHealthSummaryBar(){
+  // 在 toolbar 上方插入一行 summary (4 chip: 健康/降级/跳过/探测)
+  let bar = document.getElementById('healthSummaryBar');
+  if(!bar){
+    const tb = document.querySelector('.models-toolbar');
+    if(!tb) return;
+    bar = document.createElement('div');
+    bar.id = 'healthSummaryBar';
+    bar.className = 'health-summary-bar';
+    tb.parentNode.insertBefore(bar, tb.nextSibling);
+  }
+  const summary = modelHealthSummary || {total_models:0, by_state:{healthy:0, degraded:0, skip:0, half_open:0}};
+  const bs = summary.by_state || {};
+  bar.innerHTML = `
+    <span style="color:#94a3b8;font-weight:600">🏥 健康度总览</span>
+    <span class="health-summary-item healthy">✅ <span class="count">${bs.healthy||0}</span> 健康</span>
+    <span class="health-summary-item degraded">⚠️ <span class="count">${bs.degraded||0}</span> 降级</span>
+    <span class="health-summary-item skip">🚫 <span class="count">${bs.skip||0}</span> 跳过</span>
+    <span class="health-summary-item half_open">⏳ <span class="count">${bs.half_open||0}</span> 探测中</span>
+    <span style="color:#666;margin-left:auto">共 ${summary.total_models} 个 model · 5min 自动刷新</span>
+    <button class="btn-sm" onclick="triggerProbeAll()" title="触发批量 probe (扫描 SKIP/HALF_OPEN)">🔄 立即探测</button>
+  `;
+}
+
+async function triggerProbeAll(){
+  const r = await api('/v1/admin/model-health/probe-all', {method:'POST'});
+  if(r.error){ toast('❌ '+r.error, false); return; }
+  toast('🔄 已触发批量 probe, 30s 内查结果');
+  // 30s 后强制刷新一次
+  setTimeout(()=>refresh(), 30000);
+}
+
+// v3.18.0: 配额卡片 (Quota Exhaustion Card)
+// - 列表所有 quota_skip_until > 0 的 model
+// - 每行带 [一键清] 按钮 → POST /v1/admin/quota/recover/{path}
+// - 0 个时显示绿色 "无配额耗尽"
+function renderQuotaCard(){
+  const models = lastQuotaStatus.quota_models || [];
+  let card = document.getElementById('quotaCard');
+  if(!card){
+    const tb = document.querySelector('.models-toolbar');
+    if(!tb) return;
+    card = document.createElement('div');
+    card.id = 'quotaCard';
+    const bar = document.getElementById('healthSummaryBar');
+    // 插在 healthSummaryBar 之后 (顶部显眼位置)
+    (bar || tb).parentNode.insertBefore(card, (bar || tb).nextSibling);
+  }
+  if(models.length === 0){
+    card.innerHTML = `<div class="quota-card" style="border-color:#16a34a;background:linear-gradient(135deg,#0d3d24 0%,#1a1a24 100%);animation:none">
+      <div class="quota-title" style="color:#4ade80">🟢 配额状态正常</div>
+      <div class="quota-empty">无配额耗尽 model · 所有 provider 可用</div>
+    </div>`;
+    return;
+  }
+  const byType = lastQuotaStatus.summary?.by_type || {};
+  const typeChips = Object.entries(byType)
+    .map(([t, n]) => `<span class="quota-type ${t}">${t}: ${n}</span>`)
+    .join(' ');
+  const rows = models.map(m => `
+    <div class="quota-row">
+      <span class="quota-type ${m.quota_type}">${m.quota_type}</span>
+      <span class="quota-path">${escapeHtml(m.path)}</span>
+      <span class="quota-remaining">${escapeHtml(m.remaining_human || '')}</span>
+      <span class="quota-actions">
+        <button class="btn-sm primary" onclick="quotaRecover('${encodeURIComponent(m.path)}', '${m.quota_type}')" title="续费后 / 手动判定恢复 → 清掉 quota_skip_until + 立即可路由">💳 已续费</button>
+      </span>
+    </div>
+  `).join('');
+  card.innerHTML = `<div class="quota-card">
+    <div class="quota-title">🪫 配额耗尽警告 · ${models.length} 个 model 待续费</div>
+    <div class="quota-summary">${typeChips || '未知类型'} · 续费后点 [💳 已续费] 按钮一键清</div>
+    <div class="quota-list">${rows}</div>
+  </div>`;
+}
+
+async function quotaRecover(pathEncoded, quotaType){
+  const path = decodeURIComponent(pathEncoded);
+  if(!confirm(`确定已续费 [${quotaType}] ${path}?\n\n将清掉 quota_skip_until + quota_type, 立即重新可路由. 撤销不会自动恢复.`)){
+    return;
+  }
+  try {
+    const r = await api('/v1/admin/quota/recover/' + encodeURIComponent(path), {method:'POST'});
+    if(r.error){ toast('❌ '+r.error, false); return; }
+    toast(`✅ ${path} 配额已清 (was ${r.old_quota_type})`, true);
+    refresh();  // 刷新 quota 列表
+  } catch(e){
+    toast('❌ recover failed: '+e.message, false);
+  }
+}
+
 function escapeHtml(s){
   return String(s||'').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
 }
 
-// v3.6.0: 模型分页
+// v3.6.0: 模型分页 (v3.14.0: 多维筛选 + 排序 + 搜索)
+function getFilteredSortedModels(){
+  if(!lastModelsData) return [];
+  const all = (lastModelsData?.data || lastModelsData?.models || []);
+  return all
+    .filter(m => !filterModality || m.modality === filterModality)
+    .filter(m => filterProviders.size === 0 || filterProviders.has(m.provider))
+    .filter(m => {
+      if(!filterSearch) return true;
+      const q = filterSearch.toLowerCase();
+      return (m.id || '').toLowerCase().includes(q) || (m.provider || '').toLowerCase().includes(q);
+    })
+    .sort((a, b) => {
+      const dir = sortOrder === 'asc' ? 1 : -1;
+      const av = getSortValue(a, sortBy);
+      const bv = getSortValue(b, sortBy);
+      if(typeof av === 'string') return av.localeCompare(bv) * dir;
+      return ((av||0) - (bv||0)) * dir;
+    });
+}
+function getSortValue(m, key){
+  if(key === 'capability') return m.capability_score || 0;
+  if(key === 'context') return m.context_window || 0;
+  if(key === 'name') return (m.id || '').toLowerCase();
+  if(key === 'price'){
+    // price 排: free=0, cheap=1, standard=2, premium=3 (按价位升序便宜优先)
+    const pricing = m.pricing_tier || (m.pricing || '').toLowerCase() || '';
+    if(pricing.includes('free')) return 0;
+    if(pricing.includes('cheap') || pricing.includes('low')) return 1;
+    if(pricing.includes('standard')) return 2;
+    if(pricing.includes('premium') || pricing.includes('high')) return 3;
+    return 2; // 默认 standard
+  }
+  return 0;
+}
 function renderModels(data){
+  // 兼容 data 可能未传 (renderModels() 无参调用)
+  if(data) lastModelsData = data;
   const t=document.getElementById('modelTable');
   if(!t) return;
-  // admin_models 返回 {models: [...], total} 或 /v1/models 返回 {data: [...]}
-  const all=(data?.data || data?.models || []).filter(m=>!filterModality||m.modality===filterModality);
-  // 按能力分降序
-  all.sort((a,b)=>(b.capability_score||0)-(a.capability_score||0));
-  document.getElementById('modelCount').textContent=`(${all.length} 总数 · 第 ${currentPage+1}/${Math.max(1,Math.ceil(all.length/PAGE_SIZE))} 页)`;
+  const all = getFilteredSortedModels();
+  const totalPages = Math.max(1, Math.ceil(all.length/PAGE_SIZE));
+  if(currentPage >= totalPages) currentPage = totalPages - 1;
   const start = currentPage * PAGE_SIZE;
   const pageModels = all.slice(start, start + PAGE_SIZE);
-  if(pageModels.length===0){
-    t.innerHTML='<tr><td colspan="5" style="color:#666;text-align:center;padding:20px">无模型</td></tr>';
-    document.getElementById('modelPagination').innerHTML='';
+  // 头部计数
+  const total = (lastModelsData?.data || lastModelsData?.models || []).length;
+  const matched = all.length;
+  const countEl = document.getElementById('modelCount');
+  if(countEl){
+    const pageInfo = totalPages > 1 ? ` · 第 ${currentPage+1}/${totalPages} 页` : '';
+    countEl.textContent = matched === total
+      ? `(共 ${total} 个)`
+      : `(匹配 ${matched} / ${total}${pageInfo})`;
+  }
+  // 渲染表格
+  if(pageModels.length === 0){
+    const hasFilter = filterModality || filterProviders.size > 0 || filterSearch;
+    t.innerHTML = `<tr><td colspan="6">
+      <div class="empty-state">
+        <div class="empty-icon">🔍</div>
+        <div class="empty-title">${hasFilter ? '没找到匹配的模型' : '暂无模型'}</div>
+        <div class="empty-desc">${hasFilter ? '试试清空筛选条件或换一个搜索词' : '请检查 SMR 配置和上游 provider 连接'}</div>
+        ${hasFilter ? '<div class="empty-action"><button class="btn-sm primary" onclick="resetAllModelFilters()">↺ 清空筛选</button></div>' : ''}
+      </div>
+    </td></tr>`;
+    document.getElementById('modelPagination').innerHTML = matched > 0 ? '' : '';
     return;
   }
   t.innerHTML=pageModels.map(m=>{
@@ -1267,12 +1627,14 @@ function renderModels(data){
     const pct=Math.min(sc,100);
     const color=sc>=80?'#4ade80':sc>=50?'#fbbf24':'#f87171';
     const priceBadge = renderPricingBadge(m);
+    const healthBadge = renderHealthBadge(m);
     return `<tr>
       <td>${m.id}</td>
       <td><span class="provider-tag">${m.provider||'?'}</span></td>
       <td><span class="modality-tag ${renderModalityClass(m.modality)}">${m.modality_display||m.modality||'?'}</span></td>
       <td>${priceBadge}</td>
       <td><span class="score-bar" style="width:${pct*0.7}px;background:${color}"></span>${sc}</td>
+      <td>${healthBadge}</td>
     </tr>`;
   }).join('');
   renderPagination(all.length);
@@ -1281,11 +1643,10 @@ function renderPagination(total){
   const totalPages = Math.max(1, Math.ceil(total/PAGE_SIZE));
   const pg = document.getElementById('modelPagination');
   if(!pg) return;
-  if(totalPages <= 1){ pg.innerHTML = `<span class="info">共 ${total} 条</span>`; return; }
+  if(totalPages <= 1){ pg.innerHTML = `<span class="info">共 ${total} 条</span> <select onchange="changePageSize(this.value)"><option value="10" ${PAGE_SIZE==10?'selected':''}>10/页</option><option value="20" ${PAGE_SIZE==20?'selected':''}>20/页</option><option value="50" ${PAGE_SIZE==50?'selected':''}>50/页</option><option value="100" ${PAGE_SIZE==100?'selected':''}>100/页</option></select>`; return; }
   let html = `<span class="info">共 ${total} 条</span>`;
   html += `<button onclick="goPage(0)" ${currentPage===0?'disabled':''}>« 首页</button>`;
   html += `<button onclick="goPage(${currentPage-1})" ${currentPage===0?'disabled':''}>‹ 上一页</button>`;
-  // 页码按钮 (最多显示 7 个)
   const maxBtns = 7;
   let startBtn = Math.max(0, currentPage - 3);
   let endBtn = Math.min(totalPages-1, startBtn + maxBtns - 1);
@@ -1298,92 +1659,86 @@ function renderPagination(total){
   html += `<span class="page-jump">跳到 <input type="number" min="1" max="${totalPages}" id="pageJump" value="${currentPage+1}"> / ${totalPages} 页</span>`;
   html += `<select onchange="changePageSize(this.value)"><option value="10" ${PAGE_SIZE==10?'selected':''}>10/页</option><option value="20" ${PAGE_SIZE==20?'selected':''}>20/页</option><option value="50" ${PAGE_SIZE==50?'selected':''}>50/页</option><option value="100" ${PAGE_SIZE==100?'selected':''}>100/页</option></select>`;
   pg.innerHTML = html;
-  // 跳页 enter 事件
   const inp = document.getElementById('pageJump');
   if(inp){ inp.onkeydown = (e)=>{ if(e.key==='Enter'){ const v=parseInt(inp.value); if(v>=1 && v<=totalPages){ goPage(v-1); } } }; }
 }
 function goPage(p){
   if(!lastModelsData) return;
-  const all=(lastModelsData?.data || lastModelsData?.models || []).filter(m=>!filterModality||m.modality===filterModality);
+  const all = getFilteredSortedModels();
   const totalPages = Math.max(1, Math.ceil(all.length/PAGE_SIZE));
   currentPage = Math.max(0, Math.min(totalPages-1, p));
-  renderModels(lastModelsData);
+  renderModels();
   document.getElementById('modelSection').scrollIntoView({behavior:'smooth', block:'start'});
 }
 function changePageSize(n){
   const newSize = parseInt(n);
   if(!lastModelsData) return;
-  const all=(lastModelsData?.data || lastModelsData?.models || []).filter(m=>!filterModality||m.modality===filterModality);
-  currentPage = Math.floor((currentPage * PAGE_SIZE) / newSize);
-  // 直接用 newSize 渲染
-  const slice = all.slice(currentPage*newSize, (currentPage+1)*newSize);
-  if(slice.length === 0){
-    document.getElementById('modelTable').innerHTML = '<tr><td colspan="5" style="color:#666;text-align:center;padding:20px">无模型</td></tr>';
-  } else {
-    document.getElementById('modelTable').innerHTML = slice.map(m=>{
-      const sc=m.capability_score||0;
-      const pct=Math.min(sc,100);
-      const color=sc>=80?'#4ade80':sc>=50?'#fbbf24':'#f87171';
-      const priceBadge = renderPricingBadge(m);
-      return `<tr>
-        <td>${m.id}</td>
-        <td><span class="provider-tag">${m.provider||'?'}</span></td>
-        <td><span class="modality-tag ${renderModalityClass(m.modality)}">${m.modality_display||m.modality||'?'}</span></td>
-        <td>${priceBadge}</td>
-        <td><span class="score-bar" style="width:${pct*0.7}px;background:${color}"></span>${sc}</td>
-      </tr>`;
-    }).join('');
-  }
-  // 重渲 pagination (用 newSize)
-  const totalPages2 = Math.max(1, Math.ceil(all.length/newSize));
-  const pg = document.getElementById('modelPagination');
-  if(pg){
-    let html = `<span class="info">共 ${all.length} 条 · ${newSize}/页</span>`;
-    html += `<button onclick="goPageN(0,${newSize})" ${currentPage===0?'disabled':''}>« 首页</button>`;
-    html += `<button onclick="goPageN(${currentPage-1},${newSize})" ${currentPage===0?'disabled':''}>‹ 上一页</button>`;
-    html += `<span class="info">${currentPage+1} / ${totalPages2}</span>`;
-    html += `<button onclick="goPageN(${currentPage+1},${newSize})" ${currentPage>=totalPages2-1?'disabled':''}>下一页 ›</button>`;
-    html += `<button onclick="goPageN(${totalPages2-1},${newSize})" ${currentPage>=totalPages2-1?'disabled':''}>末页 »</button>`;
-    html += `<select onchange="changePageSize(this.value)"><option value="10" ${newSize==10?'selected':''}>10/页</option><option value="20" ${newSize==20?'selected':''}>20/页</option><option value="50" ${newSize==50?'selected':''}>50/页</option><option value="100" ${newSize==100?'selected':''}>100/页</option></select>`;
-    pg.innerHTML = html;
-  }
-  window._currentPageSize = newSize;
+  // 保持当前第一个可见项 (重算页码)
+  const all = getFilteredSortedModels();
+  const firstVisible = currentPage * PAGE_SIZE;
+  PAGE_SIZE = newSize;
+  currentPage = Math.floor(firstVisible / newSize);
+  renderModels();
 }
-function goPageN(p, sz){
-  if(!lastModelsData) return;
-  const all=(lastModelsData?.data || lastModelsData?.models || []).filter(m=>!filterModality||m.modality===filterModality);
-  sz = sz || window._currentPageSize || 20;
-  const totalPages = Math.max(1, Math.ceil(all.length/sz));
-  currentPage = Math.max(0, Math.min(totalPages-1, p));
-  const start = currentPage * sz;
-  const slice = all.slice(start, start+sz);
-  const t=document.getElementById('modelTable');
-  t.innerHTML=slice.map(m=>{
-    const sc=m.capability_score||0;
-    const pct=Math.min(sc,100);
-    const color=sc>=80?'#4ade80':sc>=50?'#fbbf24':'#f87171';
-    const priceBadge = renderPricingBadge(m);
-    return `<tr>
-      <td>${m.id}</td>
-      <td><span class="provider-tag">${m.provider||'?'}</span></td>
-      <td><span class="modality-tag ${renderModalityClass(m.modality)}">${m.modality_display||m.modality||'?'}</span></td>
-      <td>${priceBadge}</td>
-      <td><span class="score-bar" style="width:${pct*0.7}px;background:${color}"></span>${sc}</td>
-    </tr>`;
-  }).join('');
-  // 重渲 pagination (保持 sz)
-  const totalPages2 = Math.max(1, Math.ceil(all.length/sz));
-  const pg = document.getElementById('modelPagination');
-  if(pg){
-    let html = `<span class="info">共 ${all.length} 条 · ${sz}/页</span>`;
-    html += `<button onclick="goPageN(0,${sz})" ${currentPage===0?'disabled':''}>« 首页</button>`;
-    html += `<button onclick="goPageN(${currentPage-1},${sz})" ${currentPage===0?'disabled':''}>‹ 上一页</button>`;
-    html += `<span class="info">${currentPage+1} / ${totalPages2}</span>`;
-    html += `<button onclick="goPageN(${currentPage+1},${sz})" ${currentPage>=totalPages2-1?'disabled':''}>下一页 ›</button>`;
-    html += `<button onclick="goPageN(${totalPages2-1},${sz})" ${currentPage>=totalPages2-1?'disabled':''}>末页 »</button>`;
-    html += `<select onchange="changePageSize(this.value)"><option value="10" ${sz==10?'selected':''}>10/页</option><option value="20" ${sz==20?'selected':''}>20/页</option><option value="50" ${sz==50?'selected':''}>50/页</option><option value="100" ${sz==100?'selected':''}>100/页</option></select>`;
-    pg.innerHTML = html;
+
+// v3.14.0: 筛选/排序/搜索交互
+function setSearch(v){
+  filterSearch = v;
+  currentPage = 0;
+  renderModels();
+}
+function setSortBy(v){
+  sortBy = v;
+  renderModels();
+}
+function toggleSortOrder(){
+  sortOrder = sortOrder === 'asc' ? 'desc' : 'asc';
+  const btn = document.getElementById('sortOrderBtn');
+  if(btn) btn.textContent = sortOrder === 'asc' ? '↑ 升序' : '↓ 降序';
+  renderModels();
+}
+function toggleProviderFilter(name){
+  if(filterProviders.has(name)) filterProviders.delete(name);
+  else filterProviders.add(name);
+  renderProviderFilter();
+  currentPage = 0;
+  renderModels();
+}
+function clearProviderFilter(){
+  filterProviders.clear();
+  renderProviderFilter();
+  currentPage = 0;
+  renderModels();
+}
+function resetAllModelFilters(){
+  filterModality = '';
+  filterProviders.clear();
+  filterSearch = '';
+  sortBy = 'capability';
+  sortOrder = 'desc';
+  const searchEl = document.getElementById('modelSearch');
+  if(searchEl) searchEl.value = '';
+  const sortByEl = document.getElementById('modelSortBy');
+  if(sortByEl) sortByEl.value = 'capability';
+  const sortBtn = document.getElementById('sortOrderBtn');
+  if(sortBtn) sortBtn.textContent = '↓ 降序';
+  currentPage = 0;
+  renderModelFilter();
+  renderProviderFilter();
+  renderModels();
+}
+function renderProviderFilter(){
+  const f = document.getElementById('providerFilter');
+  if(!f || !lastModelsData) return;
+  const all = lastModelsData?.data || lastModelsData?.models || [];
+  const providers = [...new Set(all.map(m => m.provider).filter(Boolean))].sort();
+  if(providers.length === 0){
+    f.innerHTML = '<span style="color:#666;font-size:11px">暂无 provider</span>';
+    return;
   }
+  f.innerHTML = providers.map(p =>
+    `<span class="chip ${filterProviders.has(p)?'selected':''}" onclick="toggleProviderFilter('${escapeHtml(p)}')">${escapeHtml(p)}</span>`
+  ).join('');
 }
 
 // v3.6.0: Stats 视图 (从 /v1/admin/stats 拿真数据)
@@ -1880,7 +2235,9 @@ async function renderPublicApiView(){
     const enabled = k.enabled !== false;
     const u = k.usage || {};
     const lastUsed = u.last_used ? new Date(u.last_used*1000).toLocaleString('zh-CN') : '未使用';
-    const rateLimit = k.rate_limit_rpm > 0 ? `${k.rate_limit_rpm} rpm` : '不限';
+    const rateLimit = k.rate_limit_rpm > 0
+      ? `<span class="provider-tag" style="background:#1e3a8a;color:#bfdbfe">🚦 ${k.rate_limit_rpm} rpm</span>`
+      : `<span class="provider-badge badge-ok" style="font-size:11px">∞ 不限速</span>`;
     const models = (k.model_filter||[]).length === 0 ? '<span class="text-muted">全部</span>' : (k.model_filter||[]).slice(0,3).map(m=>`<span class="provider-tag">${m}</span>`).join('') + ((k.model_filter||[]).length>3?` <span class="text-muted">+${k.model_filter.length-3}</span>`:'');
     return `<div class="provider-card ${enabled?'':'disabled'}" style="flex-direction:column;align-items:stretch">
       <div style="display:flex;justify-content:space-between;align-items:flex-start">
@@ -1980,7 +2337,14 @@ async function showPublicKeyModal(existing){
       </div>
       <div>
         <label>速率限制 (rpm) <span class="text-muted">(0 = 不限)</span></label>
-        <input id="pkRpm" type="number" min="0" value="${rpm}">
+        <input id="pkRpm" type="number" min="0" value="${rpm}" oninput="updateRpmHint()">
+        <div class="rpm-shortcut-group">
+          <button type="button" class="rpm-shortcut unlimited" onclick="setRpmValue(0)">∞ 不限</button>
+          <button type="button" class="rpm-shortcut" onclick="setRpmValue(60)">60</button>
+          <button type="button" class="rpm-shortcut" onclick="setRpmValue(300)">300</button>
+          <button type="button" class="rpm-shortcut" onclick="setRpmValue(1000)">1000</button>
+        </div>
+        <div class="rpm-hint" id="pkRpmHint">💡 0=不限速 &gt;0=每分钟最大请求数</div>
       </div>
     </div>
     <label style="margin-top:10px;display:block">状态</label>
@@ -2098,6 +2462,166 @@ function removePkChip(m){
   renderPkChips();
 }
 
+// ============================================================
+// v3.14.0: rpm 快捷按钮 + key 创建成功 modal (修"无法复制" + "rpm=0 不生效")
+// ============================================================
+
+function setRpmValue(val){
+  const el = document.getElementById('pkRpm');
+  if(!el) return;
+  el.value = val;
+  updateRpmHint();
+  // 视觉反馈: input 边框闪一下
+  el.style.transition = 'border-color .3s ease, box-shadow .3s ease';
+  el.style.borderColor = val === 0 ? '#4ade80' : '#5b8def';
+  el.style.boxShadow = `0 0 0 3px ${val === 0 ? 'rgba(74,222,128,.25)' : 'rgba(91,141,239,.25)'}`;
+  setTimeout(() => { el.style.borderColor = ''; el.style.boxShadow = ''; }, 600);
+}
+
+function updateRpmHint(){
+  const el = document.getElementById('pkRpm');
+  const hint = document.getElementById('pkRpmHint');
+  if(!el || !hint) return;
+  const v = parseInt(el.value, 10);
+  if(isNaN(v)){
+    hint.innerHTML = '💡 输入数字,0=不限速';
+    hint.style.color = '#94a3b8';
+  } else if(v === 0){
+    hint.innerHTML = '✅ <strong style="color:#4ade80">不限速</strong> — 适合内部高吞吐客户端';
+    hint.style.color = '#4ade80';
+  } else if(v < 10){
+    hint.innerHTML = `⚠️ <strong style="color:#fbbf24">${v} rpm</strong> — 较严格,每 ${(60/v).toFixed(1)}s 才允许 1 个请求`;
+    hint.style.color = '#fbbf24';
+  } else if(v < 100){
+    hint.innerHTML = `🚦 <strong style="color:#bfdbfe">${v} rpm</strong> — 标准限频`;
+    hint.style.color = '#bfdbfe';
+  } else {
+    hint.innerHTML = `🚀 <strong style="color:#bfdbfe">${v} rpm</strong> — 高频,${v} 次/分 ≈ ${(v/60).toFixed(1)} 次/秒`;
+    hint.style.color = '#bfdbfe';
+  }
+}
+
+async function copyToClipboardText(text, btn){
+  try {
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      await navigator.clipboard.writeText(text);
+    } else {
+      // fallback: 旧浏览器用 textarea
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+    }
+    if(btn){
+      const orig = btn.innerHTML;
+      btn.classList.add('copied');
+      btn.innerHTML = '✅ 已复制到剪贴板';
+      setTimeout(() => { btn.classList.remove('copied'); btn.innerHTML = orig; }, 1800);
+    }
+    return true;
+  } catch(e){
+    if(btn) btn.innerHTML = '❌ 复制失败,请手动选择文字';
+    return false;
+  }
+}
+
+function downloadKeyTxt(r){
+  const content = `# SMR 对外 API Key - ${r.name}\n# 创建时间: ${new Date().toLocaleString('zh-CN')}\n# 速率限制: ${r.rate_limit_rpm} rpm\n# 白名单: ${(r.model_filter||[]).join(', ') || '全部'}\n# 备注: ${r.note || '(无)'}\n\n原 Key (妥善保存,关闭后无法再次查看):\n${r.key}\n\n哈希:\n${r.key_hash}\n`;
+  const blob = new Blob([content], {type: 'text/plain;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `smr-key-${r.name}-${new Date().toISOString().slice(0,10)}.txt`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+async function showKeyCreatedModal(r){
+  // 移除旧 modal (如果存在)
+  const old = document.getElementById('keyCreatedModal');
+  if(old) old.remove();
+
+  const html = `
+<div class="modal-bg show" id="keyCreatedModal" onclick="if(event.target===this)document.getElementById('keyCreatedModal').remove()">
+  <div class="modal" style="max-width:640px" onclick="event.stopPropagation()">
+    <h3 style="display:flex;align-items:center;gap:8px">
+      <span style="font-size:24px">🎉</span>
+      <span>Key '${r.name}' 已创建</span>
+    </h3>
+    <div class="key-notice-box">
+      <div class="key-notice-icon">⚠️</div>
+      <div>
+        <div class="key-notice-title">原 key 仅显示一次,关闭后将无法再次查看</div>
+        <div class="key-notice-desc">请立即保存到本地密码管理器 / .env / 密钥库。<br>若丢失,只能删除重建。</div>
+      </div>
+    </div>
+    <div style="margin-top:8px;font-size:12px;color:#94a3b8;display:flex;justify-content:space-between;align-items:center">
+      <span>🔑 原 Key (点击文字全选)</span>
+      <span class="text-muted" id="keyAutoCopyHint">📋 尝试自动复制中...</span>
+    </div>
+    <div class="key-display-box" id="keyDisplayBox" tabindex="0">${r.key}</div>
+    <div class="key-action-row">
+      <button class="btn-copy" id="keyCopyBtn" onclick="copyToClipboardText(document.getElementById('keyDisplayBox').textContent, this)">
+        📋 一键复制 Key
+      </button>
+      <button class="btn-download" onclick="downloadKeyTxt({name:'${r.name.replace(/'/g,"\\'")}',key:document.getElementById('keyDisplayBox').textContent,key_hash:'${r.key_hash}',rate_limit_rpm:${r.rate_limit_rpm},model_filter:${JSON.stringify(r.model_filter||[])},note:'${(r.note||'').replace(/'/g,"\\'")}'})">
+        📥 下载 .txt 备份
+      </button>
+    </div>
+    <details style="margin-top:14px;font-size:12px;color:#94a3b8">
+      <summary style="cursor:pointer;user-select:none">📦 查看完整元数据</summary>
+      <div style="background:#0f172a;padding:10px 12px;border-radius:6px;margin-top:8px;font-family:monospace;line-height:1.7">
+        <div>🔐 哈希: <code style="color:#94a3b8">${r.key_hash}</code></div>
+        <div>🚦 速率: <code style="color:${r.rate_limit_rpm > 0 ? '#bfdbfe' : '#4ade80'}">${r.rate_limit_rpm > 0 ? r.rate_limit_rpm + ' rpm' : '∞ 不限速'}</code></div>
+        <div>🎯 白名单: <code style="color:#bfdbfe">${(r.model_filter||[]).join(', ') || '全部'}</code></div>
+        <div>📝 备注: <code style="color:#94a3b8">${r.note || '(无)'}</code></div>
+      </div>
+    </details>
+    <div class="row" style="margin-top:18px;justify-content:flex-end">
+      <button class="btn primary" id="keyCloseBtn" onclick="document.getElementById('keyCreatedModal').remove()">✅ 我已保存,关闭</button>
+    </div>
+  </div>
+</div>`;
+  const div = document.createElement('div');
+  div.innerHTML = html;
+  document.body.appendChild(div.firstElementChild);
+
+  // 自动 focus + select key 文字
+  const keyBox = document.getElementById('keyDisplayBox');
+  setTimeout(() => { keyBox.focus(); selectText(keyBox); }, 50);
+
+  // 尝试自动复制
+  setTimeout(async () => {
+    const hint = document.getElementById('keyAutoCopyHint');
+    const ok = await copyToClipboardText(r.key, null);
+    if(hint) hint.innerHTML = ok ? '✅ 已自动复制到剪贴板' : '⚠️ 自动复制失败,请手动点 📋 按钮';
+    if(ok) toast('✅ Key 已自动复制到剪贴板 (请立即粘贴保存)', true, 'info');
+  }, 200);
+
+  // Esc 关闭 + Enter 关闭
+  const escHandler = (e) => {
+    if(e.key === 'Escape'){
+      const m = document.getElementById('keyCreatedModal');
+      if(m) m.remove();
+      document.removeEventListener('keydown', escHandler);
+    }
+  };
+  document.addEventListener('keydown', escHandler);
+}
+
+function selectText(el){
+  const range = document.createRange();
+  range.selectNodeContents(el);
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+}
+
 function closePublicKeyModal(){
   const m = document.getElementById('publicKeyModal');
   if(m) m.remove();
@@ -2108,7 +2632,9 @@ async function submitPublicKeyModal(isEdit){
   const name = document.getElementById('pkName').value.trim();
   if(!name){ toast('❌ 名称必填', false); return; }
   if(!/^[a-zA-Z0-9_-]+$/.test(name)){ toast('❌ 名称只能含字母数字/-/_', false); return; }
-  const rpm = parseInt(document.getElementById('pkRpm').value) || 60;
+  // v3.14.0 修: parseInt(...) || 60 短路 0=60 (老大反馈"rpm=0 不生效"), 用显式 NaN 校验
+  const _rpmRaw = document.getElementById('pkRpm').value.trim();
+  const rpm = _rpmRaw === '' ? 60 : Math.max(0, parseInt(_rpmRaw, 10) || 0);
   const enabled = document.getElementById('pkEnabled').value === 'true';
   const note = document.getElementById('pkNote').value;
   const modelFilter = window._pkCurrentFilter || [];
@@ -2128,9 +2654,9 @@ async function submitPublicKeyModal(isEdit){
       body: JSON.stringify({name, rate_limit_rpm: rpm, model_filter: modelFilter, note}),
     });
     if(r.error){ toast('❌ '+r.error, false); return; }
-    const msg = `✅ Key '${r.name}' 已创建!\n\n原 key (⚠️ 唯一一次显示):\n${r.key}\n\n哈希: ${r.key_hash}\n速率限制: ${r.rate_limit_rpm} rpm\n白名单: ${(r.model_filter||[]).join(', ') || '全部'}\n\n请立即复制保存到本地, 关闭后将无法再次查看!`;
-    alert(msg);
+    // v3.14.0 修: 原生 alert 文字不可复制, 改用自定义 modal (可复制 + 自动剪贴板 + .txt 下载)
     closePublicKeyModal();
+    showKeyCreatedModal(r);
     await renderPublicApiView();
   }
 }
