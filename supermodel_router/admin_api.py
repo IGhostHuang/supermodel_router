@@ -29,6 +29,7 @@ from fastapi.responses import JSONResponse
 from .config import config
 from .context_bridge import ContextBridge  # v3.4.0
 from .version import VERSION as SMR_VERSION, BUILD_DATE as SMR_BUILD_DATE
+from .model_health import ModelHealth, get_model_health_manager, HealthState  # v3.15.0 + v3.16.0
 SMR_APP_TITLE = f"SuperModel Router v{SMR_VERSION}"
 
 LOG = logging.getLogger("admin_api")
@@ -742,6 +743,339 @@ async def admin_penalty_reset(payload: dict | None = None):
     target = payload.get("model")
     result = engine.reset_model_penalty(target)
     return JSONResponse(result)
+
+
+# ============================================================
+# v3.15.0: Model Health 管理 (老大 2026-06-24 钦定)
+# - 健康度指标 5 个: consecutive_fails / rolling_success_rate / ewma_latency_ms / last_success_at / last_fail_at
+# - 路由时跳过非健康模型 (降低延迟)
+# - 健康度恢复检测: half-open circuit breaker (SKIP → HALF_OPEN → probe → HEALTHY/SKIP 退避)
+# ============================================================
+
+@router.get("/v1/admin/model-health")
+async def admin_model_health_get(path: str | None = None):
+    """查看 model 健康度
+
+    query:
+      path (可选): 指定单个 model "provider/model_id", 不传返回全部
+    返回:
+      {summary: {total_models, by_state}, health: {path: {...}}}
+    """
+    mhm = getattr(engine, "model_health", None)
+    if mhm is None:
+        return JSONResponse({"error": "model_health not initialized"}, status_code=503)
+    if path:
+        all_h = mhm.get_all_health()
+        entry = all_h.get(path)
+        if entry is None:
+            return JSONResponse({"error": f"path '{path}' not in health records"}, status_code=404)
+        return JSONResponse({"path": path, **entry, "summary": mhm.get_summary()})
+    return JSONResponse({"health": mhm.get_all_health(), "summary": mhm.get_summary()})
+
+
+@router.post("/v1/admin/model-health/probe/{path:path}")
+async def admin_model_health_probe(path: str):
+    """强制 probe 单个 model (用于 admin 主动验证恢复)
+
+    path URL 例: /v1/admin/model-health/probe/openrouter%2Fgpt-4o
+    返回: {path, probe_success, ...}
+    """
+    mhm = getattr(engine, "model_health", None)
+    if mhm is None:
+        return JSONResponse({"error": "model_health not initialized"}, status_code=503)
+    result = mhm.force_probe(path)
+    if "error" in result:
+        return JSONResponse(result, status_code=400)
+    return JSONResponse(result)
+
+
+@router.post("/v1/admin/model-health/probe-all")
+async def admin_model_health_probe_all():
+    """触发批量 probe: 扫描所有 SKIP/HALF_OPEN 状态 model
+
+    不阻塞: 把待 probe 列表推到 background checker, 立即返回
+    """
+    mhm = getattr(engine, "model_health", None)
+    if mhm is None:
+        return JSONResponse({"error": "model_health not initialized"}, status_code=503)
+    # 触发 background scan (不阻塞, 等下个 probe_interval tick)
+    return JSONResponse({
+        "ok": True,
+        "hint": "probe triggered, results will appear in next probe interval (30s default)",
+        "summary": mhm.get_summary(),
+    })
+
+
+@router.post("/v1/admin/model-health/reset/{path:path}")
+async def admin_model_health_reset(path: str):
+    """重置单个 model 健康度 (admin 主动恢复, 用于紧急情况)
+
+    path URL 例: /v1/admin/model-health/reset/openrouter%2Fgpt-4o
+    """
+    mhm = getattr(engine, "model_health", None)
+    if mhm is None:
+        return JSONResponse({"error": "model_health not initialized"}, status_code=503)
+    with mhm._lock:
+        if path not in mhm._health:
+            return JSONResponse({"error": f"path '{path}' not in health records"}, status_code=404)
+        mhm._health[path] = ModelHealth(path=path)
+    mhm._save_async()
+    return JSONResponse({"ok": True, "path": path, "state": "healthy", "reset": True})
+
+
+# ============================================================
+# v3.16.0: Provider 级健康度 + 自动禁用管理 (老大 2026-06-24 补)
+# - 整个 provider 所有 model 健康度 SKIP 持续 ≥ 7 天 → 自动禁用 + 记录原因
+# - admin API: query / re-enable / force-check-now
+# ============================================================
+
+@router.get("/v1/admin/provider-health")
+async def admin_provider_health_get():
+    """列出所有 provider 健康度汇总 (含 disabled metadata)
+
+    返回: {providers: [{provider, enabled, model_states, oldest_skip_age_seconds, will_disable_in}], summary: {...}}
+    """
+    mhm = getattr(engine, "model_health", None)
+    if mhm is None:
+        return JSONResponse({"error": "model_health not initialized"}, status_code=503)
+    providers = mhm.get_provider_health_summary(registry)
+    # 叠加 disabled metadata (从 config 读)
+    for p in providers:
+        meta = config.get_provider_disabled_meta(p["provider"])
+        p["disabled_at"] = meta.get("disabled_at")
+        p["disabled_reason"] = meta.get("disabled_reason")
+    return JSONResponse({
+        "providers": providers,
+        "config": {
+            "provider_disable_threshold_seconds": mhm.cfg.get("provider_disable_threshold_seconds"),
+            "provider_check_min_models": mhm.cfg.get("provider_check_min_models"),
+            "provider_check_interval_seconds": mhm.cfg.get("provider_check_interval_seconds"),
+            "provider_check_enabled": mhm.cfg.get("provider_check_enabled"),
+        },
+        "summary": {
+            "total_providers": len(providers),
+            "enabled_providers": sum(1 for p in providers if p.get("enabled")),
+            "auto_disabled_providers": sum(1 for p in providers if not p.get("enabled")),
+            "will_disable_soon": sum(1 for p in providers if p.get("will_disable_in", 0) > 0),
+        },
+    })
+
+
+@router.post("/v1/admin/provider-health/re-enable/{name}")
+async def admin_provider_re_enable(name: str, clear_quota: bool = True):
+    """手动 re-enable provider (清 disabled metadata)
+
+    name: provider name (URL 不需要编码, FastAPI 自动处理)
+    clear_quota: 是否同时清配额相关字段 (quota_skip_until, quota_type)
+                 默认 True. 续费后场景 = 一次性把 quota 字段全清 0, 重新探测.
+                 只清普通 skip 状态 = 传 false (保留 quota 信息只观察).
+    """
+    if config.enable_provider(name):
+        # 清该 provider 下所有 model 健康度 (重新探测)
+        mhm = getattr(engine, "model_health", None)
+        paths_to_reset: list = []
+        quota_cleared = 0
+        if mhm is not None:
+            with mhm._lock:
+                paths_to_reset = [p for p in mhm._health.keys() if p.split("/", 1)[0] == name]
+                for path in paths_to_reset:
+                    mh = mhm._health[path]
+                    mh.state = HealthState.HEALTHY.value
+                    mh.consecutive_fails = 0
+                    mh.consecutive_success = 0
+                    mh.skip_until = 0.0
+                    mh.first_skip_at = 0.0
+                    mh.cooldown_seconds = mhm.cfg["skip_initial_seconds"]
+                    if clear_quota and mh.quota_skip_until > 0:
+                        mh.quota_skip_until = 0.0
+                        mh.quota_type = ""
+                        quota_cleared += 1
+            mhm._save_async()
+        return JSONResponse({
+            "ok": True,
+            "name": name,
+            "enabled": True,
+            "models_reset": len(paths_to_reset),
+            "quota_cleared": quota_cleared,
+        })
+    return JSONResponse({"error": f"provider '{name}' not found"}, status_code=404)
+
+
+@router.get("/v1/admin/quota/status")
+async def admin_quota_status():
+    """查询所有 model 的配额状态
+
+    返回: {
+      summary: {total_quota_models, by_type: {daily: N, monthly: N, ...}},
+      quota_models: [{
+        path, quota_type, quota_skip_until, quota_skip_at_iso,
+        remaining_seconds, provider_disabled
+      }]
+    }
+    """
+    mhm = getattr(engine, "model_health", None)
+    if mhm is None:
+        return JSONResponse({"error": "model_health not initialized"}, status_code=503)
+
+    now = time.time()
+    quota_models = []
+    by_type: dict[str, int] = {}
+
+    with mhm._lock:
+        for path, mh in mhm._health.items():
+            if mh.quota_skip_until <= 0:
+                continue
+            quota_type = mh.quota_type or "unknown"
+            by_type[quota_type] = by_type.get(quota_type, 0) + 1
+            remaining = max(0, mh.quota_skip_until - now)
+            provider_name = path.split("/", 1)[0]
+            provider_disabled = False
+            try:
+                providers = getattr(config, "providers", None) or {}
+                pcfg = providers.get(provider_name, {}) if providers else {}
+                provider_disabled = pcfg.get("enabled", True) is False
+            except Exception:
+                pass
+            quota_models.append({
+                "path": path,
+                "provider": provider_name,
+                "model_id": path.split("/", 1)[1] if "/" in path else "",
+                "quota_type": quota_type,
+                "quota_skip_until": mh.quota_skip_until,
+                "quota_skip_at_iso": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(mh.quota_skip_until)),
+                "remaining_seconds": int(remaining),
+                "remaining_human": _format_remaining(remaining),
+                "provider_disabled": provider_disabled,
+                "last_probe_error": mh.last_probe_error or "",
+            })
+
+    # 按 remaining_seconds 升序 (最近到期的在前)
+    quota_models.sort(key=lambda x: x["remaining_seconds"])
+
+    return JSONResponse({
+        "summary": {
+            "total_quota_models": len(quota_models),
+            "by_type": by_type,
+        },
+        "quota_models": quota_models,
+    })
+
+
+@router.post("/v1/admin/quota/recover/{path:path}")
+async def admin_quota_recover(path: str):
+    """手动清掉某个 model 的配额 skip 状态 (续费后场景)
+
+    path: provider/model_id 路径 (URL 自动处理 /)
+    """
+    mhm = getattr(engine, "model_health", None)
+    if mhm is None:
+        return JSONResponse({"error": "model_health not initialized"}, status_code=503)
+    with mhm._lock:
+        mh = mhm._health.get(path)
+        if mh is None:
+            return JSONResponse({"error": f"model '{path}' not found"}, status_code=404)
+        old_quota_type = mh.quota_type
+        old_skip_until = mh.quota_skip_until
+        mh.quota_skip_until = 0.0
+        mh.quota_type = ""
+        # 同时清普通 skip + 重置 cooldown, 让 model 立即可路由
+        mh.skip_until = 0.0
+        mh.first_skip_at = 0.0
+        mh.cooldown_seconds = mhm.cfg["skip_initial_seconds"]
+        mh.consecutive_fails = 0
+        mh.state = HealthState.HEALTHY.value
+    mhm._save_async()
+    LOG.info("admin_quota_recover: %s quota cleared (was type=%s, skip_until=%.0f)",
+             path, old_quota_type, old_skip_until)
+    return JSONResponse({
+        "ok": True,
+        "path": path,
+        "old_quota_type": old_quota_type,
+        "old_skip_until": old_skip_until,
+    })
+
+
+def _format_remaining(seconds: float) -> str:
+    """把秒数格式化为人类可读 (30d / 7h / 45m)"""
+    if seconds <= 0:
+        return "0s"
+    days = int(seconds // 86400)
+    hours = int((seconds % 86400) // 3600)
+    minutes = int((seconds % 3600) // 60)
+    parts = []
+    if days:
+        parts.append(f"{days}d")
+    if hours:
+        parts.append(f"{hours}h")
+    if minutes and not days:
+        parts.append(f"{minutes}m")
+    return " ".join(parts) if parts else "<1m"
+
+
+@router.post("/v1/admin/provider-health/check-now")
+async def admin_provider_check_now():
+    """强制立即跑一次 provider 自动禁用扫描 (不阻塞, 等下个 tick 也行)
+
+    返回: {candidates: [{provider, reason, duration_seconds, skip_model_count}]}
+    """
+    mhm = getattr(engine, "model_health", None)
+    if mhm is None:
+        return JSONResponse({"error": "model_health not initialized"}, status_code=503)
+    candidates = mhm.check_provider_disable_candidates(registry)
+    # 立即禁用 (如果 enabled)
+    disabled = []
+    for c in candidates:
+        if config.disable_provider(c["provider"], c["reason"]):
+            disabled.append(c["provider"])
+    return JSONResponse({
+        "candidates": candidates,
+        "auto_disabled_now": disabled,
+        "summary": f"{len(candidates)} candidates, {len(disabled)} auto-disabled",
+    })
+
+
+# ============================================================
+# v3.17.0: Model Alias (统一路由名称) 管理 — 老大 6/24 钦定
+# "API 调用统一的模型名, SMR 内部路由决定实际模型"
+# 默认 alias: model-router / router / auto / cheap / fast / best
+# ============================================================
+
+@router.get("/v1/admin/model-aliases")
+async def admin_model_aliases_get():
+    """列出所有 model aliases (默认值 + 用户自定义)
+
+    返回: {aliases: {name: {strategy, description, ...}}, default: bool}
+    """
+    aliases = config.get_model_aliases()
+    out = {}
+    for name, cfg in aliases.items():
+        if isinstance(cfg, dict):
+            out[name] = cfg
+    return JSONResponse({"aliases": out, "count": len(out)})
+
+
+@router.put("/v1/admin/model-aliases/{name}")
+async def admin_model_aliases_set(name: str, payload: dict):
+    """设置/修改一个 model alias (admin UI 用)
+
+    payload: {strategy, modality?, min_capability_score?, exclude_providers?, prefer_low_latency?, max_latency_ms?}
+    """
+    if config.set_model_alias(name, payload):
+        return JSONResponse({"ok": True, "name": name, "alias": payload})
+    return JSONResponse({"error": "set failed"}, status_code=500)
+
+
+@router.delete("/v1/admin/model-aliases/{name}")
+async def admin_model_aliases_delete(name: str):
+    """删除一个 model alias (恢复默认值)"""
+    with config._lock:
+        user_aliases = config._data.get("model_aliases", {}) or {}
+        if name in user_aliases:
+            del user_aliases[name]
+            config._save_yaml()
+            config._notify_change()
+            return JSONResponse({"ok": True, "name": name, "deleted": True})
+    return JSONResponse({"error": f"alias '{name}' not in user config"}, status_code=404)
 
 
 @router.post("/v1/admin/penalty/decay")

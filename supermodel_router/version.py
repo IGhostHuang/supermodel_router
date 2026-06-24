@@ -1,6 +1,127 @@
 """
 supermodel_router/version.py — 版本元数据 + GitHub release 检查
 
+v3.18.0 (2026.06.25 老大拍 "smr quota recover/status 走 Admin UI 不写 CLI"):
+- 配额耗尽检测 + 长 SKIP (老大拍 UI 路线, 不写 smr CLI)
+- 新增 ModelHealth 字段:
+  * quota_skip_until: float (配额耗尽导致的长 SKIP 到期时间戳)
+  * quota_type: str (daily/weekly/monthly/token_plan/balance, 空字符串 = 非配额 skip)
+- engine.py classify_error (HTTP code → retry/disable/rate_limit 映射):
+  * 新增 quota_exhausted: bool 字段 (默认 False)
+  * 新增 quota_type: str 字段 (默认空, 命中配额关键词时填充)
+  * 429 命中配额关键词 (daily/monthly/weekly/billing/充值/insufficient/balance/plan/套餐) → 配额耗尽
+  * 配额类型映射 (retry_after): daily=1h / weekly=7d / monthly=30d / token_plan=24h / balance=24h
+- model_health.py record_failure 新增 quota_exhausted / quota_type 参数:
+  * 配额耗尽时设 quota_skip_until = now + quota_duration (不受普通 cooldown 退避影响)
+  * 同时设 skip_until = quota_skip_until, 确保路由跳过
+  * 标记 state=SKIP, last_probe_error="quota_exhausted(<type>)"
+- admin_api.py 3 新端点:
+  * GET  /v1/admin/quota/status            → 所有 model 配额状态 (path/quota_type/skip_until/remaining)
+  * POST /v1/admin/quota/recover/{path:path} → 手动清单个 model 的配额 skip (续费后场景)
+  * 增强 POST /v1/admin/provider-health/re-enable/{name} 加 clear_quota 参数 (默认 true)
+- 设计: 配额耗尽 = 长 SKIP (避免每次 cooldown 到期后 429 反复重试), admin UI 续费后一键清
+- 配套 admin_ui.py: 新增 🪫 配额状态卡片 + 续费后一键清按钮
+
+v3.17.0 (2026.06.24 老大拍 "API 调用统一的模型名, SMR 内部路由决定实际模型"):
+- 新增 model alias 机制 (统一路由名称, client 不关心实际 provider/model)
+- config.py:
+  * DEFAULT_MODEL_ALIASES (默认 6 个 alias):
+    - auto: 走 modality 自动路由
+    - model-router / router / best: strategy=best_quality (quality + capability 综合分)
+    - cheap: strategy=free_only (只选免费模型, openrouter :free 后缀 + pricing=0)
+    - fast: strategy=lowest_latency (按 EWMA 延迟升序)
+  * get_model_aliases() — 合并默认值 + 用户覆盖 (alias_of chain)
+  * set_model_alias(name, cfg) — admin UI 增删改
+- engine.py:
+  * _collect_candidate_models 加 alias 解析 (优先级最高)
+  * _resolve_alias(name) — alias 名 → routing 配置
+  * _apply_alias_strategy(cfg, modalities) — 按 strategy 过滤 + 排序 model
+    策略: best_quality / free_only / lowest_latency / modality_auto / random
+  * _is_provider_enabled / _filter_free_models 辅助方法
+  * 自动排除 disabled provider (跟 v3.16.0 provider 健康度检测集成)
+  * 自动排除 alias_cfg.exclude_providers (默认 model-router 排除 openrouter 因为 89% fail)
+- admin_api.py 3 新端点:
+  * GET    /v1/admin/model-aliases                 → 列出所有 alias
+  * PUT    /v1/admin/model-aliases/{name}          → 设置/修改 alias
+  * DELETE /v1/admin/model-aliases/{name}          → 删除 alias (恢复默认)
+- 设计: alias 机制让 client 用统一名 (e.g. model-router) → SMR 内部按 routing 策略选最优
+
+v3.16.0 (2026.06.24 老大拍 "provider 全 SKIP 持续 1 周 → 自动禁用 + 加原因"):
+- 新增 ModelHealth 字段 `first_skip_at` (首次进入 SKIP 时间戳, provider 级禁用判定用)
+- record_failure / _on_probe_result: 进入 SKIP 时记录 first_skip_at (续期不变)
+- record_success: 离开 SKIP 时清 first_skip_at (重新计时)
+- 新增 DEFAULT_CONFIG 字段:
+  * provider_disable_threshold_seconds = 604800 (7 天)
+  * provider_check_min_models = 3 (避免 1 model provider 误判)
+  * provider_check_interval_seconds = 600 (后台每 10min 扫 1 次)
+  * provider_check_enabled = True (全局开关)
+- 新方法 ModelHealthManager.check_provider_disable_candidates(registry)
+  条件: provider enabled + ≥ N model + 全部 SKIP + 最早 first_skip_at 到 now ≥ threshold
+- 新方法 ModelHealthManager.get_provider_health_summary(registry) (admin UI 用)
+- 新方法 ModelHealthManager.set_provider_disable_callback(func) (app.py 注入)
+- 新 _background_loop 段: 每 provider_check_interval_seconds 跑 _scan_and_disable_providers
+- config.py 新方法:
+  * disable_provider(name, reason) — 设 enabled=False + disabled_at + disabled_reason (持久化)
+  * enable_provider(name) — 清 disabled metadata
+  * get_provider_disabled_meta(name) — admin UI 用
+- admin_api.py 3 新端点:
+  * GET  /v1/admin/provider-health              → 所有 provider 健康度汇总
+  * POST /v1/admin/provider-health/re-enable/{name} → 手动 re-enable + 清该 provider 所有 model health
+  * POST /v1/admin/provider-health/check-now   → 强制扫描 + 立即禁用
+- app.py: 注入 _provider_disable_scan callback (每 10min 跑 1 次, 调 config.disable_provider)
+- 设计: model_health 不直接 import config (避免循环依赖), 通过 callback 模式解耦
+
+v3.15.0 (2026.06.24 老大拍 "添加模型健康度指标 + 跳过非健康 + 降低路由延迟"):
+- 新模块 model_health.py — ModelHealthManager (全局单例, 状态机 + 滚动窗口 + EWMA)
+- 健康度指标 5 个: consecutive_fails / rolling_success_rate (窗口 100) / ewma_latency_ms / last_success_at / last_fail_at
+- 状态机: HEALTHY / DEGRADED / SKIP / HALF_OPEN (circuit breaker pattern)
+- 跳过策略 (路由时):
+  * consecutive_fails >= 3 → SKIP 60s (初始 cooldown)
+  * rolling_success_rate < 30% (sample ≥ 10) → SKIP 300s
+  * ewma_latency_ms > 60000 → SKIP 60s
+- 健康度恢复检测 (老大 6/24 钦定):
+  * SKIP 到期 → HALF_OPEN (不等真实流量)
+  * background checker 每 30s probe (HEAD base_url/v1/models, 不消耗 token 配额)
+  * probe 成功 → HEALTHY (重置 consecutive_fails, cooldown 还原 60s)
+  * probe 失败 → 重新 SKIP 指数退避 (60s → 120s → 240s → 300s cap)
+- engine 集成 (engine.py):
+  * pick_chain() 收集候选后调 _filter_by_health() 跳过 SKIP + 给 DEGRADED 加 penalty
+  * record_success/failure 联动 model_health.record_*(path, latency_ms, error)
+- admin API 4 端点 (admin_api.py):
+  * GET  /v1/admin/model-health                  → 所有 model 健康度 + summary
+  * POST /v1/admin/model-health/probe/{path}     → 强制 probe 单个 model
+  * POST /v1/admin/model-health/probe-all        → 触发批量 probe
+  * POST /v1/admin/model-health/reset/{path}     → 重置单 model (admin 主动恢复)
+- admin UI (admin_ui.py):
+  * 模型列表加 "🏥 健康度" 列 (4 色 badge: 绿/黄/红/蓝 + tooltip 显示指标)
+  * toolbar 上方 summary bar (4 chip: 健康/降级/跳过/探测中 + 立即探测按钮)
+- 持久化: state/model_health.json (类似 penalty_state.json)
+- 设计参考: Hystrix / Resilience4j circuit breaker half-open state
+- 降延迟效果: 路由前 SKIP 跳过 + DEGRADED 降权, 避免 89% fail 那种 model 反复进入候选链
+
+v3.14.0 (2026.06.24 老大拍 自主 review admin UI 优化):
+- 模型列表 UI/UX 全面改版: 多维筛选 + 实时搜索 + 4 字段排序
+  * 🔍 搜索框: 模糊匹配 model id / provider (实时, 无延迟)
+  * 🏷️ Provider 多选 chip: 动态生成 (从 data 提取, 实时数量)
+  * 📂 分类 chip 保留: text-only/multimodal/image-gen/video-gen/audio-gen/embedding
+  * ⇅ 排序: 能力分/上下文/模型名/价格 (4 字段 × 升/降序 = 8 种排序)
+  * ↺ 一键重置: 清空所有筛选 + 排序恢复默认
+- 头部计数智能化: "共 10 个" / "匹配 3 / 10 · 第 1/2 页"
+- 改进空状态: emoji + 标题 + 描述 + "清空筛选" 按钮 (无匹配时)
+- 重构去重: 抽 getFilteredSortedModels() + getSortValue() 公共函数
+  (修复 v3.6.0 changePageSize 重复渲染表格 HTML bug)
+- PAGE_SIZE 改 const → let 支持每页大小切换
+- renderModels 支持无参调用 (用 lastModelsData)
+- Provider filter chip 风格统一 (跟 wizard 一致)
+
+v3.13.0 (2026.06.22 老大拍 SMR v3.13.0 = R55 12 累计 完整理完完善善):
+- R55 12 累计 BUG 修 (SMR build 12 次踩 5 大坑)
+  1. `| tail`/`| tee` 掩盖 build exit → 用 `bash -c 'docker build ... 2>&1; echo "BUILD_EXIT=$?" >> log'`
+  2. background=true 跑 echo 字符串假完成 → 真 echo -c 看 build output
+  3. 报告"完成"不看 log 完整 → 5b 主动 ls 必看 `tail -30 /tmp/log` + `BUILD_EXIT=`
+  4. 擅自动 docker-compose → 老大批准前不擅动 (R10 边界)
+  5. down 之前不验真 image tag → SMR down 之前必 `docker images | grep supermodel`
+
 v3.11.0 (2026.06.21 v0.9+ v1.0 易经算法集成):
 - 3 蒸馏精华赋能 SMR 核心路由: 体 (后天八卦 8 卦 dashboard) + 用 (先天八卦 1-9 数) + 时 (12 时辰火候)
 - 5 provider 卦位映射 (config.yaml v0_9_integration.provider_trigram):
@@ -110,8 +231,8 @@ from typing import Optional
 LOG = logging.getLogger("version")
 
 # 当前版本 (跟随 release tag)
-VERSION = "3.13.0"
-BUILD_DATE = "2026-06-22"
+VERSION = "3.18.0"
+BUILD_DATE = "2026-06-25"
 
 GITHUB_REPO = "IGhostHuang/supermodel_router"  # 默认值, 可被 config.version_check.repo 覆盖
 RELEASE_CHECK_INTERVAL = 3600  # 1 小时检查一次

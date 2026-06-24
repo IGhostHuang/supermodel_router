@@ -10,7 +10,7 @@ import os
 import threading
 from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import AsyncGenerator, Dict, List, Optional
+from typing import Any, AsyncGenerator, Dict, List, Optional
 
 import httpx
 
@@ -110,29 +110,52 @@ class CandidateResult:
 def classify_error(http_code: int, body_text: str = "") -> dict:
     body_lower = body_text.lower() if body_text else ""
     if http_code == 400:
-        return {"retryable": True, "disable_model": False, "rate_limit": False, "retry_after": 0}
+        return {"retryable": True, "disable_model": False, "rate_limit": False, "retry_after": 0, "quota_exhausted": False, "quota_type": ""}
     elif http_code == 401:
-        return {"retryable": False, "disable_model": True, "rate_limit": False, "retry_after": 0}
+        return {"retryable": False, "disable_model": True, "rate_limit": False, "retry_after": 0, "quota_exhausted": False, "quota_type": ""}
     elif http_code == 403:
-        return {"retryable": True, "disable_model": False, "rate_limit": False, "retry_after": 0}
+        return {"retryable": True, "disable_model": False, "rate_limit": False, "retry_after": 0, "quota_exhausted": False, "quota_type": ""}
     elif http_code == 404:
-        return {"retryable": False, "disable_model": True, "rate_limit": False, "retry_after": 0}
+        return {"retryable": False, "disable_model": True, "rate_limit": False, "retry_after": 0, "quota_exhausted": False, "quota_type": ""}
     elif http_code == 408:
-        return {"retryable": True, "disable_model": False, "rate_limit": False, "retry_after": 0}
+        return {"retryable": True, "disable_model": False, "rate_limit": False, "retry_after": 0, "quota_exhausted": False, "quota_type": ""}
     elif http_code == 410:
-        return {"retryable": False, "disable_model": True, "rate_limit": False, "retry_after": 0}
+        return {"retryable": False, "disable_model": True, "rate_limit": False, "retry_after": 0, "quota_exhausted": False, "quota_type": ""}
     elif http_code == 422:
-        return {"retryable": True, "disable_model": False, "rate_limit": False, "retry_after": 0}
+        return {"retryable": True, "disable_model": False, "rate_limit": False, "retry_after": 0, "quota_exhausted": False, "quota_type": ""}
     elif http_code == 429:
         ra = 120
-        if "today" in body_lower or "daily" in body_lower or "今日" in body_lower:
+        quota_type = ""
+        quota_exhausted = False
+        # 日限额 → skip 1h
+        if "today" in body_lower or "daily" in body_lower or "今日" in body_lower or "日额度" in body_lower:
             ra = 3600
-        if "monthly" in body_lower or "billing" in body_lower or "充值" in body_lower:
+            quota_type = "daily"
+            quota_exhausted = True
+        # 周限额 → skip 7 天
+        if "weekly" in body_lower or "week" in body_lower or "周" in body_lower:
+            ra = 604800
+            quota_type = "weekly"
+            quota_exhausted = True
+        # 月限额 → skip 30 天
+        if "monthly" in body_lower or "billing" in body_lower or "充值" in body_lower or "月额度" in body_lower or "month" in body_lower:
+            ra = 2592000
+            quota_type = "monthly"
+            quota_exhausted = True
+        # 套餐限额 (TokenPlan) → skip 24h
+        if "tokenplan" in body_lower or "套餐" in body_lower or "plan" in body_lower:
             ra = 86400
-        return {"retryable": True, "disable_model": False, "rate_limit": True, "retry_after": ra}
+            quota_type = "token_plan"
+            quota_exhausted = True
+        # 账户余额不足 → skip 24h
+        if "balance" in body_lower or "余额" in body_lower or "insufficient" in body_lower:
+            ra = 86400
+            quota_type = "balance"
+            quota_exhausted = True
+        return {"retryable": True, "disable_model": False, "rate_limit": True, "retry_after": ra, "quota_exhausted": quota_exhausted, "quota_type": quota_type}
     elif http_code >= 500:
-        return {"retryable": True, "disable_model": False, "rate_limit": False, "retry_after": 0}
-    return {"retryable": False, "disable_model": False, "rate_limit": False, "retry_after": 0}
+        return {"retryable": True, "disable_model": False, "rate_limit": False, "retry_after": 0, "quota_exhausted": False, "quota_type": ""}
+    return {"retryable": False, "disable_model": False, "rate_limit": False, "retry_after": 0, "quota_exhausted": False, "quota_type": ""}
 
 
 # ── 评分 ──────────────────────────────────────────────────
@@ -182,6 +205,8 @@ class RouteEngine:
 
         # 模型级错误计数
         self._model_fails: dict[str, int] = {}
+        # v3.15.0: model health manager (由 app.py 在启动时注入, None = 不启用)
+        self.model_health: Optional[Any] = None
         self._disabled_models: set[str] = set()
 
         # 模态轮询指针: modality → index
@@ -300,7 +325,11 @@ class RouteEngine:
                                           groups=groups or {},
                                           group_weights=group_weights or {})
 
-        chain: list[CandidateResult] = []
+        # v3.15.0: 健康度过滤 — 跳过 SKIP 模型, DEGRADED 降权
+        if self.model_health is not None:
+            ordered = self._filter_by_health(ordered)
+
+        chain: list[CandidateResult] = []  # type: ignore[name-defined]  # noqa
         seen_keys: set[tuple[str, str, int]] = set()
         for score, m, penalty, path in ordered:
             ps = self.registry._providers.get(m.provider)
@@ -399,13 +428,25 @@ class RouteEngine:
 
     def _collect_candidate_models(self, requested_model: str,
                                    preferred_modalities: list[str] | None) -> list:
-        """收集候选 model: auto / provider/model / 模糊匹配 / 全部"""
+        """收集候选 model: alias / auto / provider/model / 模糊匹配 / 全部
+
+        v3.17.0: 新增 alias 机制 (老大原话 "API 调用统一的模型名, SMR 内部路由决定实际模型")
+        """
+        # 0) v3.17.0: alias 解析 (优先级最高 — 'model-router' / 'cheap' / 'fast' 等)
+        alias_cfg = self._resolve_alias(requested_model)
+        if alias_cfg:
+            models = self._apply_alias_strategy(alias_cfg, preferred_modalities)
+            LOG.info("engine: alias '%s' resolved to %d models (strategy=%s)",
+                     requested_model, len(models), alias_cfg.get("strategy"))
+            return models
+
+        # 1) auto / 空 model
         if not requested_model or requested_model.strip() in ("auto", ""):
             if preferred_modalities and self._get_modality_auto_routing():
                 return self.registry.get_models_by_modality(preferred_modalities[0])
             return self.registry.get_models()
 
-        # 精确匹配 (provider/model)
+        # 2) 精确匹配 (provider/model)
         if "/" in requested_model:
             resolved = self.registry.resolve(requested_model)
             if resolved:
@@ -415,16 +456,114 @@ class RouteEngine:
                     if m.provider == pname and m.id == mid:
                         return [m]
 
-        # 模糊匹配
+        # 3) 模糊匹配
         models = self.registry.get_models()
         matches = [m for m in models if requested_model.lower() in m.id.lower()]
         if matches:
             return matches
 
-        # fallback: 按 modality
+        # 4) fallback: 按 modality
         if preferred_modalities and self._get_modality_auto_routing():
             return self.registry.get_models_by_modality(preferred_modalities[0])
         return models
+
+    def _resolve_alias(self, requested_model: str) -> dict | None:
+        """v3.17.0: alias 解析 — 把统一 model 名 ('model-router' 等) 转成 routing 配置"""
+        if not requested_model:
+            return None
+        aliases = self.cfg.get_model_aliases()
+        return aliases.get(requested_model)
+
+    def _apply_alias_strategy(self, alias_cfg: dict,
+                                preferred_modalities: list[str] | None) -> list:
+        """v3.17.0: 按 alias.strategy 过滤 + 排序 model 列表
+
+        返回排序后的 model 列表 (best 排第一, SMR pick_chain 按此链切链)
+        """
+        models = self.registry.get_models()
+        # modality 过滤
+        if preferred_modalities:
+            models = [m for m in models if m.modality in preferred_modalities]
+        elif alias_cfg.get("modality"):
+            models = [m for m in models if m.modality == alias_cfg["modality"]]
+        # capability 过滤
+        min_cap = alias_cfg.get("min_capability_score", 0)
+        if min_cap > 0:
+            models = [m for m in models if (m.capability_score or 0) >= min_cap]
+        # exclude providers
+        excl = alias_cfg.get("exclude_providers", []) or []
+        if excl:
+            models = [m for m in models if m.provider not in excl]
+        # 排除 disabled provider (跟 registry._providers.enabled 同步)
+        models = [m for m in models if self._is_provider_enabled(m.provider)]
+        # 按 strategy 排序
+        strategy = alias_cfg.get("strategy", "best_quality")
+        if strategy == "best_quality":
+            # 综合: quality_score 优先, 然后 capability_score, 排除 latency 高的
+            prefer_low_latency = alias_cfg.get("prefer_low_latency", True)
+            models.sort(key=lambda m: (
+                -(m.quality_score or 0),                  # 1. quality_score 高
+                -(m.capability_score or 0),                # 2. capability 高
+                -(m.speed_score or 0) if prefer_low_latency else 0,  # 3. 速度快
+                m.id                                       # 4. id 稳定排序
+            ))
+        elif strategy == "free_only":
+            # 只 free 模型 (openrouter :free 后缀 / extra.pricing == "0" / provider 默认 free) + 按 quality 排序
+            models = [m for m in self._filter_free_models(models)]
+            models.sort(key=lambda m: -(m.quality_score or 0))
+        elif strategy == "lowest_latency":
+            # 按 ewma_latency 升序 (从 engine stats 取 — ProviderStats 是 dataclass, 用 getattr)
+            stats = self._get_all_stats()
+            def _lat(m):
+                ps = stats.get(m.provider)
+                if ps is None:
+                    return 99999.0
+                return float(getattr(ps, "ewma_latency", 99999.0) or 99999.0)
+            models.sort(key=_lat)
+            max_lat = alias_cfg.get("max_latency_ms", 99999.0) * 1000
+            models = [m for m in models if _lat(m) <= max_lat or _lat(m) >= 99999.0]  # 未调用过的 (99999) 保留
+        elif strategy == "modality_auto":
+            pass
+        elif strategy == "random":
+            import random as _r
+            _r.shuffle(models)
+        return models
+
+    def _is_provider_enabled(self, provider_name: str) -> bool:
+        """v3.17.0: 检查 provider 是否 enabled (跟 registry._providers 同步)"""
+        ps = self.registry._providers.get(provider_name)
+        return bool(getattr(ps, "enabled", True)) if ps else False
+
+    def _filter_free_models(self, models: list) -> list:
+        """v3.17.0: 过滤 free 模型 (openrouter :free 后缀 / pricing="0" / provider 标记)"""
+        FREE_PROVIDERS = {"openrouter", "nvidia", "modelscope"}  # 已知默认 free 的 provider
+        FREE_SUFFIXES = (":free", "/free")
+        out = []
+        for m in models:
+            mid = m.id.lower()
+            # openrouter 格式: "xxx:free"
+            if any(mid.endswith(s) for s in FREE_SUFFIXES):
+                out.append(m)
+                continue
+            # extra.pricing 字段 ("0" = free, openrouter 标准)
+            pricing = (m.extra or {}).get("pricing", {}) if hasattr(m, "extra") else {}
+            if isinstance(pricing, dict):
+                prompt_p = str(pricing.get("prompt", "1"))
+                completion_p = str(pricing.get("completion", "1"))
+                if prompt_p == "0" and completion_p == "0":
+                    out.append(m)
+                    continue
+            # provider 默认 free (e.g. NVIDIA, 魔塔免费模型)
+            if m.provider in FREE_PROVIDERS and ":free" not in mid:
+                # 大部分 NVIDIA 模型免费 (通过 NVIDIA NIM API), 但有些收费
+                # 用 tags 辅助判断
+                if "free" in (m.tags or []) or "preview" in (m.tags or []):
+                    out.append(m)
+        return out
+
+    def _get_all_stats(self) -> dict:
+        """返所有 provider stats (alias strategy=lowest_latency 用)"""
+        return dict(self._stats)
 
     def _build_result(self, pname, base_url, key, model_id, full_path,
                       score=0.0, modality=TEXT_ONLY):
@@ -530,6 +669,13 @@ class RouteEngine:
 
         self._persist_stats()
 
+        # v3.15.0: 联动 model_health (per-model 维度, 比 provider 维度更细)
+        if self.model_health is not None:
+            try:
+                self.model_health.record_success(f"{provider}", latency_ms=latency * 1000)
+            except Exception as e:
+                LOG.warning("model_health.record_success failed: %s", e)
+
     def record_failure(self, provider: str, model_id: str = "", http_code: int = 0, body_text: str = ""):
         self.registry.mark_fail(provider)
         stats = self._get_stats(provider)
@@ -566,7 +712,53 @@ class RouteEngine:
 
         self._persist_stats()
 
+        # v3.15.0: 联动 model_health
+        if self.model_health is not None and model_id:
+            try:
+                err_summary = body_text[:80] if body_text else f"http={http_code}"
+                # v3.18.0: 配额耗尽 → 传 quota_type 给 model_health
+                quota_exhausted = False
+                quota_type = ""
+                if http_code > 0:
+                    cls = classify_error(http_code, body_text)
+                    quota_exhausted = cls.get("quota_exhausted", False)
+                    quota_type = cls.get("quota_type", "")
+                self.model_health.record_failure(
+                    f"{provider}/{model_id}",
+                    latency_ms=0.0,
+                    error=err_summary,
+                    quota_exhausted=quota_exhausted,
+                    quota_type=quota_type,
+                )
+            except Exception as e:
+                LOG.warning("model_health.record_failure failed: %s", e)
+
     # ── v4: penalty 状态 + 周期复测 ─────────────────────
+
+    # v3.15.0: model health filter helper
+    def _filter_by_health(self, ordered: list) -> list:
+        """按 model_health 过滤候选: SKIP 跳过, DEGRADED 降权
+
+        ordered: List[(combined_score, ModelInfo, penalty, path)]
+        返回: 过滤 + 降权后的列表
+        """
+        if self.model_health is None:
+            return ordered
+        filtered = []
+        skipped = []
+        for score, m, penalty, path in ordered:
+            if self.model_health.should_skip(path):
+                skipped.append(path)
+                continue
+            mult = self.model_health.get_penalty_multiplier(path)
+            if mult < 1.0:
+                # DEGRADED: 降权 score + 累加 penalty
+                score = score * mult
+                penalty = min(0.9, penalty + (1 - mult) * 0.5)
+            filtered.append((score, m, penalty, path))
+        if skipped:
+            LOG.info("engine: model_health filtered %d unhealthy: %s", len(skipped), skipped[:5])
+        return filtered
 
     def get_model_penalty(self) -> dict:
         """返回所有 model penalty 状态 (admin 用)"""
