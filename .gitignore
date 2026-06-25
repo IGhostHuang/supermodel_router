@@ -29,3 +29,6 @@ engine_stats.json
 model_rules_state.json
 penalty_state.json
 public_keys_state.json
+
+# Session notes (含 key audit 痕迹, 不推)
+hot-cache/

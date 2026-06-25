@@ -58,7 +58,6 @@ providers:
     base_url: https://openrouter.ai/api/v1
     api_keys:
     - <OPENROUTER_API_KEY_PLACEHOLDER>
-    - <OPENROUTER_API_KEY_PLACEHOLDER>
     model_rules:
       mode: pattern
       pattern: free

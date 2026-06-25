@@ -173,7 +173,75 @@ async def lifespan(app: FastAPI):
     init_model_metadata_store(state_dir=state_dir)
     LOG.info("ModelMetadataStore v3.10.0 initialized (state_dir=%s)", state_dir)
 
+    # v3.15.0: ModelHealthManager — 健康度管理 + 背景恢复检测 (老大 2026-06-24 钦定)
+    from .model_health import init_model_health_manager, get_model_health_manager
+    mh_cfg = config.data.get("model_health", {}) or {}
+    init_model_health_manager(state_dir=state_dir, config=mh_cfg)
+    mhm = get_model_health_manager()
+
+    # 注入 engine (pick_chain 路由前 filter, record_* 联动)
+    engine.model_health = mhm
+
+    # probe 函数: 用 HEAD /models 验证 provider 端点可达 (不消耗 token 配额)
+    async def _probe_model(path: str) -> bool:
+        """轻量 probe: HEAD base_url/v1/models (不真发 key)
+
+        返回: True = provider 端点活着 (200/401/403/404 都算 OK)
+              False = 端点不可达 / 网络错误 / 超时
+        """
+        try:
+            provider_name = path.split("/", 1)[0] if "/" in path else path
+            ps = registry._providers.get(provider_name)
+            if not ps:
+                return False
+            base_url = getattr(ps, "base_url", None) or ""
+            if not base_url:
+                return False
+            timeout = float(mhm.cfg["probe_timeout_seconds"])
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                r = await client.get(f"{base_url.rstrip('/')}/models", timeout=timeout)
+                # 200 = OK, 401/403 = provider 活着但 key 失效 (仍算 OK, 路由时再换 key), 5xx/network = fail
+                return r.status_code < 500
+        except Exception as e:
+            LOG.debug("probe_model %s failed: %s", path, e)
+            return False
+
+    mhm.set_probe_func(_probe_model)
+
+    # v3.16.0: provider 自动禁用 callback (后台每 10min 扫 1 次, 全 SKIP 持续 ≥ 7 天 → 禁用)
+    def _provider_disable_scan():
+        if not mhm:
+            return []
+        try:
+            candidates = mhm.check_provider_disable_candidates(registry)
+        except Exception as e:
+            LOG.warning("check_provider_disable_candidates failed: %s", e)
+            return []
+        disabled = []
+        for c in candidates:
+            try:
+                if config.disable_provider(c["provider"], c["reason"]):
+                    disabled.append(c["provider"])
+                    LOG.warning("model_health: provider auto-disabled: %s (reason=%s, duration=%.1fd)",
+                                c["provider"], c["reason"][:80], c["duration_seconds"] / 86400)
+            except Exception as e:
+                LOG.warning("disable_provider(%s) failed: %s", c["provider"], e)
+        return disabled
+
+    mhm.set_provider_disable_callback(_provider_disable_scan)
+
+    # 启动 background checker (loop 启动后才能 set_event)
+    loop = asyncio.get_running_loop()
+    mhm.start_background_checker(loop)
+    LOG.info("ModelHealthManager v3.15.0 initialized (state_dir=%s, skip_threshold=%d, probe_interval=%ds)",
+             state_dir, mhm.cfg["consecutive_fails_skip"], mhm.cfg["probe_interval_seconds"])
+
     yield
+    # 关闭 background checker
+    try:
+        mhm.stop_background_checker()
+    except Exception:
+        pass
     config.stop_watcher()
 
 

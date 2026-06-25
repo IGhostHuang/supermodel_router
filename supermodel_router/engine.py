@@ -127,9 +127,9 @@ def classify_error(http_code: int, body_text: str = "") -> dict:
         ra = 120
         quota_type = ""
         quota_exhausted = False
-        # 日限额 → skip 1h
+        # 日限额 → skip 24h (跟 model_health.quota_durations['daily']=86400 对齐, R65 伊芙发现)
         if "today" in body_lower or "daily" in body_lower or "今日" in body_lower or "日额度" in body_lower:
-            ra = 3600
+            ra = 86400
             quota_type = "daily"
             quota_exhausted = True
         # 周限额 → skip 7 天
