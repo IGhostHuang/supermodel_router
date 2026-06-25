@@ -149,6 +149,129 @@ class Config:
             LOG.info("Provider soft-removed (disabled): %s", name)
             return True
 
+    def disable_provider(self, name: str, reason: str = "", persist: bool = True) -> bool:
+        """v3.16.0: 自动/手动禁用 provider (带原因)
+
+        - 设 enabled=False
+        - 记录 disabled_at (时间戳) + disabled_reason (string)
+        - 持久化到 config.yaml (跟 enabled 一起保存)
+        - 触发 reload (registry rebuild)
+        """
+        import time as _time
+        with self._lock:
+            providers = self._data.get("providers", {})
+            if name not in providers:
+                return False
+            providers[name]["enabled"] = False
+            providers[name]["disabled_at"] = _time.time()
+            providers[name]["disabled_reason"] = reason or "auto-disabled by health check"
+            if persist:
+                self._save_yaml()
+            self._notify_change()
+            LOG.warning("Provider auto-disabled: %s (reason=%s)", name, providers[name]["disabled_reason"])
+            return True
+
+    def enable_provider(self, name: str, persist: bool = True) -> bool:
+        """v3.16.0: 重新启用 provider (清 disabled metadata)
+
+        - 设 enabled=True
+        - 删 disabled_at + disabled_reason
+        """
+        with self._lock:
+            providers = self._data.get("providers", {})
+            if name not in providers:
+                return False
+            providers[name]["enabled"] = True
+            providers[name].pop("disabled_at", None)
+            providers[name].pop("disabled_reason", None)
+            if persist:
+                self._save_yaml()
+            self._notify_change()
+            LOG.info("Provider re-enabled: %s", name)
+            return True
+
+    def get_provider_disabled_meta(self, name: str) -> dict:
+        """v3.16.0: 读 provider 禁用 metadata (admin UI 用)"""
+        with self._lock:
+            providers = self._data.get("providers", {})
+            pcfg = providers.get(name, {})
+            return {
+                "enabled": pcfg.get("enabled", True),
+                "disabled_at": pcfg.get("disabled_at"),
+                "disabled_reason": pcfg.get("disabled_reason"),
+            }
+
+    # ---- v3.17.0: model alias (统一路由名称) ----
+
+    DEFAULT_MODEL_ALIASES = {
+        # 老大原话 (6/24): "API 调用统一的模型名, SMR 内部路由决定实际模型"
+        # 6/24 改名: model-router → supermodel (我们有我们自己的特别, 不跟外部 model-router 项目重名)
+        "auto": {
+            "strategy": "modality_auto",   # 按 preferred_modalities 走 modality 路由
+            "description": "空 / auto → 走 modality 自动路由",
+        },
+        "supermodel": {
+            "strategy": "best_quality",     # 综合分最高的 model (capability + quality)
+            "modality": None,                # 不过滤 modality (可选)
+            "min_capability_score": 0,
+            "exclude_providers": ["openrouter"],   # 排除已知高延迟 provider (老大实测 89% fail)
+            "prefer_low_latency": False,
+            "description": "SMR 智能路由: 选 quality_score 最高的可用 model (SMR 独家别名)",
+        },
+        "model-router": {                        # 旧名, 兼容老调用方 (alias_of supermodel)
+            "alias_of": "supermodel",
+            "description": "旧名 (向后兼容, 推荐用 supermodel)",
+        },
+        "router": {                              # 短写
+            "alias_of": "supermodel",
+            "description": "supermodel 简写",
+        },
+        "best": {
+            "alias_of": "supermodel",
+            "description": "supermodel 别名",
+        },
+        "cheap": {
+            "strategy": "free_only",         # 只选 free 模型
+            "description": "只选免费模型 (pricing=free 或 limited_free)",
+        },
+        "fast": {
+            "strategy": "lowest_latency",    # 按 EWMA latency 升序
+            "max_latency_ms": 10000,
+            "description": "选 EWMA 延迟最低的模型 (< 10s)",
+        },
+    }
+
+    def get_model_aliases(self) -> dict:
+        """v3.17.0: 读所有 model aliases (config 覆盖 + 默认值合并)"""
+        with self._lock:
+            user_aliases = self._data.get("model_aliases", {}) or {}
+        # 合并默认值 (用户覆盖优先)
+        merged = dict(self.DEFAULT_MODEL_ALIASES)
+        for name, cfg in user_aliases.items():
+            if isinstance(cfg, dict) and "alias_of" in cfg:
+                # alias 别名 (chain), resolve 到实际
+                target = cfg["alias_of"]
+                if target in merged:
+                    merged[name] = dict(merged[target])
+                    merged[name]["description"] = cfg.get("description", f"alias of '{target}'")
+                else:
+                    merged[name] = cfg
+            else:
+                merged[name] = cfg
+        return merged
+
+    def set_model_alias(self, name: str, cfg: dict, persist: bool = True) -> bool:
+        """v3.17.0: 设置/修改 model alias (admin UI 用)"""
+        with self._lock:
+            if "model_aliases" not in self._data or self._data["model_aliases"] is None:
+                self._data["model_aliases"] = {}
+            self._data["model_aliases"][name] = cfg
+            if persist:
+                self._save_yaml()
+            self._notify_change()
+            LOG.info("model alias set: %s -> %s", name, cfg)
+            return True
+
     def hard_remove_provider(self, name: str, persist: bool = True) -> bool:
         """v3.6: 真删 provider, 只有 enabled=False 才允许"""
         with self._lock:

@@ -1,59 +1,51 @@
 version: '3.8'
-
 services:
   supermodel_router:
     build:
       context: .
       dockerfile: Dockerfile
-    # R56 实战坑修法 (老大 6/22 12:50 钦定): 本地 docker 用真 key, push 时 sync_keys.py 替换
-    # Bug 1 修法: 改 v3.10.0 → v3.11.0, 跟 git HEAD ea65806 一致 (v3.11.0 完整后端 + UI)
-    image: supermodel_router:v3.13.0
+    image: supermodel_router:v3.19.0
     container_name: supermodel_router
     restart: unless-stopped
-    # R55 实战坑 9 次累计修法 (老大 6/22 13:02 拍 "继续打磨"): 撤回 host mode
-    # host mode + 清华镜像还是 DNS 失败 (12:58-13:00 实战)
-    # 改用 dns: 字段 (bridge 模式, 容器内用 8.8.8.8 解析)
     network_mode: bridge
     dns:
-      - 8.8.8.8
-      - 114.114.114.114
+    - 8.8.8.8
+    - 114.114.114.114
     ports:
-      # 2026-06-18 23:55 升级: v3.10.0 同端口升级 v3.9.0 → v3.10.0, 客户端 0 改动
-      - "6473:6473"
+    - 6473:6473
     volumes:
-      # 配置 (entrypoint 需 :rw 写入占位符渲染的真 key, 改文件热重载生效, 无需重启容器)
-      # 注意: 必须 :rw, 不然 entrypoint 渲染 secret 时 write 失败 (ro 会 silent skip)
-      # v3.10.1 修 BUG-002: 显式 :rw 避免被误改 :ro
-      - ./config.yaml:/app/config.yaml:rw
-      # v3.11 集成 v0.9: admin UI 8 卦 dashboard 路由 (admin_ui.py 改动, 热重载)
-      - ./supermodel_router/admin_ui.py:/app/supermodel_router/admin_ui.py:ro
-      # v3.11 集成 v0.9: 8 卦 dashboard 静态 HTML
-      - ./supermodel_router/static/dashboard-9gong.html:/app/supermodel_router/static/dashboard-9gong.html:ro
-      # 💾 State 持久化 (老大拍 🅰️+💾 持久化优先)
-      # 容器重建/升级 = state 不丢
-      - ./state:/app/state
-      # 💾 配置/版本备份 (entrypoint 写 .backups/, 不进 image)
-      - ./.backups:/app/.backups
-      # 💾 Docker secrets (chmod 600, entrypoint 渲染真 key 到 config.yaml 占位符)
-      # 用法: mkdir -p secrets && echo -n "sk-..." > secrets/openrouter && chmod 600 secrets/openrouter
-      - ./secrets:/run/secrets:ro
-      # 可选: 日志持久化
-      - ./logs:/app/logs
+    - ./config.yaml:/app/config.yaml:rw
+    - ./supermodel_router/admin_ui.py:/app/supermodel_router/admin_ui.py:ro
+    - ./supermodel_router/version.py:/app/supermodel_router/version.py:ro
+    - ./supermodel_router/engine.py:/app/supermodel_router/engine.py:ro
+    - ./supermodel_router/admin_api.py:/app/supermodel_router/admin_api.py:ro
+    - ./supermodel_router/app.py:/app/supermodel_router/app.py:ro
+    - ./supermodel_router/model_health.py:/app/supermodel_router/model_health.py:ro
+    - ./supermodel_router/config.py:/app/supermodel_router/config.py:ro
+    - ./supermodel_router/static/dashboard-9gong.html:/app/supermodel_router/static/dashboard-9gong.html:ro
+    - ./state:/app/state
+    - ./.backups:/app/.backups
+    - ./secrets:/run/secrets:ro
+    - ./logs:/app/logs
     environment:
-      - LOG_LEVEL=INFO
-      - HOST=0.0.0.0
-      - PORT=6473
-      - STATE_DIR=/app/state
-      - DATA_DIR=/app/data
-      - CONFIG_FILE=/app/config.yaml
+    - LOG_LEVEL=INFO
+    - HOST=0.0.0.0
+    - PORT=6473
+    - STATE_DIR=/app/state
+    - DATA_DIR=/app/data
+    - CONFIG_FILE=/app/config.yaml
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:6473/v1/health', timeout=3) or exit(1)"]
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://localhost:6473/v1/health', timeout=3) or exit(1)
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 15s  # v3.10.0: 留 15s 给 entrypoint seed state + render secrets
+      start_period: 15s
     logging:
-      driver: "json-file"
+      driver: json-file
       options:
-        max-size: "10m"
-        max-file: "3"
+        max-size: 10m
+        max-file: '3'
