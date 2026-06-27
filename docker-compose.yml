@@ -4,7 +4,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: supermodel_router:v3.19.0
+    image: supermodel_router:v3.20.0
     container_name: supermodel_router
     restart: unless-stopped
     network_mode: bridge
@@ -20,7 +20,17 @@ services:
     - ./supermodel_router/engine.py:/app/supermodel_router/engine.py:ro
     - ./supermodel_router/admin_api.py:/app/supermodel_router/admin_api.py:ro
     - ./supermodel_router/app.py:/app/supermodel_router/app.py:ro
+    - ./supermodel_router/free_models.py:/app/supermodel_router/free_models.py:ro
+    - ./supermodel_router/orchestrator.py:/app/supermodel_router/orchestrator.py:ro
+    - ./supermodel_router/middleware.py:/app/supermodel_router/middleware.py:ro
+    - ./supermodel_router/session_memory.py:/app/supermodel_router/session_memory.py:ro
+    - ./supermodel_router/classifier.py:/app/supermodel_router/classifier.py:ro
+    - ./supermodel_router/budget_router.py:/app/supermodel_router/budget_router.py:ro
     - ./supermodel_router/model_health.py:/app/supermodel_router/model_health.py:ro
+    - ./supermodel_router/loop_engine.py:/app/supermodel_router/loop_engine.py:ro
+    - ./supermodel_router/memory_bus.py:/app/supermodel_router/memory_bus.py:ro
+    - ./supermodel_router/scheduler.py:/app/supermodel_router/scheduler.py:ro
+    - ./supermodel_router/maker_checker.py:/app/supermodel_router/maker_checker.py:ro
     - ./supermodel_router/config.py:/app/supermodel_router/config.py:ro
     - ./supermodel_router/static/dashboard-9gong.html:/app/supermodel_router/static/dashboard-9gong.html:ro
     - ./state:/app/state

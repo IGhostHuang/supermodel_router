@@ -1,7 +1,12 @@
 """
 supermodel_router/version.py — 版本元数据 + GitHub release 检查
 
-v3.18.0 (2026.06.25 老大拍 "smr quota recover/status 走 Admin UI 不写 CLI"):
+v3.24.0 (2026.06.27 修 nvidia free 模型分类 bug):
+- classifier.py classify_pricing() nvidia MIXED_PROVIDERS 默认 free 不是 paid
+  (跟 PROVIDER_FREE_POLICY 统一, 之前 37 free / 84 paid → 现在 121 free / 0 paid)
+- docker-compose.yml 加 classifier.py RO mount (之前漏掉, 改 classifier 不生效)
+
+v3.23.0 (2026.06.25 老大拍 "smr quota recover/status 走 Admin UI 不写 CLI"):
 - 配额耗尽检测 + 长 SKIP (老大拍 UI 路线, 不写 smr CLI)
 - 新增 ModelHealth 字段:
   * quota_skip_until: float (配额耗尽导致的长 SKIP 到期时间戳)
@@ -240,8 +245,8 @@ from typing import Optional
 LOG = logging.getLogger("version")
 
 # 当前版本 (跟随 release tag)
-VERSION = "3.19.0"
-BUILD_DATE = "2026-06-25"
+VERSION = "3.24.0"
+BUILD_DATE = "2026-06-27"
 
 GITHUB_REPO = "IGhostHuang/supermodel_router"  # 默认值, 可被 config.version_check.repo 覆盖
 RELEASE_CHECK_INTERVAL = 3600  # 1 小时检查一次
