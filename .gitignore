@@ -32,3 +32,9 @@ public_keys_state.json
 
 # Session notes (含 key audit 痕迹, 不推)
 hot-cache/
+secrets/
+.env
+
+# Backup files
+*.bak-*
+*.bak

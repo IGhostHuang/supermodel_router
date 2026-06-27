@@ -30,6 +30,8 @@ from .config import config
 from .context_bridge import ContextBridge  # v3.4.0
 from .version import VERSION as SMR_VERSION, BUILD_DATE as SMR_BUILD_DATE
 from .model_health import ModelHealth, get_model_health_manager, HealthState  # v3.15.0 + v3.16.0
+import json
+from pathlib import Path
 SMR_APP_TITLE = f"SuperModel Router v{SMR_VERSION}"
 
 LOG = logging.getLogger("admin_api")
@@ -37,19 +39,32 @@ router = APIRouter()
 
 registry: Any = None
 engine: Any = None
+app: Any = None  # v3.23.0: FastAPI app ref (for app-scoped state)
+state_dir: Any = None  # v3.23.0: state directory
 model_manager: Any = None
 # v3.4.0: ContextBridge 单例
 context_bridge: ContextBridge | None = None
+# v3.22.0: 周天循环系统引用
+_memory_bus: Any = None
+_loop_engine: Any = None
+_scheduler: Any = None
 _start_time = 0
 
 
-def init(app_registry, app_engine, app_model_manager, start_time, app_bridge: ContextBridge | None = None):
+def init(app_registry, app_engine, app_model_manager, start_time, app_bridge: ContextBridge | None = None,
+         memory_bus=None, loop_engine=None, scheduler=None, fastapi_app=None, app_state_dir=None):
     global registry, engine, model_manager, _start_time, context_bridge
+    global _memory_bus, _loop_engine, _scheduler, app, state_dir
     registry = app_registry
     engine = app_engine
+    app = fastapi_app
+    state_dir = app_state_dir or "/app/state"
     model_manager = app_model_manager
     _start_time = start_time
     context_bridge = app_bridge
+    _memory_bus = memory_bus
+    _loop_engine = loop_engine
+    _scheduler = scheduler
 
 
 def _pricing_display(pricing: str) -> str:
@@ -79,6 +94,10 @@ def _refresh_async(reg, tag: str = "manual", only: str | None = None):
 async def health():
     from .version import VERSION as CURRENT_VERSION, BUILD_DATE
     penalty_state = engine.get_model_penalty()
+    
+    # v3.23.0 (Codez #14): acceptance_rate 硬闸门指标
+    acceptance = _compute_acceptance_rate()
+    
     return JSONResponse({
         "status": "ok",
         "version": CURRENT_VERSION,
@@ -94,7 +113,69 @@ async def health():
                 key=lambda x: -x[1]
             )[:5]),
         },
+        "acceptance": acceptance,
     })
+
+
+def _compute_acceptance_rate() -> dict:
+    """v3.23.0 (Codez #14): 接受率指标
+    
+    定义:
+      - calls_total: 所有路由决策次数
+      - calls_accepted: 选中的 candidate 数 (链长)
+      - calls_failed: 调用失败的次数
+      - calls_succeeded: 调用成功的次数
+      - acceptance_rate: succeeded / total (整体)
+      - per_provider: 每个 provider 的成功率
+    """
+    try:
+        # 从 engine_stats.json 读所有 provider 的 stats
+        stats_path = Path(config.data.get("model_management", {}).get("state_dir", "/app/state")) / "engine_stats.json"
+        if not stats_path.exists():
+            return {"available": False, "reason": "engine_stats.json not found"}
+        
+        stats = json.loads(stats_path.read_text())
+        
+        total_calls = 0
+        total_success = 0
+        total_fail = 0
+        per_provider = {}
+        
+        for provider_name, p_stats in stats.items():
+            if not isinstance(p_stats, dict):
+                continue
+            tc = p_stats.get("total_calls", 0)
+            ts = p_stats.get("success_calls", 0)
+            tf = p_stats.get("fail_calls", 0)
+            total_calls += tc
+            total_success += ts
+            total_fail += tf
+            per_provider[provider_name] = {
+                "calls": tc,
+                "success": ts,
+                "fail": tf,
+                "rate": round(ts / tc, 4) if tc > 0 else None,
+            }
+        
+        overall_rate = round(total_success / total_calls, 4) if total_calls > 0 else None
+        
+        # Codez 警告: < 50% 就是在亏本
+        warning = None
+        if overall_rate is not None and overall_rate < 0.5 and total_calls > 10:
+            warning = f"acceptance_rate {overall_rate:.1%} < 50% threshold (Codez #14 硬闸门)"
+        
+        return {
+            "available": True,
+            "total_calls": total_calls,
+            "total_success": total_success,
+            "total_fail": total_fail,
+            "overall_rate": overall_rate,
+            "warning": warning,
+            "per_provider": per_provider,
+            "codez_threshold": 0.5,
+        }
+    except Exception as e:
+        return {"available": False, "reason": str(e)}
 
 
 @router.get("/v1/admin/modalities")
@@ -205,6 +286,127 @@ async def admin_refresh():
     return JSONResponse({
         "ok": True,
         "providers": registry.get_state(),
+    })
+
+
+# ── v3.23.0: L1 Free Resource Admin Endpoints (老大钦定重点 6/27) ──
+@router.get("/v1/admin/free-models")
+async def admin_free_models(modality: str | None = None):
+    """列出所有 free-eligible 模型 + 实时配额状态"""
+    fr = getattr(engine, "free_registry", None)
+    if fr is None:
+        return JSONResponse({"ok": False, "error": "FreeModelRegistry 未初始化"}, status_code=503)
+    models = fr.get_all(modality=modality)
+    return JSONResponse({
+        "ok": True,
+        "total": len(models),
+        "by_tier": fr.count_by_tier(),
+        "models": [
+            {
+                "path": m.full_path,
+                "tier": m.tier,
+                "state": m.state,
+                "quality": round(m.quality_score, 1),
+                "latency_ms": round(m.avg_latency_ms, 0),
+                "daily_used": m.daily_used,
+                "consecutive_429": m.consecutive_429,
+                "success/fail": f"{m.success_count}/{m.fail_count}",
+                "signals": m.detection_signals,
+            }
+            for m in models
+        ],
+    })
+
+
+@router.post("/v1/admin/free-models/refresh")
+async def admin_free_models_refresh():
+    """重新扫描所有 provider, 识别 free 模型"""
+    fr = getattr(engine, "free_registry", None)
+    if fr is None:
+        return JSONResponse({"ok": False, "error": "FreeModelRegistry 未初始化"}, status_code=503)
+    provider_models = {}
+    for pname, ps in registry._providers.items():
+        provider_models[pname] = [m.id for m in ps.models]
+    new_count = fr.refresh(models_by_provider=provider_models)
+    return JSONResponse({
+        "ok": True,
+        "newly_identified": new_count,
+        "total": fr.count(),
+        "summary": fr.export_summary(),
+    })
+
+
+@router.post("/v1/admin/free-models/reset-quota")
+async def admin_free_models_reset_quota():
+    """每日配额重置 (手动, 也可 cron 自动)"""
+    fr = getattr(engine, "free_registry", None)
+    if fr is None:
+        return JSONResponse({"ok": False, "error": "FreeModelRegistry 未初始化"}, status_code=503)
+    fr.reset_daily_quota()
+    return JSONResponse({"ok": True, "message": "已重置 daily quota"})
+
+
+@router.get("/v1/admin/budget/estimate")
+async def admin_budget_estimate(provider: str, model_id: str,
+                                est_input_tokens: int = 1000,
+                                est_output_tokens: int = 500):
+    """单模型 cost 估算"""
+    from .budget_router import CostTable
+    fr = getattr(engine, "free_registry", None)
+    ct = CostTable(free_paths=fr.get_all_paths() if fr else set())
+    est = ct.estimate(provider, model_id, est_input_tokens, est_output_tokens)
+    return JSONResponse({
+        "ok": True,
+        "estimate": {
+            "path": est.full_path,
+            "is_free": est.is_free,
+            "tier": est.tier,
+            "cost_per_1k_input": est.cost_per_1k_input,
+            "cost_per_1k_output": est.cost_per_1k_output,
+            "estimated_cost": est.estimate_cost(est_input_tokens, est_output_tokens),
+            "value_score": est.value_score(est_input_tokens, est_output_tokens),
+        }
+    })
+
+
+@router.post("/v1/admin/loop/v2-summary")
+async def admin_loop_v2_summary():
+    """v3.23.0 全部新组件健康度总览 (free/orchestrator/middleware/session_memory/budget)"""
+    fr = getattr(engine, "free_registry", None)
+    free_summary = fr.export_summary() if fr else None
+
+    from .session_memory import SessionMemoryStore
+    # 用 engine 持有的 (如果有); 否则新建
+    sm = getattr(app, "_session_memory", None)
+    if sm is None:
+        sm = SessionMemoryStore(state_dir=state_dir)
+        app._session_memory = sm
+
+    return JSONResponse({
+        "ok": True,
+        "version": "3.23.0",
+        "components": {
+            "L1_free_models": {
+                "initialized": fr is not None,
+                "summary": free_summary,
+            },
+            "L2_budget_router": {
+                "initialized": True,
+                "note": "CostTable + BudgetAwareRouter 内置",
+            },
+            "L3_orchestrator": {
+                "initialized": True,
+                "note": "TaskClassifier + PlanExecutor + 3 plan builders",
+            },
+            "L4_middleware": {
+                "initialized": True,
+                "note": "ContextCompressor + ContextSlicer + PromptRefiner",
+            },
+            "L5_session_memory": {
+                "initialized": True,
+                "stats": sm.stats(),
+            },
+        }
     })
 
 
@@ -2133,5 +2335,128 @@ async def admin_public_keys_reset_usage(name: str):
         public_key_manager._save_async()
         public_key_manager._flush()
     return JSONResponse({"ok": True, "reset": name})
+
+
+# ── v3.22.0: Admin API — LoopEngine 状态与控制 ──────────────────────────────
+@router.get("/v1/admin/loop/status")
+async def admin_loop_status():
+    """LoopEngine 当前状态: 运行 ticks / 内存 / 层统计"""
+    le: Any = _loop_engine
+    if le is None:
+        return JSONResponse({"initialized": False}, status_code=503)
+    mb: Any = _memory_bus
+    layer_stats: dict = {}
+    if mb is not None:
+        try:
+            layer_stats = {
+                layer: len(mb.get(layer)) for layer in ("objective", "warning", "cognitive")
+                if hasattr(mb, "get")
+            }
+        except Exception as e:
+            layer_stats = {"error": str(e)}
+    status: dict = {
+        "initialized": True,
+        "version": getattr(le, "version", "v3.22.0"),
+        "tick_interval": getattr(le, "tick_interval", 300),
+        "state_dir": getattr(le, "_state_dir", "."),
+        "tick_count": getattr(le, "_tick_count", 0),
+        "last_tick_at": getattr(le, "_last_tick_at", None),
+        "last_repair_at": getattr(le, "_last_repair_at", None),
+        "history_count": len(getattr(le, "_history", [])),
+        "layers": layer_stats,
+    }
+    return JSONResponse(status)
+
+
+@router.post("/v1/admin/loop/trigger")
+async def admin_loop_trigger():
+    """手动触发一次 LoopEngine tick (不影响定时节奏)"""
+    le: Any = _loop_engine
+    if le is None:
+        return JSONResponse({"error": "LoopEngine not initialized"}, status_code=503)
+    result: dict = await le.trigger()
+    return JSONResponse({"ok": True, "result": result})
+
+
+# ── v3.22.0: Admin API — 完整系统状态 (loop + memory + scheduler) ──────────
+@router.get("/v1/admin/system/full")
+async def admin_system_full(status_code=200):
+    """完整系统健康快照: Engine + Health + LoopEngine + MemoryBus"""
+    ok: list = []
+    warn: list = []
+
+    # Engine core
+    from .version import load_version_meta
+    try:
+        vm = load_version_meta()
+        ok.append(f"SMR v{vm['version']} ({vm['build_date']})")
+    except Exception:
+        ok.append("SMR (version unknown)")
+
+    # Model health
+    try:
+        mhm = engine.model_health if engine else None
+        if mhm:
+            hs = mhm.get_summary()
+            total: int = hs.get("total", 0)
+            if total > 0:
+                healthy_frac: float = hs.get("healthy", 0) / max(total, 1)
+                ok.append(f"health: {hs.get('healthy', 0)}/{total} healthy ({healthy_frac * 100:.0f}%)")
+                if hs.get("missing", 0) >= 1:
+                    warn.append(f"missing: {hs.get('missing', 0)}")
+            skip: int = hs.get("skip", 0) + hs.get("cooldown", 0)
+            if skip > 0:
+                warn.append(f"on-skip: {skip}")
+            if hs.get("fallback", 0) >= 1:
+                warn.append(f"on-fallback: {hs.get('fallback', 0)}")
+    except Exception as e:
+        warn.append(f"health error: {str(e)[:60]}")
+
+    # Loop engine
+    le: Any = _loop_engine
+    if le is None:
+        warn.append("loop_engine: not initialized")
+    else:
+        ok.append(f"loop_engine: v{le.version} (interval={le.tick_interval}s, ticks={le._tick_count})")
+
+    # Memory bus
+    mb: Any = _memory_bus
+    if mb is None:
+        warn.append("memory_bus: not initialized")
+    else:
+        counts: dict = {layer: len(mb[layer]) for layer in ("objective", "warning", "cognitive")}
+        ok.append(f"memory_bus: {counts['objective']}+{counts['warning']}+{counts['cognitive']} entries")
+
+    # Scheduler
+    sc: Any = _scheduler
+    if sc is None:
+        warn.append("scheduler: not initialized")
+    else:
+        ok.append(f"scheduler: v3.22.0")
+
+    version_str: str = ok[0] if ok else "SMR"
+    n_warn: int = len(warn)
+    summary: str = version_str + " · " + "  ".join(ok[1:])
+    if n_warn > 0:
+        summary += " · ⚠" + "  ".join(warn)
+    else:
+        summary += " · ALL_OK"
+
+    response: dict = {
+        "status": "healthy" if not warn else ("degraded" if n_warn < 3 else "warning"),
+        "summary": summary,
+        "ok": ok,
+        "warn": warn,
+        "loop_engine": {
+            "initialized": le is not None,
+            "tick_count": getattr(le, "_tick_count", 0) if le else 0,
+            "last_tick_at": getattr(le, "_last_tick_at", None) if le else None,
+            "last_repair_at": getattr(le, "_last_repair_at", None) if le else None,
+            "history": (le._history if isinstance(getattr(le, "_history", None), list) else []) if le else [],
+            "layers": {layer: len(getattr(mb, layer, [])) for layer in ("objective", "warning", "cognitive")} if mb else {},
+        },
+        "scheduler": {"initialized": sc is not None},
+    }
+    return JSONResponse(response)
 
 

@@ -1,0 +1,27 @@
+{
+  "groups": {
+    "qwen": {
+      "name": "qwen",
+      "patterns": [
+        "qwen"
+      ],
+      "description": "",
+      "enabled": true,
+      "created_at": 1782228624.6342385,
+      "updated_at": 1782228624.6342385,
+      "model_count": 0
+    },
+    "deepseek": {
+      "name": "deepseek",
+      "patterns": [
+        "deepseek"
+      ],
+      "description": "",
+      "enabled": true,
+      "created_at": 1782228624.6345263,
+      "updated_at": 1782228624.6345263,
+      "model_count": 0
+    }
+  },
+  "updated_at": 1782228624.6345541
+}

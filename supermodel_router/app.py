@@ -28,6 +28,9 @@ from .classifier import (
     get_modality_display,
 )
 from .context_bridge import ContextBridge  # v3.4.0
+from .loop_engine import LoopEngine, get_loop_engine  # v3.22.0
+from .memory_bus import MemoryBus  # v3.22.0
+from .scheduler import TaskScheduler  # v3.22.0
 
 LOG = logging.getLogger("app")
 
@@ -57,12 +60,16 @@ engine: RouteEngine = None
 model_manager: Any = None
 # v3.4.0: 上下文桥接 + 过期标记引擎
 context_bridge: ContextBridge | None = None
+# v3.22.0: 周天循环系统
+memory_bus: MemoryBus = None
+loop_engine: LoopEngine = None
+scheduler: TaskScheduler = None
 _start_time: float = 0
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global registry, engine, _start_time
+    global registry, engine, _start_time, memory_bus, loop_engine, scheduler, context_bridge, model_manager
     _start_time = time.time()
 
     registry = ModelRegistry(config)
@@ -78,7 +85,6 @@ async def lifespan(app: FastAPI):
     engine = RouteEngine(config, registry)
 
     # v3.4.0: ContextBridge — 上下文桥接 + 过期标记 (老大 22:00 拍)
-    global context_bridge
     bridge_cfg = config.data.get("context_bridge", {}) or {}
     context_bridge = ContextBridge(bridge_cfg)
     LOG.info("ContextBridge v%s initialized: enabled=%s threshold=%ds max_history=%d",
@@ -87,7 +93,6 @@ async def lifespan(app: FastAPI):
 
     # v3.3: ModelManager — 模型管理 (Discovery + Notifier + Lists + AutoRules)
     from .model_manager import ModelManager
-    global model_manager
     model_manager = ModelManager(config, registry)
     # v3.3: model_manager 注册到 refresh 完成回调 (覆盖 periodic_refresh + admin API 全部 refresh_all 调用)
     registry.register_refresh_callback(model_manager.on_refresh)
@@ -162,8 +167,11 @@ async def lifespan(app: FastAPI):
 
     # v3.2.0: 把 registry/engine/_start_time 注入到子路由模块 (on_event deprecated)
     # v3.4.0: 同时注入 context_bridge
+    # v3.22.0: 注入 memory_bus / loop_engine / scheduler
     openai_init(registry, engine, context_bridge)
-    admin_api_init(registry, engine, model_manager, _start_time, context_bridge)
+    admin_api_init(registry, engine, model_manager, _start_time, context_bridge,
+                   memory_bus=memory_bus, loop_engine=loop_engine, scheduler=scheduler,
+                   fastapi_app=app, app_state_dir=state_dir)
     # v3.7.0: 对外 API 多 key 管理 (per-tenant)
     from .public_api import init_public_key_manager
     init_public_key_manager(state_dir=state_dir)
@@ -236,7 +244,82 @@ async def lifespan(app: FastAPI):
     LOG.info("ModelHealthManager v3.15.0 initialized (state_dir=%s, skip_threshold=%d, probe_interval=%ds)",
              state_dir, mhm.cfg["consecutive_fails_skip"], mhm.cfg["probe_interval_seconds"])
 
+    # ── v3.23.0: L1 Free Resource (老大钦定重点 6/27) ─────────────────────
+    from .free_models import init_free_model_registry, get_free_model_registry
+    free_reg = init_free_model_registry(
+        providers=config.providers,
+        state_dir=state_dir,
+    )
+    # 初次扫描 (从已加载的 registry)
+    try:
+        provider_models = {}
+        for pname, ps in registry._providers.items():
+            provider_models[pname] = [m.id for m in ps.models]
+        free_reg.refresh(models_by_provider=provider_models)
+        LOG.info("FreeModelRegistry: 初次识别 %d free models", free_reg.count())
+    except Exception as e:
+        LOG.warning("FreeModelRegistry 初次扫描失败: %s", e)
+    # 注入到 engine
+    engine.free_registry = free_reg
+
+    # ── v3.22.0: 周天循环系统 ──────────────────────────────────────────
+    memory_bus = MemoryBus(state_dir=state_dir)
+    LOG.info("MemoryBus v3.22.0 initialized (state_dir=%s)", state_dir)
+
+    loop_engine = get_loop_engine(
+        memory_bus=memory_bus,
+        health_manager=mhm,
+        state_dir=state_dir,
+        tick_interval=config.data.get("loop_engine", {}).get("tick_interval", 300),
+    )
+    loop_engine.start()  # sync — uses create_task internally
+    LOG.info("LoopEngine v3.22.0 started (interval=%ds)", loop_engine.tick_interval)
+
+    # ── v3.22.0: Scheduler (优雅降级 + 并行聚合 + 中间模型) ────────────
+    from .maker_checker import MakerCheckerEngine
+    maker_checker = MakerCheckerEngine(
+        model_health=mhm,
+        strategy=config.data.get("maker_checker", {}).get("strategy", "flat"),
+        memory_bus=memory_bus,
+    )
+
+    # adapter: engine.proxy_chat_request(route, body) → simple (provider, model_id, messages) proxy
+    async def _engine_proxy(provider: str, model_id: str, messages: list, **kwargs) -> dict:
+        from .engine import proxy_chat_request, RouteResult
+        # build a minimal RouteResult for the engine
+        ps = registry._providers.get(provider)
+        base_url = ps.base_url if ps else ""
+        api_key = (ps.api_keys[0] if ps and ps.api_keys else "") if ps else ""
+        route = RouteResult(
+            provider_name=provider, model_id=model_id, base_url=base_url, api_key=api_key,
+            full_model_path=f"{provider}/{model_id}",
+        )
+        body = {"messages": messages, **kwargs}
+        raw = await proxy_chat_request(route, body, stream=False)
+        # normalize to expected {text, latency_ms, ...} shape
+        text = ""
+        if isinstance(raw, dict):
+            choices = raw.get("choices", [])
+            if choices and isinstance(choices[0], dict):
+                text = choices[0].get("message", {}).get("content", "")
+        return {"text": text, "raw": raw}
+
+    scheduler = TaskScheduler(
+        engine_proxy=_engine_proxy,
+        maker_checker=maker_checker,
+        memory_bus=memory_bus,
+    )
+    LOG.info("TaskScheduler v3.22.0 initialized (strategy=%s)", maker_checker.maker.strategy)
+
+    # ── hot-reload: config 变动通知 LoopEngine ─────────────────────────
+    config.on_change(lambda data: LOG.info("config hot-reload: loop/scheduler config may need update"))
+
     yield
+    # 关闭周天循环
+    try:
+        loop_engine.stop()
+    except Exception:
+        LOG.exception("loop_engine stop failed")
     # 关闭 background checker
     try:
         mhm.stop_background_checker()

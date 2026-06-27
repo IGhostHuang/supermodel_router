@@ -1,11 +1,11 @@
 # SMR (supermodel_router)
 
 > **SMR (前 FMR / free-model-router)** — OpenAI 兼容的多 provider LLM 路由网关
-> **v3.10.0** · 2026-06-19 · 轮询 v5 + 模型分组向导 + 版本自更新
+> **v3.19.0** · 2026-06-19 · 轮询 v5 + 模型分组向导 + 版本自更新
 
 ---
 
-## 🎉 v3.10.0 新增 (2026-06-19) — 模型分组向导 + 轮询策略 v5
+## 🎉 v3.19.0 新增 (2026-06-19) — 模型分组向导 + 轮询策略 v5
 
 **4 种 group-level 策略**: round-robin-group (默认) / flat / group-failover / group-weighted
 
@@ -434,8 +434,8 @@ providers:
 
 ## 📜 版本历史
 
-- **v3.11.0 (2026-06-21)** — 易经算法集成: 8 卦 dashboard (/admin/9-gong) + 5 provider 卦位 (config provider_trigram) + 12 时辰火候 (by-fire-候 cron) + 3 cron (by-five-element / by-san-yi / by-fire-候); version.py/admin_ui 同步 bump, 同端口 6473 升级
-- **v3.10.0 (2026-06-19)** — 轮询策略 v5: 4 种 group-level 策略 (round-robin-group/flat/group-failover/group-weighted); 分组向导持久化 (wizard strategy → config.yaml)
+- **v3.19.0 (2026-06-21)** — 易经算法集成: 8 卦 dashboard (/admin/9-gong) + 5 provider 卦位 (config provider_trigram) + 12 时辰火候 (by-fire-候 cron) + 3 cron (by-five-element / by-san-yi / by-fire-候); version.py/admin_ui 同步 bump, 同端口 6473 升级
+- **v3.19.0 (2026-06-19)** — 轮询策略 v5: 4 种 group-level 策略 (round-robin-group/flat/group-failover/group-weighted); 分组向导持久化 (wizard strategy → config.yaml)
 - **v3.4.0 (2026-06-17)** — 上下文桥接 (chain rotation 过期标记); prompt 超时警告 (>30min 自动 system warning)
 - **v3.1.0 (2026-06-17)** — 轮询机制 v4 (高分优先 + key 轮询 + 跨 provider + 降分 + 周期复测); 多 key 真正轮询 (B1); exclude 正则 (B4); 错误消息干净 (B2); 版本管理 (C: /v1/admin/version + upgrade); penalty admin endpoints
 - **v3.0.0 (2026-06-16)** — 模态路由 + 质量评分 (capability_score + EWMA latency)
