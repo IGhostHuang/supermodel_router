@@ -317,7 +317,9 @@ class ModelRegistry:
                 if re.search(pattern, mid, re.IGNORECASE):
                     filtered.append(m)
             elif mode == "include":
-                if mid in include_set:
+                if include_set and any(
+                    re.search(p, mid, re.IGNORECASE) for p in include_set
+                ):
                     filtered.append(m)
 
         ps.models = []

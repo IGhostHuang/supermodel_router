@@ -80,6 +80,7 @@ class ModelHealth:
     first_skip_at: float = 0.0           # v3.16.0: 首次进入 SKIP 的时间戳 (provider 级禁用判定用)
     quota_skip_until: float = 0.0        # v3.18.0: 配额耗尽导致的长 SKIP (续费后由 admin 手动清 0)
     quota_type: str = ""                 # v3.18.0: 配额类型 (monthly / weekly / daily / token_plan / balance)
+    degrade_weight: float = 0.0         # v3.21.0: 降级权重, 每 tick 衰减
     last_probe_at: float = 0.0
     last_probe_success: bool = False
     last_probe_error: str = ""
@@ -696,6 +697,41 @@ class ModelHealthManager:
             return {"path": path, "probe_success": ok}
         except Exception as e:
             return {"error": str(e)[:200]}
+
+    def decay_model_penalty(self) -> None:
+        """v3.21.0: 每次 loop_engine tick 调用, 对 degrade/cooldown 状态做衰减
+
+        衰减规则 (SOUL.md §"道家阴阳 8 圈 守则 10 上下文衰减"):
+          - SKIP 状态: skip_remaining 每 tick 自然减少 (已存在 tick 逻辑)
+          - degrade 权重: 每 tick 减 5%, 直到 0 (新)
+          - cooldown_seconds: 每 tick 减 1%, 直到初始值
+
+        LoopEngine 每 5min tick 调用一次, 不需要在 probe hot-path 执行.
+        """
+        update = False
+        now = time.time()
+        with self._lock:
+            for path, mh in self._health.items():
+                changed = False
+                # degrade 权重衰减 (5% / tick)
+                if hasattr(mh, 'degrade_weight'):
+                    if mh.degrade_weight > 0.01:
+                        mh.degrade_weight *= 0.95
+                        if mh.degrade_weight < 0.01:
+                            mh.degrade_weight = 0.0
+                        changed = True
+                # cooldown 衰减 (1% / tick), cooldown_seconds 是 int, 结果 cast 回 int
+                initial = self.cfg.get('skip_initial_seconds', 30)
+                if mh.cooldown_seconds > initial:
+                    new_val = int(mh.cooldown_seconds * 0.99)
+                    mh.cooldown_seconds = max(initial, new_val)
+                    changed = True
+                if changed:
+                    mh.updated_at = now
+                    update = True
+        if update:
+            self._save_async()
+            LOG.debug("model_health: decay_model_penalty applied")
 
 
 # ---- 模块级便捷接口 (必须在 class 外面, 否则 class 提前结束, method 都变 module-level!) ----
