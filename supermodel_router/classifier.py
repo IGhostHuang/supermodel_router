@@ -205,17 +205,16 @@ def pricing_detail(provider_name: str, model_id: str) -> dict:
 
 
 def classify_pricing(provider_name: str, model_id: str) -> str:
-    """v3.6: 判断模型收费类型
+    """v3.14: 判断模型收费类型
+
     规则:
     0. model_id 以 @cf/ 开头 → limited_free (Cloudflare Neurons 每日 10000 免费额度, UTC 0 点重置)
     1. provider 在 FREE_PROVIDERS → free
-    2. provider 在 PAID_PROVIDERS:
-       - 模型名含 free 关键词 → free
-       - 其他 → paid
-    3. provider 在 MIXED_PROVIDERS (nvidia):
-       - 模型名含 free 关键词 → free
-       - 其他 → paid (默认保守)
-    4. 其他 (未知 provider) → unknown
+    2. 模型名含 free 关键词 → free (任何 provider)
+    3. provider 在 MIXED_PROVIDERS:
+       - nvidia: 默认 free (跟 PROVIDER_FREE_POLICY 统一, 上游 API 返回 paid 才标 paid)
+    4. provider 在 PAID_PROVIDERS → paid
+    5. 其他 (未知 provider) → unknown
     """
     pn = normalize_pricing_provider(provider_name)
     mid = (model_id or "").lower()
@@ -227,7 +226,10 @@ def classify_pricing(provider_name: str, model_id: str) -> str:
     for kw in FREE_KEYWORDS:
         if kw in mid:
             return PRICING_FREE
-    if pn in PAID_PROVIDERS or pn in MIXED_PROVIDERS:
+    # MIXED_PROVIDERS: nvidia 默认 free (跟 PROVIDER_FREE_POLICY 统一)
+    if pn in MIXED_PROVIDERS:
+        return PRICING_FREE
+    if pn in PAID_PROVIDERS:
         return PRICING_PAID
     return PRICING_UNKNOWN
 
