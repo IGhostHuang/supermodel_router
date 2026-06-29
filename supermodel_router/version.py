@@ -1,6 +1,17 @@
 """
 supermodel_router/version.py — 版本元数据 + GitHub release 检查
 
+v3.25.1 (2026-06-29 条件生成器 Wizard):
+- Model Group Wizard 增强: "🔍 自定义筛选" tab 替换为 "🧪 条件生成器"
+- 核心需求 (老大反馈): 选逻辑关系 + 填关键词 → 生成正则表达式
+- 字段: model_id / provider (2 字段)
+- 关系: 包含 / 不包含 / 等于 / 起始于 / 结束于 (5 关系)
+- 组合: 全部满足 (AND) / 任一满足 (OR) (2 组合)
+- 实时显示生成的正则字符串 + 复制按钮
+- 实时 preview: 纯前端拉 /v1/admin/models + JS regex.test 模拟匹配
+- 提交时: 把生成的正则作为 patterns: [regex] 调 /v1/admin/model-groups
+- preset 模式 / manual 模式保留 (escape hatch)
+
 v3.25.0 (2026.06.29 admin UI UX 打磨 + Model Group Wizard):
 - admin UI 三大打磨:
   * 视觉层级: 卡片化 / 阴影 / hover 动效 / 暗色模式统一
@@ -259,7 +270,7 @@ from typing import Optional
 LOG = logging.getLogger("version")
 
 # 当前版本 (跟随 release tag)
-VERSION = "3.25.0"
+VERSION = "3.25.1"
 BUILD_DATE = "2026-06-29"
 
 GITHUB_REPO = "IGhostHuang/supermodel_router"  # 默认值, 可被 config.version_check.repo 覆盖
