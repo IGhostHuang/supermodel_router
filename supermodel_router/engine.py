@@ -978,9 +978,12 @@ async def proxy_chat_request(
     发送 chat/completions 请求, 自动处理不同模态的特殊请求体构造
     """
     headers = {
-        "Authorization": f"Bearer {route.api_key}",
         "Content-Type": "application/json",
     }
+    if route.provider_name == "volc_ark":
+        headers["api-key"] = route.api_key
+    else:
+        headers["Authorization"] = f"Bearer {route.api_key}"
 
     payload = {**body, "model": route.model_id}
 
@@ -1000,9 +1003,12 @@ async def proxy_images_generations(
 ) -> dict:
     """发送 images/generations 请求到生图模型"""
     headers = {
-        "Authorization": f"Bearer {route.api_key}",
         "Content-Type": "application/json",
     }
+    if route.provider_name == "volc_ark":
+        headers["api-key"] = route.api_key
+    else:
+        headers["Authorization"] = f"Bearer {route.api_key}"
 
     payload = {**body, "model": route.model_id}
     base_url = route.base_url.rstrip("/")
