@@ -2069,15 +2069,27 @@ async def admin_model_groups_from_filter(payload: dict):
         return JSONResponse({"error": "model_group_manager not initialized"}, status_code=503)
 
     name = (payload.get("name") or "").strip()
-    if not name:
+    dry_run = bool(payload.get("dry_run"))
+    if not name and not dry_run:
         return JSONResponse({"error": "name required"}, status_code=400)
-    if name in mgm._groups:
+    if name and not dry_run and name in mgm._groups:
         return JSONResponse({"error": f"group '{name}' already exists"}, status_code=409)
 
     filter_data = payload.get("filter") or {}
     f = ModelFilter.from_dict(filter_data)
     all_models = registry.get_models()
     matched = apply_filter(f, all_models)
+
+    # v3.25.0 dry_run: 早返回, 不实际创建 group
+    if dry_run:
+        return JSONResponse({
+            "ok": True,
+            "dry_run": True,
+            "resolved_count": len(matched),
+            "resolved_models": [{"model_id": m.id, "provider": getattr(m, "provider", "")} for m in matched],
+            "filter": f.to_dict(),
+        })
+
     if not matched:
         return JSONResponse({
             "error": "no models matched filter",
@@ -2239,6 +2251,18 @@ async def admin_model_groups_from_wizard(payload: dict):
             "error": f"preset '{preset_id}' matched 0 models",
             "filter": f.to_dict(),
         }, status_code=400)
+
+    # v3.25.0 dry_run: 早返回, 不实际创建 group
+    if payload.get("dry_run"):
+        return JSONResponse({
+            "ok": True,
+            "dry_run": True,
+            "preset": preset_id,
+            "preset_name": preset["name"],
+            "resolved_count": len(matched),
+            "resolved_models": [{"model_id": m.id, "provider": getattr(m, "provider", "")} for m in matched],
+            "filter": f.to_dict(),
+        })
 
     import re as _re
     patterns = [_re.escape(m.id) for m in matched]

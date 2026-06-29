@@ -1,6 +1,20 @@
 """
 supermodel_router/version.py — 版本元数据 + GitHub release 检查
 
+v3.25.0 (2026.06.29 admin UI UX 打磨 + Model Group Wizard):
+- admin UI 三大打磨:
+  * 视觉层级: 卡片化 / 阴影 / hover 动效 / 暗色模式统一
+  * 交互反馈: toast / loading 态 / 空状态
+  * 可发现性: skeleton 加载 / 友好提示文案
+- Model Group 创建改成分步 Wizard (v3.25.0 核心):
+  * 3 模式 tab: 选预设场景 / 自定义筛选 / 高级手写
+  * 0 正则知识也能建分组 (13 个 preset + 自定义 filter)
+  * 实时预览匹配 model 数 + 样本 (dry_run 后端支持)
+  * 后端 /from-wizard + /from-filter 加 dry_run 字段, 早返回不实际创建
+  * 编辑模式: 仍走手写 (高级用户 escape hatch)
+- 13 个 preset 在 group_wizard.py 保留, group pattern 自动推断
+- chip / card / tab / preview 新 CSS class
+
 v3.24.0 (2026.06.27 修 nvidia free 模型分类 bug):
 - classifier.py classify_pricing() nvidia MIXED_PROVIDERS 默认 free 不是 paid
   (跟 PROVIDER_FREE_POLICY 统一, 之前 37 free / 84 paid → 现在 121 free / 0 paid)
@@ -245,8 +259,8 @@ from typing import Optional
 LOG = logging.getLogger("version")
 
 # 当前版本 (跟随 release tag)
-VERSION = "3.24.0"
-BUILD_DATE = "2026-06-27"
+VERSION = "3.25.0"
+BUILD_DATE = "2026-06-29"
 
 GITHUB_REPO = "IGhostHuang/supermodel_router"  # 默认值, 可被 config.version_check.repo 覆盖
 RELEASE_CHECK_INTERVAL = 3600  # 1 小时检查一次

@@ -188,6 +188,33 @@ tr:hover td{background:#1a1a24}
 .group-desc{font-size:12px;color:#94a3b8;margin-top:5px;max-width:760px;line-height:1.5}
 .group-patterns{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
 .group-patterns code,.group-samples code{background:#020617;border:1px solid #1f2937;color:#bfdbfe;padding:2px 6px;border-radius:5px;font-size:11px}
+
+/* v3.25.0 Model Group Wizard ──────────────────────── */
+.mg-tabs{display:flex;gap:4px;margin-bottom:14px;border-bottom:1px solid #1f2937;padding-bottom:0}
+.mg-tab{flex:1;padding:9px 12px;background:transparent;color:#94a3b8;cursor:pointer;font-size:13px;font-weight:500;border-radius:6px 6px 0 0;border:1px solid transparent;border-bottom:none;transition:all .15s;text-align:center}
+.mg-tab:hover{background:#1a2530;color:#e5e7eb}
+.mg-tab.active{background:#1a2530;color:#5b8def;border-color:#1f2937;border-bottom:1px solid #1a2530;position:relative;top:1px;font-weight:600}
+.mg-presets{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px;max-height:340px;overflow-y:auto;padding:2px}
+.mg-preset-card{background:#0f172a;border:1px solid #1f2937;border-radius:8px;padding:11px 13px;cursor:pointer;transition:all .15s}
+.mg-preset-card:hover{border-color:#5b8def;background:#131c2e;transform:translateY(-1px)}
+.mg-preset-card.selected{border-color:#5b8def;background:#1a2540;box-shadow:0 0 0 1px #5b8def inset}
+.mg-preset-head{display:flex;align-items:center;gap:6px;margin-bottom:4px}
+.mg-preset-icon{font-size:15px}
+.mg-preset-name{font-size:13px;font-weight:600;color:#e5e7eb}
+.mg-preset-desc{font-size:11px;color:#94a3b8;line-height:1.4;margin-bottom:6px;min-height:28px}
+.mg-preset-filter{font-size:10px;color:#5b8def;background:#0a1428;padding:3px 6px;border-radius:3px;font-family:ui-monospace,monospace}
+.mg-filter-row{margin-bottom:12px}
+.mg-filter-row label{display:block;font-size:12px;color:#94a3b8;margin-bottom:5px;font-weight:500}
+.mg-filter-row input[type=range]{width:100%;accent-color:#5b8def}
+.mg-preview{background:#0a1428;border:1px solid #1f2937;border-radius:8px;padding:12px 14px;margin-top:14px}
+.mg-preview-header{display:flex;align-items:center;gap:6px;margin-bottom:8px;flex-wrap:wrap}
+.mg-preview-label{font-size:12px;color:#94a3b8;font-weight:500}
+.mg-preview-count{font-size:18px;font-weight:700;color:#5b8def;font-family:ui-monospace,monospace;background:#1a2540;padding:2px 9px;border-radius:4px;min-width:32px;text-align:center}
+.mg-preview-list{max-height:140px;overflow-y:auto;padding:6px;background:#020617;border-radius:4px}
+.chip-group{display:flex;flex-wrap:wrap;gap:5px}
+.chip{display:inline-block;padding:4px 10px;background:#1a1a24;border:1px solid #2a3a4a;border-radius:14px;font-size:11px;cursor:pointer;color:#94a3b8;transition:all .15s;user-select:none}
+.chip:hover{background:#1a2530;border-color:#5b8def;color:#e5e7eb}
+.chip.active{background:#1a2540;border-color:#5b8def;color:#5b8def;font-weight:600}
 .group-samples{margin-top:9px;font-size:12px;color:#94a3b8;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
 .group-actions{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
 .modal-bg.show .modal,.modal-bg.open .modal{animation:modalPop .16s ease-out}
@@ -2756,31 +2783,255 @@ async function showModelGroupModal(existing){
   const patterns = existing?.patterns || [];
   const description = existing?.description || '';
   const enabled = existing?.enabled !== false;
+  // 编辑模式: 直接显示手动模式 (高级用户编辑 patterns)
+  const initialMode = isEdit ? 'manual' : 'preset';
   const html = `
 <div class="modal-bg show" id="modelGroupModal" onclick="if(event.target===this)closeModelGroupModal()">
-  <div class="modal" style="max-width:600px">
+  <div class="modal" style="max-width:780px">
     <h3>${isEdit ? '✏️ 编辑分组: '+escapeHtml(name) : '➕ 创建模型分组'}</h3>
-    <label>名称 * <span class="text-muted">(字母数字/-/_)</span></label>
-    <input id="mgName" value="${name.replace(/"/g,'&quot;')}" ${isEdit?'disabled':''} placeholder="例如 qwen-free 或 long-context">
-    <label style="margin-top:10px;display:block">patterns (正则列表, 1 行 1 个) *</label>
-    <textarea id="mgPatterns" rows="5" style="width:100%;font-family:monospace;font-size:13px"
-              placeholder="qwen.*&#10;openai/.*gpt.*&#10;.*:free$">${patterns.join('\n').replace(/</g,'&lt;')}</textarea>
-    <label style="margin-top:10px;display:block">描述</label>
-    <input id="mgDesc" value="${description.replace(/"/g,'&quot;')}" placeholder="例如 Qwen 系列 / 免费模型 / 长上下文模型">
-    <label style="margin-top:10px;display:block">状态</label>
-    <select id="mgEnabled" style="width:200px">
-      <option value="true" ${enabled?'selected':''}>✅ 启用</option>
-      <option value="false" ${!enabled?'selected':''}>⏸ 停用</option>
-    </select>
+    ${!isEdit ? `<p class="text-muted" style="font-size:12px;margin-bottom:14px">选一种方式生成模型分组 · 不用手写正则</p>` : ''}
+    ${!isEdit ? `
+    <div class="mg-tabs" id="mgTabs">
+      <div class="mg-tab ${initialMode==='preset'?'active':''}" data-mode="preset" onclick="switchMgMode('preset')">🎯 选预设场景</div>
+      <div class="mg-tab ${initialMode==='filter'?'active':''}" data-mode="filter" onclick="switchMgMode('filter')">🔍 自定义筛选</div>
+      <div class="mg-tab ${initialMode==='manual'?'active':''}" data-mode="manual" onclick="switchMgMode('manual')">⚙️ 高级 (手写)</div>
+    </div>
+    ` : ''}
+    <div class="mg-mode" id="mg-mode-preset" style="display:${initialMode==='preset'?'block':'none'}">
+      <p class="text-muted" style="font-size:12px;margin-bottom:10px">选一个预设场景 · 系统自动建分组 + 推断 patterns</p>
+      <div class="mg-presets" id="mgPresetsGrid">加载中...</div>
+    </div>
+    <div class="mg-mode" id="mg-mode-filter" style="display:${initialMode==='filter'?'block':'none'}">
+      <p class="text-muted" style="font-size:12px;margin-bottom:10px">筛出符合条件的 models · 自动建分组</p>
+      <div class="mg-filter-row">
+        <label>Provider (多选)</label>
+        <div class="chip-group" id="mgFilterProviders">
+          <span class="chip" data-value="openrouter" onclick="toggleMgChip(this)">openrouter</span>
+          <span class="chip" data-value="newapi" onclick="toggleMgChip(this)">newapi</span>
+          <span class="chip" data-value="mock_a" onclick="toggleMgChip(this)">mock_a</span>
+          <span class="chip" data-value="mock_b" onclick="toggleMgChip(this)">mock_b</span>
+        </div>
+      </div>
+      <div class="mg-filter-row">
+        <label>上下文窗口</label>
+        <select id="mgFilterContext" class="filter-select">
+          <option value="0">全部</option>
+          <option value="8000">≥ 8K</option>
+          <option value="16000">≥ 16K</option>
+          <option value="32000">≥ 32K</option>
+          <option value="64000">≥ 64K</option>
+          <option value="100000">≥ 100K</option>
+          <option value="128000">≥ 128K</option>
+          <option value="200000">≥ 200K</option>
+        </select>
+      </div>
+      <div class="mg-filter-row">
+        <label>最低 Quality</label>
+        <input type="range" id="mgFilterQuality" min="0" max="100" value="0" step="5" oninput="document.getElementById('mgQualityVal').textContent=this.value">
+        <span id="mgQualityVal" style="color:#5b8def;font-weight:500;margin-left:8px">0</span>
+      </div>
+      <div class="mg-filter-row">
+        <label>最低 Speed</label>
+        <input type="range" id="mgFilterSpeed" min="0" max="100" value="0" step="5" oninput="document.getElementById('mgSpeedVal').textContent=this.value">
+        <span id="mgSpeedVal" style="color:#5b8def;font-weight:500;margin-left:8px">0</span>
+      </div>
+      <div class="mg-filter-row">
+        <label>Modality</label>
+        <select id="mgFilterModality" class="filter-select">
+          <option value="">全部</option>
+          <option value="text">纯文本</option>
+          <option value="multimodal">多模态</option>
+          <option value="image">视觉</option>
+          <option value="image-gen">图像生成</option>
+          <option value="audio">音频</option>
+          <option value="video">视频</option>
+        </select>
+      </div>
+      <div class="mg-filter-row">
+        <label>Tags (含任一)</label>
+        <div class="chip-group" id="mgFilterTags">
+          <span class="chip" data-value="reasoning" onclick="toggleMgChip(this)">reasoning</span>
+          <span class="chip" data-value="coding" onclick="toggleMgChip(this)">coding</span>
+          <span class="chip" data-value="vision" onclick="toggleMgChip(this)">vision</span>
+          <span class="chip" data-value="fast" onclick="toggleMgChip(this)">fast</span>
+          <span class="chip" data-value="long-context" onclick="toggleMgChip(this)">long-context</span>
+          <span class="chip" data-value="tools" onclick="toggleMgChip(this)">tools</span>
+          <span class="chip" data-value="multimodal" onclick="toggleMgChip(this)">multimodal</span>
+        </div>
+      </div>
+    </div>
+    <div class="mg-mode" id="mg-mode-manual" style="display:${initialMode==='manual'?'block':'none'}">
+      <p class="text-muted" style="font-size:12px;margin-bottom:10px">⚙️ 高级: 了解正则语法的用户用</p>
+      <label>patterns (正则列表, 1 行 1 个) *</label>
+      <textarea id="mgPatterns" rows="5" style="width:100%;font-family:monospace;font-size:13px"
+                placeholder="qwen.*&#10;openai/.*gpt.*&#10;.*:free$">${patterns.join('\n').replace(/</g,'&lt;')}</textarea>
+    </div>
+    <div class="mg-preview" id="mgPreview" style="display:none">
+      <div class="mg-preview-header">
+        <span class="mg-preview-label">📊 预览匹配</span>
+        <span class="mg-preview-count" id="mgPreviewCount">0</span>
+        <span class="text-muted" style="font-size:11px">个 model</span>
+        <button class="btn-sm" style="margin-left:auto" onclick="refreshMgPreview()">🔄 重新预览</button>
+      </div>
+      <div class="mg-preview-list" id="mgPreviewList"></div>
+    </div>
+    <div class="mg-form">
+      <label>名称 * <span class="text-muted">(字母数字/-/_)</span></label>
+      <input id="mgName" value="${name.replace(/"/g,'&quot;')}" ${isEdit?'disabled':''} placeholder="例如 qwen-free 或 long-context">
+      <label style="margin-top:10px;display:block">描述</label>
+      <input id="mgDesc" value="${description.replace(/"/g,'&quot;')}" placeholder="例如 Qwen 系列 / 免费模型 / 长上下文模型">
+      <label style="margin-top:10px;display:block">状态</label>
+      <select id="mgEnabled" style="width:200px">
+        <option value="true" ${enabled?'selected':''}>✅ 启用</option>
+        <option value="false" ${!enabled?'selected':''}>⏸ 停用</option>
+      </select>
+    </div>
     <div class="row" style="margin-top:16px;justify-content:flex-end;gap:8px">
       <button class="btn-sm" onclick="closeModelGroupModal()">取消</button>
-      <button class="btn primary" onclick="submitModelGroupModal(${isEdit?'true':'false'})">${isEdit ? '💾 保存' : '➕ 创建'}</button>
+      <button class="btn primary" id="mgSubmitBtn" onclick="submitModelGroupModal(${isEdit?'true':'false'})">${isEdit ? '💾 保存' : '➕ 创建分组'}</button>
     </div>
   </div>
 </div>`;
   const div = document.createElement('div');
   div.innerHTML = html;
   document.body.appendChild(div.firstElementChild);
+  // 初始化: 拉 presets 或 触发 filter 模式预览
+  if(!isEdit){
+    if(initialMode==='preset'){
+      loadMgPresetsGrid();
+    } else if(initialMode==='filter'){
+      refreshMgPreview();
+    }
+  } else {
+    // 编辑模式: 显示当前 pattern 匹配数
+    refreshMgPreview();
+  }
+}
+
+// ==================== v3.25.0 Model Group Wizard ====================
+
+async function loadMgPresetsGrid(){
+  const grid = document.getElementById('mgPresetsGrid');
+  if(!grid) return;
+  grid.innerHTML = '<div class="loading">加载预设...</div>';
+  const r = await api('/v1/admin/model-groups/wizard/presets');
+  if(r.error){ grid.innerHTML = `<div class="text-muted">❌ ${r.error}</div>`; return; }
+  const presets = r.presets || [];
+  grid.innerHTML = presets.map(p => {
+    const filterDesc = formatMgFilter(p.filter || {});
+    return `
+<div class="mg-preset-card" data-preset="${escapeHtml(p.id)}" onclick="selectMgPreset('${escapeHtml(p.id)}', this)">
+  <div class="mg-preset-head">
+    <span class="mg-preset-icon">${p.icon || '✨'}</span>
+    <span class="mg-preset-name">${escapeHtml(p.name)}</span>
+  </div>
+  <div class="mg-preset-desc">${escapeHtml(p.description || '')}</div>
+  <div class="mg-preset-filter">${filterDesc}</div>
+</div>`;
+  }).join('');
+}
+
+function formatMgFilter(f){
+  const parts = [];
+  if(f.context_min) parts.push(`context ≥ ${(f.context_min/1000).toFixed(0)}K`);
+  if(f.context_max) parts.push(`context ≤ ${(f.context_max/1000).toFixed(0)}K`);
+  if(f.quality_min) parts.push(`quality ≥ ${f.quality_min}`);
+  if(f.speed_min) parts.push(`speed ≥ ${f.speed_min}`);
+  if(f.reasoning_min) parts.push(`reasoning ≥ ${f.reasoning_min}`);
+  return parts.length ? parts.join(' · ') : '无筛选';
+}
+
+function selectMgPreset(presetId, el){
+  document.querySelectorAll('.mg-preset-card').forEach(c => c.classList.remove('selected'));
+  if(el) el.classList.add('selected');
+  window._mgSelectedPreset = presetId;
+  refreshMgPreview();
+}
+
+function switchMgMode(mode){
+  document.querySelectorAll('.mg-tab').forEach(t => t.classList.toggle('active', t.dataset.mode === mode));
+  ['preset','filter','manual'].forEach(m => {
+    const el = document.getElementById('mg-mode-'+m);
+    if(el) el.style.display = m === mode ? 'block' : 'none';
+  });
+  if(mode==='preset') loadMgPresetsGrid();
+  refreshMgPreview();
+}
+
+function toggleMgChip(el){
+  el.classList.toggle('active');
+  refreshMgPreview();
+}
+
+function getMgChipValues(containerId){
+  return Array.from(document.querySelectorAll('#'+containerId+' .chip.active')).map(c => c.dataset.value);
+}
+
+function buildMgFilterFromUI(){
+  const filter = {};
+  const ctx = parseInt(document.getElementById('mgFilterContext')?.value || '0');
+  if(ctx) filter.context_min = ctx;
+  const q = parseInt(document.getElementById('mgFilterQuality')?.value || '0');
+  if(q) filter.quality_min = q;
+  const s = parseInt(document.getElementById('mgFilterSpeed')?.value || '0');
+  if(s) filter.speed_min = s;
+  const mod = document.getElementById('mgFilterModality')?.value;
+  if(mod) filter.modality = mod;
+  const tags = getMgChipValues('mgFilterTags');
+  if(tags.length) filter.tags_any = tags;
+  const providers = getMgChipValues('mgFilterProviders');
+  if(providers.length) filter.providers = providers;
+  return filter;
+}
+
+async function refreshMgPreview(){
+  const preview = document.getElementById('mgPreview');
+  const countEl = document.getElementById('mgPreviewCount');
+  const listEl = document.getElementById('mgPreviewList');
+  if(!preview) return;
+  // 判断当前 mode
+  const activeTab = document.querySelector('.mg-tab.active');
+  const mode = activeTab?.dataset.mode || 'manual';
+  if(mode === 'manual'){
+    // 编辑模式或手写: 跳过预览 (后端会返回 model_count)
+    preview.style.display = 'none';
+    return;
+  }
+  preview.style.display = 'block';
+  countEl.textContent = '...';
+  listEl.innerHTML = '<div class="text-muted" style="font-size:11px">计算中...</div>';
+  // 根据 mode 调不同 API (dry_run: true)
+  let payload;
+  if(mode === 'preset'){
+    const presetId = window._mgSelectedPreset;
+    if(!presetId){
+      countEl.textContent = '0';
+      listEl.innerHTML = '<div class="text-muted" style="font-size:11px">👆 先选一个预设</div>';
+      return;
+    }
+    payload = { preset: presetId, dry_run: true };
+  } else { // filter
+    const filter = buildMgFilterFromUI();
+    const hasAny = Object.keys(filter).length > 0;
+    if(!hasAny){
+      countEl.textContent = '0';
+      listEl.innerHTML = '<div class="text-muted" style="font-size:11px">👆 设个筛选条件</div>';
+      return;
+    }
+    payload = { filter, dry_run: true, name: '__preview__' };
+  }
+  const endpoint = mode === 'preset' ? '/v1/admin/model-groups/from-wizard' : '/v1/admin/model-groups/from-filter';
+  const r = await api(endpoint, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+  if(r.error){
+    countEl.textContent = '0';
+    listEl.innerHTML = `<div class="text-muted" style="font-size:11px">⚠️ ${escapeHtml(r.error)}</div>`;
+    return;
+  }
+  const models = r.resolved_models || [];
+  countEl.textContent = r.resolved_count || models.length || 0;
+  const sample = models.slice(0, 12);
+  const more = models.length > 12 ? `<div class="text-muted" style="font-size:11px;margin-top:4px">+ ${models.length-12} more...</div>` : '';
+  listEl.innerHTML = sample.map(m => `<code style="display:inline-block;background:#0f172a;padding:2px 6px;border-radius:3px;margin:2px;font-size:11px">${escapeHtml(m.model_id || m)}</code>`).join('') + more;
 }
 
 function closeModelGroupModal(){
@@ -2792,19 +3043,42 @@ async function submitModelGroupModal(isEdit){
   const name = document.getElementById('mgName').value.trim();
   if(!name){ toast('❌ 名称必填', false); return; }
   if(!/^[a-zA-Z0-9_-]+$/.test(name)){ toast('❌ 名称只能含字母数字/-/_', false); return; }
-  const patterns = document.getElementById('mgPatterns').value.split('\n').map(s=>s.trim()).filter(Boolean);
-  if(patterns.length === 0){ toast('❌ patterns 至少 1 个', false); return; }
   const description = document.getElementById('mgDesc').value;
   const enabled = document.getElementById('mgEnabled').value === 'true';
+  const activeTab = document.querySelector('.mg-tab.active');
+  const mode = activeTab?.dataset.mode || 'manual';
 
   if(isEdit){
+    // 编辑模式: 总是 manual (改 patterns)
+    const patterns = document.getElementById('mgPatterns').value.split('\n').map(s=>s.trim()).filter(Boolean);
+    if(patterns.length === 0){ toast('❌ patterns 至少 1 个', false); return; }
     const r = await api('/v1/admin/model-groups/'+encodeURIComponent(name), {
       method: 'PUT', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({patterns, description, enabled}),
     });
     if(r.error){ toast('❌ '+r.error, false); return; }
     toast(`✅ group '${name}' 已更新`);
-  } else {
+  } else if(mode === 'preset'){
+    const presetId = window._mgSelectedPreset;
+    if(!presetId){ toast('❌ 先选一个预设', false); return; }
+    const r = await api('/v1/admin/model-groups/from-wizard', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({preset: presetId, name, description, create_api_key: false}),
+    });
+    if(r.error){ toast('❌ '+r.error, false); return; }
+    toast(`✅ group '${name}' 已创建 (匹配 ${r.resolved_count || r.group?.model_count || 0} models)`);
+  } else if(mode === 'filter'){
+    const filter = buildMgFilterFromUI();
+    if(Object.keys(filter).length === 0){ toast('❌ 设个筛选条件', false); return; }
+    const r = await api('/v1/admin/model-groups/from-filter', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({name, filter, description, create_api_key: false}),
+    });
+    if(r.error){ toast('❌ '+r.error, false); return; }
+    toast(`✅ group '${name}' 已创建 (匹配 ${r.resolved_count || r.group?.model_count || 0} models)`);
+  } else { // manual
+    const patterns = document.getElementById('mgPatterns').value.split('\n').map(s=>s.trim()).filter(Boolean);
+    if(patterns.length === 0){ toast('❌ patterns 至少 1 个', false); return; }
     const r = await api('/v1/admin/model-groups', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({name, patterns, description, enabled}),
