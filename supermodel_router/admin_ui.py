@@ -215,6 +215,23 @@ tr:hover td{background:#1a1a24}
 .chip{display:inline-block;padding:4px 10px;background:#1a1a24;border:1px solid #2a3a4a;border-radius:14px;font-size:11px;cursor:pointer;color:#94a3b8;transition:all .15s;user-select:none}
 .chip:hover{background:#1a2530;border-color:#5b8def;color:#e5e7eb}
 .chip.active{background:#1a2540;border-color:#5b8def;color:#5b8def;font-weight:600}
+
+/* v3.25.1 条件生成器 ──────────────────────── */
+.mg-regex-header{display:flex;align-items:center;gap:8px;margin-bottom:10px;padding:8px 10px;background:#0a1428;border-radius:6px;flex-wrap:wrap}
+.mg-regex-header>label{font-size:12px;color:#94a3b8;margin:0}
+.mg-conditions{display:flex;flex-direction:column;gap:6px;max-height:240px;overflow-y:auto;padding:2px;margin-bottom:12px}
+.mg-condition-row{display:flex;align-items:center;gap:6px;padding:8px 10px;background:#0f172a;border:1px solid #1f2937;border-radius:6px;transition:border-color .15s}
+.mg-condition-row:focus-within{border-color:#5b8def}
+.mg-cond-field{flex:0 0 180px;max-width:180px}
+.mg-cond-op{flex:0 0 110px;max-width:110px}
+.mg-cond-value{flex:1;background:#1a1a24;border:1px solid #2a3a4a;color:#e0e0e0;padding:6px 10px;border-radius:4px;font-size:12px;font-family:ui-monospace,monospace}
+.mg-cond-value:focus{outline:none;border-color:#5b8def}
+.mg-cond-del{flex:0 0 32px;background:#3b0d0d;color:#f87171;border-color:#3b0d0d;font-size:14px;padding:4px 8px}
+.mg-cond-del:hover{background:#5b1818;border-color:#5b1818}
+.mg-regex-preview{background:#020617;border:1px solid #1f2937;border-radius:6px;padding:10px 12px}
+.mg-regex-preview-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+.mg-regex-preview-head>span{font-size:12px;color:#94a3b8;font-weight:500}
+.mg-regex-preview>code{display:block;background:#0a1428;border:1px solid #1f2937;border-radius:4px;padding:8px 10px;font-family:ui-monospace,monospace;font-size:12px;color:#4ade80;line-height:1.5;word-break:break-all;min-height:20px}
 .group-samples{margin-top:9px;font-size:12px;color:#94a3b8;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
 .group-actions{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
 .modal-bg.show .modal,.modal-bg.open .modal{animation:modalPop .16s ease-out}
@@ -2793,7 +2810,7 @@ async function showModelGroupModal(existing){
     ${!isEdit ? `
     <div class="mg-tabs" id="mgTabs">
       <div class="mg-tab ${initialMode==='preset'?'active':''}" data-mode="preset" onclick="switchMgMode('preset')">🎯 选预设场景</div>
-      <div class="mg-tab ${initialMode==='filter'?'active':''}" data-mode="filter" onclick="switchMgMode('filter')">🔍 自定义筛选</div>
+      <div class="mg-tab ${initialMode==='regex'?'active':''}" data-mode="regex" onclick="switchMgMode('regex')">🧪 条件生成器</div>
       <div class="mg-tab ${initialMode==='manual'?'active':''}" data-mode="manual" onclick="switchMgMode('manual')">⚙️ 高级 (手写)</div>
     </div>
     ` : ''}
@@ -2801,63 +2818,26 @@ async function showModelGroupModal(existing){
       <p class="text-muted" style="font-size:12px;margin-bottom:10px">选一个预设场景 · 系统自动建分组 + 推断 patterns</p>
       <div class="mg-presets" id="mgPresetsGrid">加载中...</div>
     </div>
-    <div class="mg-mode" id="mg-mode-filter" style="display:${initialMode==='filter'?'block':'none'}">
-      <p class="text-muted" style="font-size:12px;margin-bottom:10px">筛出符合条件的 models · 自动建分组</p>
-      <div class="mg-filter-row">
-        <label>Provider (多选)</label>
-        <div class="chip-group" id="mgFilterProviders">
-          <span class="chip" data-value="openrouter" onclick="toggleMgChip(this)">openrouter</span>
-          <span class="chip" data-value="newapi" onclick="toggleMgChip(this)">newapi</span>
-          <span class="chip" data-value="mock_a" onclick="toggleMgChip(this)">mock_a</span>
-          <span class="chip" data-value="mock_b" onclick="toggleMgChip(this)">mock_b</span>
-        </div>
-      </div>
-      <div class="mg-filter-row">
-        <label>上下文窗口</label>
-        <select id="mgFilterContext" class="filter-select">
-          <option value="0">全部</option>
-          <option value="8000">≥ 8K</option>
-          <option value="16000">≥ 16K</option>
-          <option value="32000">≥ 32K</option>
-          <option value="64000">≥ 64K</option>
-          <option value="100000">≥ 100K</option>
-          <option value="128000">≥ 128K</option>
-          <option value="200000">≥ 200K</option>
+    <div class="mg-mode" id="mg-mode-regex" style="display:${initialMode==='regex'?'block':'none'}">
+      <p class="text-muted" style="font-size:12px;margin-bottom:10px">选字段 + 关系 + 填关键词 → 系统生成正则表达式</p>
+      <div class="mg-regex-header">
+        <label>条件组合:</label>
+        <select id="mgRegexCombinator" class="filter-select" onchange="updateRegexPreviewBox()">
+          <option value="AND">全部满足 (AND)</option>
+          <option value="OR">任一满足 (OR)</option>
         </select>
+        <button class="btn-sm" onclick="addConditionRow()" style="margin-left:6px">➕ 添加条件</button>
+        <button class="btn-sm" onclick="clearAllConditions()">🔄 清空</button>
       </div>
-      <div class="mg-filter-row">
-        <label>最低 Quality</label>
-        <input type="range" id="mgFilterQuality" min="0" max="100" value="0" step="5" oninput="document.getElementById('mgQualityVal').textContent=this.value">
-        <span id="mgQualityVal" style="color:#5b8def;font-weight:500;margin-left:8px">0</span>
+      <div class="mg-conditions" id="mgConditions">
+        <!-- 条件行动态插入 -->
       </div>
-      <div class="mg-filter-row">
-        <label>最低 Speed</label>
-        <input type="range" id="mgFilterSpeed" min="0" max="100" value="0" step="5" oninput="document.getElementById('mgSpeedVal').textContent=this.value">
-        <span id="mgSpeedVal" style="color:#5b8def;font-weight:500;margin-left:8px">0</span>
-      </div>
-      <div class="mg-filter-row">
-        <label>Modality</label>
-        <select id="mgFilterModality" class="filter-select">
-          <option value="">全部</option>
-          <option value="text">纯文本</option>
-          <option value="multimodal">多模态</option>
-          <option value="image">视觉</option>
-          <option value="image-gen">图像生成</option>
-          <option value="audio">音频</option>
-          <option value="video">视频</option>
-        </select>
-      </div>
-      <div class="mg-filter-row">
-        <label>Tags (含任一)</label>
-        <div class="chip-group" id="mgFilterTags">
-          <span class="chip" data-value="reasoning" onclick="toggleMgChip(this)">reasoning</span>
-          <span class="chip" data-value="coding" onclick="toggleMgChip(this)">coding</span>
-          <span class="chip" data-value="vision" onclick="toggleMgChip(this)">vision</span>
-          <span class="chip" data-value="fast" onclick="toggleMgChip(this)">fast</span>
-          <span class="chip" data-value="long-context" onclick="toggleMgChip(this)">long-context</span>
-          <span class="chip" data-value="tools" onclick="toggleMgChip(this)">tools</span>
-          <span class="chip" data-value="multimodal" onclick="toggleMgChip(this)">multimodal</span>
+      <div class="mg-regex-preview" id="mgRegexPreviewBox">
+        <div class="mg-regex-preview-head">
+          <span>📝 生成的正则表达式</span>
+          <button class="btn-sm" onclick="copyRegexToClipboard()" id="mgCopyBtn">📋 复制</button>
         </div>
+        <code id="mgRegexPreviewCode">添加条件后显示</code>
       </div>
     </div>
     <div class="mg-mode" id="mg-mode-manual" style="display:${initialMode==='manual'?'block':'none'}">
@@ -2908,7 +2888,137 @@ async function showModelGroupModal(existing){
   }
 }
 
-// ==================== v3.25.0 Model Group Wizard ====================
+// ==================== v3.25.1 Model Group Wizard (条件生成器) ====================
+
+const COND_FIELDS = [
+  { value: 'model_id', label: 'model_id (模型名)' },
+  { value: 'provider', label: 'provider (前缀)' },
+];
+const COND_OPS = [
+  { value: 'contains', label: '包含' },
+  { value: 'not_contains', label: '不包含' },
+  { value: 'equals', label: '等于' },
+  { value: 'starts_with', label: '起始于' },
+  { value: 'ends_with', label: '结束于' },
+];
+
+function buildConditionRow(idx, cond){
+  cond = cond || { field: 'model_id', op: 'contains', value: '' };
+  const fieldOpts = COND_FIELDS.map(f => `<option value="${f.value}" ${cond.field===f.value?'selected':''}>${f.label}</option>`).join('');
+  const opOpts = COND_OPS.map(o => `<option value="${o.value}" ${cond.op===o.value?'selected':''}>${o.label}</option>`).join('');
+  return `
+<div class="mg-condition-row" data-idx="${idx}">
+  <select class="filter-select mg-cond-field" onchange="updateRegexPreviewBox()">${fieldOpts}</select>
+  <select class="filter-select mg-cond-op" onchange="updateRegexPreviewBox()">${opOpts}</select>
+  <input type="text" class="mg-cond-value" placeholder="关键词 (e.g. qwen / openai / gpt-4)" value="${(cond.value||'').replace(/"/g,'&quot;')}" oninput="updateRegexPreviewBox()">
+  <button class="btn-sm mg-cond-del" onclick="removeConditionRow(${idx})" title="删除条件">✕</button>
+</div>`;
+}
+
+let _condCounter = 0;
+function addConditionRow(cond){
+  const container = document.getElementById('mgConditions');
+  if(!container) return;
+  const idx = _condCounter++;
+  const row = document.createElement('div');
+  row.innerHTML = buildConditionRow(idx, cond);
+  container.appendChild(row.firstElementChild);
+  updateRegexPreviewBox();
+}
+
+function removeConditionRow(idx){
+  const row = document.querySelector(`.mg-condition-row[data-idx="${idx}"]`);
+  if(row) row.remove();
+  updateRegexPreviewBox();
+}
+
+function clearAllConditions(){
+  const container = document.getElementById('mgConditions');
+  if(container) container.innerHTML = '';
+  _condCounter = 0;
+  updateRegexPreviewBox();
+}
+
+function readAllConditions(){
+  return Array.from(document.querySelectorAll('.mg-condition-row')).map(row => ({
+    field: row.querySelector('.mg-cond-field')?.value || 'model_id',
+    op: row.querySelector('.mg-cond-op')?.value || 'contains',
+    value: row.querySelector('.mg-cond-value')?.value || '',
+  }));
+}
+
+// 核心: 条件列表 → 正则字符串
+function generateRegexFromConditions(){
+  const conds = readAllConditions().filter(c => c.value.trim());
+  if(conds.length === 0) return '';
+  const combinator = document.getElementById('mgRegexCombinator')?.value || 'AND';
+  const segments = conds.map(c => {
+    // 转义 regex 元字符
+    const v = c.value.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    if(c.op === 'contains') return `.*${v}.*`;
+    if(c.op === 'not_contains') return `(?!.*${v}).*`;
+    if(c.op === 'equals') return `^${v}$`;
+    if(c.op === 'starts_with') return `^${v}.*`;
+    if(c.op === 'ends_with') return `.*${v}$`;
+    return `.*${v}.*`;
+  });
+  if(combinator === 'AND'){
+    // AND: 把每个条件包成 lookahead, 整体 ^(?=.*a)(?=.*b)....*$
+    const lookaheads = segments.map(s => {
+      if(s.startsWith('(?!')) return s;  // not_contains 已经是 lookahead
+      // 提取核心模式 (去 ^.* 和 .*$)
+      const core = s.replace(/^\^/, '').replace(/\.\*$/, '').replace(/^\.\*/, '').replace(/\$$/, '');
+      return `(?=.*${core})`;
+    }).join('');
+    return `^${lookaheads}.*$`;
+  } else { // OR
+    // OR: 整个 segment 直接 | 拼接, 外层加 ^...$ 锚点
+    // segment 已经是 (?!.*x).* 或 .*x.* 形式, 不需要再处理
+    return `^(${segments.join('|')})$`;
+  }
+}
+
+function updateRegexPreviewBox(){
+  const code = document.getElementById('mgRegexPreviewCode');
+  if(!code) return;
+  const regex = generateRegexFromConditions();
+  code.textContent = regex || '添加条件后显示';
+  // 也调后端 preview 实时刷新匹配数
+  if(regex){
+    refreshMgPreview();
+  } else {
+    const preview = document.getElementById('mgPreview');
+    if(preview) preview.style.display = 'none';
+  }
+}
+
+async function copyRegexToClipboard(){
+  const code = document.getElementById('mgRegexPreviewCode');
+  if(!code) return;
+  const text = code.textContent;
+  if(!text || text === '添加条件后显示'){
+    toast('❌ 还没生成正则', false);
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(text);
+    toast('✅ 正则已复制到剪贴板');
+  } catch(e){
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    toast('✅ 正则已复制 (fallback)');
+  }
+}
+
+function initMgRegexMode(){
+  if(!document.getElementById('mgConditions')?.children?.length){
+    addConditionRow();
+  }
+}
 
 async function loadMgPresetsGrid(){
   const grid = document.getElementById('mgPresetsGrid');
@@ -2950,11 +3060,12 @@ function selectMgPreset(presetId, el){
 
 function switchMgMode(mode){
   document.querySelectorAll('.mg-tab').forEach(t => t.classList.toggle('active', t.dataset.mode === mode));
-  ['preset','filter','manual'].forEach(m => {
+  ['preset','regex','manual'].forEach(m => {
     const el = document.getElementById('mg-mode-'+m);
     if(el) el.style.display = m === mode ? 'block' : 'none';
   });
   if(mode==='preset') loadMgPresetsGrid();
+  if(mode==='regex') initMgRegexMode();
   refreshMgPreview();
 }
 
@@ -3001,7 +3112,6 @@ async function refreshMgPreview(){
   countEl.textContent = '...';
   listEl.innerHTML = '<div class="text-muted" style="font-size:11px">计算中...</div>';
   // 根据 mode 调不同 API (dry_run: true)
-  let payload;
   if(mode === 'preset'){
     const presetId = window._mgSelectedPreset;
     if(!presetId){
@@ -3009,29 +3119,38 @@ async function refreshMgPreview(){
       listEl.innerHTML = '<div class="text-muted" style="font-size:11px">👆 先选一个预设</div>';
       return;
     }
-    payload = { preset: presetId, dry_run: true };
-  } else { // filter
-    const filter = buildMgFilterFromUI();
-    const hasAny = Object.keys(filter).length > 0;
-    if(!hasAny){
+    const r = await api('/v1/admin/model-groups/from-wizard', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ preset: presetId, dry_run: true }) });
+    if(r.error){ countEl.textContent = '0'; listEl.innerHTML = `<div class="text-muted" style="font-size:11px">⚠️ ${escapeHtml(r.error)}</div>`; return; }
+    const models = r.resolved_models || [];
+    countEl.textContent = r.resolved_count || models.length || 0;
+    renderPreviewList(models);
+  } else if(mode === 'regex'){
+    // v3.25.1: 纯前端 preview (拉所有 models + JS regex.test)
+    const regexStr = generateRegexFromConditions();
+    if(!regexStr){
       countEl.textContent = '0';
-      listEl.innerHTML = '<div class="text-muted" style="font-size:11px">👆 设个筛选条件</div>';
+      listEl.innerHTML = '<div class="text-muted" style="font-size:11px">👆 加 1 个条件</div>';
       return;
     }
-    payload = { filter, dry_run: true, name: '__preview__' };
+    let re;
+    try { re = new RegExp(regexStr); } catch(e){
+      countEl.textContent = '0';
+      listEl.innerHTML = `<div class="text-muted" style="font-size:11px">⚠️ 正则语法错: ${escapeHtml(e.message)}</div>`;
+      return;
+    }
+    const r = await api('/v1/admin/models');
+    if(r.error || !r.models){ countEl.textContent = '0'; listEl.innerHTML = `<div class="text-muted" style="font-size:11px">⚠️ 拉 models 失败</div>`; return; }
+    const matched = r.models.filter(m => re.test(m.id));
+    countEl.textContent = matched.length;
+    renderPreviewList(matched);
   }
-  const endpoint = mode === 'preset' ? '/v1/admin/model-groups/from-wizard' : '/v1/admin/model-groups/from-filter';
-  const r = await api(endpoint, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload) });
-  if(r.error){
-    countEl.textContent = '0';
-    listEl.innerHTML = `<div class="text-muted" style="font-size:11px">⚠️ ${escapeHtml(r.error)}</div>`;
-    return;
-  }
-  const models = r.resolved_models || [];
-  countEl.textContent = r.resolved_count || models.length || 0;
-  const sample = models.slice(0, 12);
-  const more = models.length > 12 ? `<div class="text-muted" style="font-size:11px;margin-top:4px">+ ${models.length-12} more...</div>` : '';
-  listEl.innerHTML = sample.map(m => `<code style="display:inline-block;background:#0f172a;padding:2px 6px;border-radius:3px;margin:2px;font-size:11px">${escapeHtml(m.model_id || m)}</code>`).join('') + more;
+}
+
+function renderPreviewList(matched){
+  const listEl = document.getElementById('mgPreviewList');
+  const sample = matched.slice(0, 12);
+  const more = matched.length > 12 ? `<div class="text-muted" style="font-size:11px;margin-top:4px">+ ${matched.length-12} more...</div>` : '';
+  listEl.innerHTML = sample.map(m => `<code style="display:inline-block;background:#0f172a;padding:2px 6px;border-radius:3px;margin:2px;font-size:11px">${escapeHtml(m.id || m.model_id || '')}</code>`).join('') + more;
 }
 
 function closeModelGroupModal(){
@@ -3067,15 +3186,17 @@ async function submitModelGroupModal(isEdit){
     });
     if(r.error){ toast('❌ '+r.error, false); return; }
     toast(`✅ group '${name}' 已创建 (匹配 ${r.resolved_count || r.group?.model_count || 0} models)`);
-  } else if(mode === 'filter'){
-    const filter = buildMgFilterFromUI();
-    if(Object.keys(filter).length === 0){ toast('❌ 设个筛选条件', false); return; }
-    const r = await api('/v1/admin/model-groups/from-filter', {
+  } else if(mode === 'regex'){
+    const regexStr = generateRegexFromConditions();
+    if(!regexStr){ toast('❌ 加 1 个条件', false); return; }
+    // 验证 regex 语法
+    try { new RegExp(regexStr); } catch(e){ toast('❌ 正则语法错: '+e.message, false); return; }
+    const r = await api('/v1/admin/model-groups', {
       method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({name, filter, description, create_api_key: false}),
+      body: JSON.stringify({name, patterns: [regexStr], description, enabled}),
     });
     if(r.error){ toast('❌ '+r.error, false); return; }
-    toast(`✅ group '${name}' 已创建 (匹配 ${r.resolved_count || r.group?.model_count || 0} models)`);
+    toast(`✅ group '${name}' 已创建 (匹配 ${(r.group&&r.group.model_count)||r.model_count||0} models, regex: ${regexStr.length > 40 ? regexStr.substring(0,40)+'...' : regexStr})`);
   } else { // manual
     const patterns = document.getElementById('mgPatterns').value.split('\n').map(s=>s.trim()).filter(Boolean);
     if(patterns.length === 0){ toast('❌ patterns 至少 1 个', false); return; }
