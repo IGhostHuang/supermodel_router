@@ -38,3 +38,8 @@ secrets/
 # Backup files
 *.bak-*
 *.bak
+
+# SMR 本地配置 (老大手动维护的 key 配置 + weekly_schedule, 不进 git)
+config.yaml
+config.yaml.bak.*
+config.yaml.restore

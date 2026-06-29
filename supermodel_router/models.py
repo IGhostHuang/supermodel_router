@@ -368,7 +368,7 @@ class ModelRegistry:
         for key in keys:
             tried += 1
             url = f"{ps.base_url}/models"
-            headers = {"Authorization": f"Bearer {key}"}
+            headers = {"api-key": key} if ps.name == "volc_ark" else {"Authorization": f"Bearer {key}"}
             try:
                 resp = httpx.get(url, headers=headers, timeout=timeout)
                 if resp.status_code in (200,):
