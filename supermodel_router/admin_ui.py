@@ -2800,20 +2800,24 @@ async function showModelGroupModal(existing){
   const patterns = existing?.patterns || [];
   const description = existing?.description || '';
   const enabled = existing?.enabled !== false;
-  // 编辑模式: 直接显示手动模式 (高级用户编辑 patterns)
-  const initialMode = isEdit ? 'manual' : 'preset';
+  // v3.25.2 R58 老大钦定: 创建/编辑 都默认 = 条件生成器 (regex), 不再默认 = preset 或 manual
+  // 老大原话: "改为 逻辑选择+填写关键字+多条件的方式"
+  // - 创建模式: 默认 wizard, 用户友好
+  // - 编辑模式: 默认 wizard, 高级用户主动切 ⚙️ 高级 直接改 patterns
+  const initialMode = 'regex';
+  const existingPatternsHint = isEdit && patterns.length > 0
+    ? `<p class="text-muted" style="font-size:12px;margin-bottom:14px">✏️ 编辑: 已有 <b>${patterns.length}</b> 条 patterns · 用条件生成器重写 或 切 <b>⚙️ 高级 (手写)</b> 直接改</p>`
+    : (!isEdit ? `<p class="text-muted" style="font-size:12px;margin-bottom:14px">选字段 + 关系 + 填关键词 → 系统生成正则表达式 · 多条件与或组合</p>` : '');
   const html = `
 <div class="modal-bg show" id="modelGroupModal" onclick="if(event.target===this)closeModelGroupModal()">
   <div class="modal" style="max-width:780px">
     <h3>${isEdit ? '✏️ 编辑分组: '+escapeHtml(name) : '➕ 创建模型分组'}</h3>
-    ${!isEdit ? `<p class="text-muted" style="font-size:12px;margin-bottom:14px">选一种方式生成模型分组 · 不用手写正则</p>` : ''}
-    ${!isEdit ? `
+    ${existingPatternsHint}
     <div class="mg-tabs" id="mgTabs">
       <div class="mg-tab ${initialMode==='preset'?'active':''}" data-mode="preset" onclick="switchMgMode('preset')">🎯 选预设场景</div>
       <div class="mg-tab ${initialMode==='regex'?'active':''}" data-mode="regex" onclick="switchMgMode('regex')">🧪 条件生成器</div>
       <div class="mg-tab ${initialMode==='manual'?'active':''}" data-mode="manual" onclick="switchMgMode('manual')">⚙️ 高级 (手写)</div>
     </div>
-    ` : ''}
     <div class="mg-mode" id="mg-mode-preset" style="display:${initialMode==='preset'?'block':'none'}">
       <p class="text-muted" style="font-size:12px;margin-bottom:10px">选一个预设场景 · 系统自动建分组 + 推断 patterns</p>
       <div class="mg-presets" id="mgPresetsGrid">加载中...</div>
@@ -2875,6 +2879,13 @@ async function showModelGroupModal(existing){
   const div = document.createElement('div');
   div.innerHTML = html;
   document.body.appendChild(div.firstElementChild);
+  // v3.25.2: 把现有 patterns 存到 window 让 initMgRegexMode 渲染编辑模式提示
+  window.__mgExistingPatterns = patterns;
+  // v3.25.2 R58 老大钦定: 默认 = regex, 必须主动触发 initMgRegexMode 渲染 wizard
+  // 之前: switchMgMode 只在用户点击 tab 时调, 默认 tab 不调, 导致 wizard 空
+  if(initialMode === 'regex'){
+    initMgRegexMode();
+  }
   // 初始化: 拉 presets 或 触发 filter 模式预览
   if(!isEdit){
     if(initialMode==='preset'){
@@ -3015,7 +3026,21 @@ async function copyRegexToClipboard(){
 }
 
 function initMgRegexMode(){
-  if(!document.getElementById('mgConditions')?.children?.length){
+  const condEl = document.getElementById('mgConditions');
+  if(!condEl) return;
+  // v3.25.2 R58 老大钦定: 编辑模式下, 如果有现存 patterns, 显示"覆盖警告"banner
+  // 注意: 这个函数只调 1 次 (switchMgMode 首次切到 regex), 不重复 add row
+  const existingPatterns = window.__mgExistingPatterns || [];
+  if(existingPatterns.length > 0){
+    condEl.innerHTML = `
+      <div class="mg-existing-hint" style="background:#1a2530;border:1px dashed #5b8def;border-radius:6px;padding:12px;margin-bottom:10px;font-size:12px;color:#9ca3af">
+        💡 检测到 <b style="color:#5b8def">${existingPatterns.length}</b> 条现存 patterns · 
+        <span style="color:#fbbf24">从 wizard 重新生成会覆盖</span> · 
+        切 <b>⚙️ 高级 (手写)</b> 直接改
+      </div>
+    `;
+  }
+  if(!condEl.querySelector('.mg-conditions-row')){
     addConditionRow();
   }
 }
