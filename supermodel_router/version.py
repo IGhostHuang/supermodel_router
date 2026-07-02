@@ -1,6 +1,20 @@
 """
 supermodel_router/version.py — 版本元数据 + GitHub release 检查
 
+v3.27.0 (2026-07-02 v3.25.2 wizard 完整迁移 — 老大拍"都干"增量):
+- v3.25.2 wizard DOM 完整迁移 (5 段: preset / 自定义筛选 / 匹配模型列表 / 一键生成 / 结果展示)
+- 13 个 preset 卡片渲染 (📚 长上下文 / 📖 32K / 📕 200K / ⚡ 快速 / ⚖️ 速度质量 / 🎯 高质量 / 🏆 顶级 / 🎨 图像 / 👁 视觉 / 🌐 Any-to-Any / 🧠 强推理 / 💻 代码 / 💰 性价比)
+- 自定义筛选: Provider 多选 (7 real) + 上下文窗口 + Quality Score + Speed Score + Modality + Tags 7
+- wizardState 状态管理 (presets / matchedModels / selectedPreset / selectedPaths / currentFilter)
+- API 字段兼容: preset / resolved_models (v3.25 后端字段) + matched_models (旧)
+- Provider chip 修 bug: 从 health.providers 拿真实 name (避免 [object Object])
+- renderProviders 修: 合并 stats + health 数据 (models / calls / latency / quality)
+- 全流程测试: 点击 "📚 长上下文高质量" → 180 个匹配模型 / "🎯 高质量" → 211 / "🏆 顶级" → 211
+- 主题切换 wizard 仍 OK (dark/light 双套配色)
+- TODO (下版增量):
+  * v3.28: v3.15.0 参数量 badge renderSizeBadge + filterSizes 集成
+  * v3.29: provider edit / api-key / version / usage / probe modal 完整迁移
+
 v3.26.0 (2026-07-02 admin UI/UX 重做 + dark/light 主题切换 — 老大钦定):
 - admin_ui.py 从 3885 行精简到 777 行 (MVP 80% 精简, v3.27-3.29 增量迁移 wizard/参数量 badge/其他 modal)
 - 现代 Dashboard 重做 (8 条强反馈全部落地):
@@ -292,7 +306,7 @@ from typing import Optional
 LOG = logging.getLogger("version")
 
 # 当前版本 (跟随 release tag)
-VERSION = "3.26.0"
+VERSION = "3.27.0"
 BUILD_DATE = "2026-07-02"
 
 GITHUB_REPO = "IGhostHuang/supermodel_router"  # 默认值, 可被 config.version_check.repo 覆盖
