@@ -221,6 +221,36 @@ body{padding:var(--space-5);min-height:100vh}
 .modal-close{background:transparent;border:none;color:var(--text-2);font-size:20px;cursor:pointer;padding:4px 8px;border-radius:var(--radius-sm)}
 .modal-close:hover{background:var(--bg-2);color:var(--text-0)}
 
+/* ===== Wizard (v3.27 完整迁移) ===== */
+.wizard-presets-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:var(--space-3);margin-bottom:var(--space-5)}
+.wizard-preset-card{background:var(--bg-2);border:1px solid var(--border);border-radius:var(--radius);padding:var(--space-3);cursor:pointer;transition:.15s;position:relative}
+.wizard-preset-card:hover{border-color:var(--primary);background:var(--bg-3);transform:translateY(-1px);box-shadow:var(--shadow-sm)}
+.wizard-preset-card.selected{border-color:var(--success);background:var(--success-glow)}
+.wizard-preset-card.disabled{opacity:.4;cursor:not-allowed}
+.wizard-preset-card .preset-icon{font-size:24px;margin-bottom:6px}
+.wizard-preset-card .preset-name{font-size:13px;font-weight:500;color:var(--text-0);margin-bottom:4px}
+.wizard-preset-card .preset-desc{font-size:11px;color:var(--text-2);line-height:1.4;margin-bottom:6px}
+.wizard-preset-card .preset-count{position:absolute;top:8px;right:10px;font-size:10px;background:var(--bg-1);padding:2px 8px;border-radius:10px;color:var(--primary);font-weight:500}
+.wizard-preset-card .preset-count.zero{background:var(--danger-glow);color:var(--danger)}
+.wizard-filter-panel{background:var(--bg-2);border:1px solid var(--border);border-radius:var(--radius);padding:var(--space-4);margin-bottom:var(--space-5)}
+.filter-row{margin-bottom:var(--space-3)}
+.filter-row label{display:block;font-size:12px;color:var(--text-2);margin-bottom:6px;font-weight:500}
+.filter-row .filter-input,.filter-row .filter-select{background:var(--bg-0);border:1px solid var(--border);color:var(--text-0);padding:8px 10px;border-radius:var(--radius-sm);font-size:13px;outline:none;width:100%;transition:.15s}
+.filter-row .filter-input:focus,.filter-row .filter-select:focus{border-color:var(--primary);box-shadow:0 0 0 3px var(--primary-glow)}
+.chip-group{display:flex;flex-wrap:wrap;gap:6px}
+.chip{background:var(--bg-0);border:1px solid var(--border);color:var(--text-1);padding:4px 10px;border-radius:14px;font-size:11px;cursor:pointer;transition:.15s;user-select:none}
+.chip:hover{border-color:var(--primary);color:var(--text-0)}
+.chip.selected{background:var(--primary);border-color:var(--primary);color:#fff;font-weight:500}
+.wizard-models-list{background:var(--bg-2);border:1px solid var(--border);border-radius:var(--radius);padding:var(--space-3);margin-bottom:var(--space-5);max-height:300px;overflow-y:auto}
+.wizard-models-list .model-row{padding:6px 10px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;font-size:12px;transition:.15s}
+.wizard-models-list .model-row:hover{background:var(--bg-3)}
+.wizard-models-list .model-row:last-child{border-bottom:none}
+.wizard-generate-panel{background:var(--bg-2);border:1px solid var(--border);border-radius:var(--radius);padding:var(--space-4);margin-bottom:var(--space-5)}
+.btn-sm{padding:5px 10px;font-size:11px;background:var(--bg-0);border:1px solid var(--border);color:var(--text-0);border-radius:var(--radius-sm);cursor:pointer;font-family:inherit;transition:.15s}
+.btn-sm:hover{background:var(--bg-3);border-color:var(--border-strong)}
+.btn-sm.primary{background:var(--primary);border-color:var(--primary);color:#fff;font-weight:500}
+.btn-sm.primary:hover{background:var(--primary-h)}
+
 /* ===== Footer ===== */
 .footer{text-align:center;padding:var(--space-5);color:var(--text-3);font-size:11px}
 
@@ -364,23 +394,113 @@ body{padding:var(--space-5);min-height:100vh}
 
 <!-- ===== Wizard Modal (v3.27 完整迁移) ===== -->
 <div id="wizardModal" class="modal-overlay" onclick="if(event.target===this)closeWizard()">
-  <div class="modal-content">
+  <div class="modal-content" style="max-width:1100px">
     <div class="modal-header">
       <div class="modal-title">🧙 模型分组 Wizard</div>
       <button class="modal-close" onclick="closeWizard()">×</button>
     </div>
-    <p style="color:var(--text-2);margin-bottom:var(--space-3)">
-      v3.25.2 完整 wizard 功能将在 <b>v3.27</b> 迁移。当前 v3.26 预览版保留入口。
-    </p>
-    <pre style="background:var(--bg-2);padding:var(--space-3);border-radius:var(--radius);font-size:11px;color:var(--text-1);overflow:auto">
-const conditions = [
-  {provider: 'openrouter', pricing: 'free', capability_min: 80},
-  {provider: 'nvidia', modality: 'chat'},
-];
-// 调用 /v1/admin/wizard/generate 生成 model_group
-    </pre>
-    <div style="margin-top:var(--space-4);text-align:right">
-      <button class="btn primary" onclick="closeWizard()">关闭</button>
+
+    <!-- 第一部分: 13 个预设场景卡片 -->
+    <h3 style="font-size:13px;color:var(--text-2);margin:0 0 var(--space-3)">✨ 快速开始: 选一个预设场景</h3>
+    <div class="wizard-presets-grid" id="wizardPresetsGrid">
+      <div class="loading">加载中…</div>
+    </div>
+
+    <!-- 第二部分: 自定义筛选 -->
+    <h3 style="font-size:13px;color:var(--text-2);margin:var(--space-5) 0 var(--space-2)">🔍 或自定义筛选条件</h3>
+    <div class="wizard-filter-panel">
+      <div class="filter-row">
+        <label>Provider (多选)</label>
+        <div class="chip-group" id="wizardFilterProviders"></div>
+      </div>
+      <div class="filter-row">
+        <label>上下文窗口</label>
+        <select id="wizardFilterContext" class="filter-select">
+          <option value="0">全部</option>
+          <option value="8000">≥ 8K</option>
+          <option value="16000">≥ 16K</option>
+          <option value="32000">≥ 32K</option>
+          <option value="64000">≥ 64K</option>
+          <option value="100000">≥ 100K</option>
+          <option value="128000">≥ 128K</option>
+          <option value="200000">≥ 200K</option>
+        </select>
+      </div>
+      <div class="filter-row">
+        <label>最低 Quality Score: <span id="qualityVal" style="color:var(--primary);font-weight:500">0</span></label>
+        <input type="range" id="wizardFilterQuality" min="0" max="100" value="0" step="5" oninput="document.getElementById('qualityVal').textContent=this.value">
+      </div>
+      <div class="filter-row">
+        <label>最低 Speed Score: <span id="speedVal" style="color:var(--primary);font-weight:500">0</span></label>
+        <input type="range" id="wizardFilterSpeed" min="0" max="100" value="0" step="5" oninput="document.getElementById('speedVal').textContent=this.value">
+      </div>
+      <div class="filter-row">
+        <label>Modality</label>
+        <select id="wizardFilterModality" class="filter-select">
+          <option value="">全部</option>
+          <option value="text">纯文本</option>
+          <option value="multimodal">多模态</option>
+          <option value="image">视觉</option>
+          <option value="image-gen">图像生成</option>
+          <option value="audio">音频</option>
+          <option value="video">视频</option>
+        </select>
+      </div>
+      <div class="filter-row">
+        <label>Tags (含任一)</label>
+        <div class="chip-group" id="wizardFilterTags"></div>
+      </div>
+      <div style="margin-top:var(--space-3);text-align:right">
+        <button class="btn-sm" onclick="resetWizardFilter()">🔄 重置</button>
+        <button class="btn-sm primary" onclick="applyWizardFilter()">🔍 应用筛选</button>
+      </div>
+    </div>
+
+    <!-- 第三部分: 匹配模型列表 -->
+    <h3 style="font-size:13px;color:var(--text-2);margin:var(--space-5) 0 var(--space-2)">
+      匹配模型 (<span id="wizardMatchCount">0</span>)
+      <span style="float:right">
+        <button class="btn-sm" onclick="wizardSelectAll()">☑ 全选</button>
+        <button class="btn-sm" onclick="wizardSelectNone()">☐ 清选</button>
+      </span>
+    </h3>
+    <div class="wizard-models-list" id="wizardModelsList">
+      <div class="empty-state">👆 选一个预设场景 或 自定义筛选查看匹配模型</div>
+    </div>
+
+    <!-- 第四部分: 一键生成 -->
+    <h3 style="font-size:13px;color:var(--text-2);margin:var(--space-5) 0 var(--space-2)">✨ 生成模型分组</h3>
+    <div class="wizard-generate-panel">
+      <div class="filter-row">
+        <label>分组名</label>
+        <input type="text" id="wizardGroupName" placeholder="my-premium-group" class="filter-input">
+      </div>
+      <div class="filter-row">
+        <label>轮询策略</label>
+        <select id="wizardGroupStrategy" class="filter-select">
+          <option value="round-robin-group" selected>round-robin-group (新 default)</option>
+          <option value="flat">flat (老 v4 全局降序)</option>
+          <option value="group-failover">group-failover (按 group 优先级)</option>
+          <option value="group-weighted">group-weighted (加权随机)</option>
+        </select>
+      </div>
+      <div class="filter-row">
+        <label><input type="checkbox" id="wizardCreateApiKey" checked> 自动生成 API key (绑定到 group)</label>
+      </div>
+      <div class="filter-row">
+        <label>API key 名 (默认 = group name + "-key")</label>
+        <input type="text" id="wizardApiKeyName" placeholder="(可选)" class="filter-input">
+      </div>
+      <div style="margin-top:var(--space-3);text-align:right">
+        <button class="btn-sm" onclick="previewWizardGroup()">🔍 预览</button>
+        <button class="btn-sm primary" onclick="generateWizardGroup()">✨ 生成分组</button>
+      </div>
+    </div>
+
+    <!-- 第五部分: 生成结果展示 -->
+    <div id="wizardResultPanel" style="display:none;margin-top:var(--space-5);padding:var(--space-4);background:var(--success-glow);border:1px solid var(--success);border-radius:var(--radius)">
+      <h3 style="font-size:14px;color:var(--success);margin:0 0 var(--space-3)">✅ 分组生成成功</h3>
+      <div id="wizardResultContent"></div>
     </div>
   </div>
 </div>
@@ -471,6 +591,10 @@ async function loadAll() {
     fetchJSON('/v1/admin/providers?include_disabled=true'),
     fetchJSON('/v1/admin/models'),
   ]);
+  // 缓存 stats 和 health 供 renderProviders 合并用
+  window._lastStats = stats || {};
+  window._lastHealth = health || {};
+  window._lastProviders = providers || {};
   if (health) renderStatusBanner(health);
   if (stats) renderKPIs(stats);
   if (providers) renderProviders(providers);
@@ -546,7 +670,7 @@ function renderKPIs(stats) {
 function renderProviders(providers) {
   const grid = document.getElementById('providerGrid');
   if (!grid) return;
-  
+
   // 适配多种返回结构
   let list = [];
   if (Array.isArray(providers)) list = providers;
@@ -554,7 +678,24 @@ function renderProviders(providers) {
   else if (typeof providers === 'object') {
     list = Object.entries(providers).map(([name, p]) => ({name, ...p}));
   }
-  
+
+  // 合并 stats 和 health 拿真实 models / calls / latency / quality
+  const statsDict = window._lastStats || {};
+  const healthDict = (window._lastHealth && window._lastHealth.providers) || {};
+  list = list.map(p => {
+    const s = statsDict[p.name] || {};
+    const h = healthDict[p.name] || {};
+    return {
+      ...p,
+      models: p.models || p.model_count || h.models || 0,
+      total_calls: p.total_calls || p.calls || s.total_calls || 0,
+      avg_latency_ms: p.avg_latency_ms || s.avg_latency_ms || 0,
+      quality_score: p.quality_score != null ? p.quality_score : s.quality_score,
+      degraded: p.degraded || (s.fail_calls || 0) > 2,
+      fail_count: p.fail_count || s.fail_calls || 0,
+    };
+  });
+
   document.getElementById('providerCount').textContent = list.length;
   
   if (list.length === 0) {
@@ -719,6 +860,256 @@ function filterBySize() { toast('info', '参数量筛选', 'v3.27 待集成'); }
 function filterByCapability() { toast('info', '能力筛选', 'v3.27 待集成'); }
 function filterByPrice() { toast('info', '价格筛选', 'v3.27 待集成'); }
 function onGlobalSearch(q) { /* TODO: v3.27 集成搜索 */ }
+
+// ===== Wizard (v3.27 完整迁移) =====
+let wizardState = {
+  presets: [],
+  matchedModels: [],
+  selectedPreset: null,
+  selectedPaths: new Set(),
+  currentFilter: null,
+};
+
+function toggleChip(el) {
+  el.classList.toggle('selected');
+}
+
+async function loadWizard() {
+  wizardState.selectedPreset = null;
+  wizardState.selectedPaths = new Set();
+  try {
+    const r = await fetch('/v1/admin/model-groups/wizard/presets');
+    const data = await r.json();
+    if (data.error) { toast('error', '加载预设失败', data.error); return; }
+    wizardState.presets = data.presets || [];
+    renderPresetCards();
+    fillWizardFilterOptions();
+  } catch (e) {
+    toast('error', 'wizard API 失败', e.message);
+  }
+  document.getElementById('wizardModelsList').innerHTML =
+    '<div class="empty-state">👆 选一个预设场景 或 自定义筛选查看匹配模型</div>';
+  document.getElementById('wizardMatchCount').textContent = '0';
+  if (!document.getElementById('wizardGroupName').value) {
+    document.getElementById('wizardGroupName').value = 'my-group-' + Date.now().toString(36);
+  }
+}
+
+function renderPresetCards() {
+  const grid = document.getElementById('wizardPresetsGrid');
+  grid.innerHTML = '';
+  for (const p of wizardState.presets) {
+    const card = document.createElement('div');
+    card.className = 'wizard-preset-card';
+    card.dataset.presetId = p.id;
+    if (p.current_match_count === 0) card.classList.add('disabled');
+    const countClass = p.current_match_count === 0 ? 'preset-count zero' : 'preset-count';
+    card.innerHTML = `
+      <div class="preset-icon">${p.icon || '🎯'}</div>
+      <div class="preset-name">${escapeHtml(p.name || p.id)}</div>
+      <div class="preset-desc">${escapeHtml(p.description || '')}</div>
+      <div class="${countClass}">${p.current_match_count || 0} 个模型</div>
+    `;
+    card.onclick = () => {
+      if (card.classList.contains('disabled')) return;
+      document.querySelectorAll('.wizard-preset-card').forEach(c => c.classList.remove('selected'));
+      card.classList.add('selected');
+      wizardState.selectedPreset = p;
+      applyWizardPreset(p);
+    };
+    grid.appendChild(card);
+  }
+}
+
+function fillWizardFilterOptions() {
+  // Provider 列表从 health endpoint 拿真实 provider name (避免 [object Object])
+  const providers = new Set();
+  const healthDict = (window._lastHealth && window._lastHealth.providers) || {};
+  Object.keys(healthDict).forEach(name => providers.add(name));
+  // fallback: 从 _lastProviders 拿
+  if (providers.size === 0 && window._lastProviders) {
+    const list = Array.isArray(window._lastProviders) ? window._lastProviders : (window._lastProviders.providers || []);
+    list.forEach(p => providers.add(typeof p === 'string' ? p : p.name));
+  }
+  const provEl = document.getElementById('wizardFilterProviders');
+  provEl.innerHTML = [...providers].map(p => `<span class="chip" data-value="${escapeHtml(p)}" onclick="toggleChip(this)">${escapeHtml(p)}</span>`).join('') || '<span style="color:var(--text-3);font-size:11px">无 provider</span>';
+  // Tags (固定)
+  const tags = ['reasoning', 'coding', 'vision', 'fast', 'long-context', 'tools', 'multimodal'];
+  document.getElementById('wizardFilterTags').innerHTML = tags.map(t => `<span class="chip" data-value="${t}" onclick="toggleChip(this)">${t}</span>`).join('');
+}
+
+async function applyWizardPreset(p) {
+  // 用 preset.id 调 from-wizard dry-run (API 字段: preset / resolved_models)
+  try {
+    const r = await fetch('/v1/admin/model-groups/from-wizard', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({preset: p.id, dry_run: true}),
+    });
+    const data = await r.json();
+    if (data.error) { toast('error', 'preset 应用失败', data.error); return; }
+    // 兼容 v3.25 字段: resolved_models → matched_models (前端统一)
+    wizardState.matchedModels = (data.resolved_models || data.matched_models || []).map(m => ({
+      id: m.model_id || m.id,
+      path: m.path || `${m.provider || ''}/${m.model_id || m.id}`,
+      provider: m.provider || '',
+    }));
+    wizardState.currentFilter = data.filter || null;
+    renderWizardModels();
+    toast('success', `预设已应用`, `${wizardState.matchedModels.length} 个匹配模型`);
+  } catch (e) {
+    toast('error', 'preset API 失败', e.message);
+  }
+}
+
+async function applyWizardFilter() {
+  const providers = [...document.querySelectorAll('#wizardFilterProviders .chip.selected')].map(c => c.dataset.value);
+  const context = parseInt(document.getElementById('wizardFilterContext').value) || 0;
+  const quality = parseInt(document.getElementById('wizardFilterQuality').value) || 0;
+  const speed = parseInt(document.getElementById('wizardFilterSpeed').value) || 0;
+  const modality = document.getElementById('wizardFilterModality').value || '';
+  const tags = [...document.querySelectorAll('#wizardFilterTags .chip.selected')].map(c => c.dataset.value);
+
+  const filter = {
+    providers: providers.length ? providers : null,
+    context_min: context || null,
+    quality_min: quality || null,
+    speed_min: speed || null,
+    modality: modality || null,
+    tags: tags.length ? tags : null,
+  };
+  wizardState.currentFilter = filter;
+  try {
+    const r = await fetch('/v1/admin/model-groups/from-filter', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({...filter, dry_run: true}),
+    });
+    const data = await r.json();
+    if (data.error) { toast('error', '筛选失败', data.error); return; }
+    // 兼容 v3.25 字段: resolved_models → matched_models (前端统一)
+    wizardState.matchedModels = (data.resolved_models || data.matched_models || []).map(m => ({
+      id: m.model_id || m.id,
+      path: m.path || `${m.provider || ''}/${m.model_id || m.id}`,
+      provider: m.provider || '',
+    }));
+    renderWizardModels();
+    toast('success', '筛选已应用', `${wizardState.matchedModels.length} 个匹配`);
+  } catch (e) {
+    toast('error', 'filter API 失败', e.message);
+  }
+}
+
+function resetWizardFilter() {
+  document.querySelectorAll('#wizardFilterProviders .chip, #wizardFilterTags .chip').forEach(c => c.classList.remove('selected'));
+  document.getElementById('wizardFilterContext').value = '0';
+  document.getElementById('wizardFilterQuality').value = '0';
+  document.getElementById('wizardFilterSpeed').value = '0';
+  document.getElementById('wizardFilterModality').value = '';
+  document.getElementById('qualityVal').textContent = '0';
+  document.getElementById('speedVal').textContent = '0';
+  document.querySelectorAll('.wizard-preset-card').forEach(c => c.classList.remove('selected'));
+  wizardState.selectedPreset = null;
+  wizardState.matchedModels = [];
+  wizardState.currentFilter = null;
+  document.getElementById('wizardModelsList').innerHTML = '<div class="empty-state">👆 选一个预设场景 或 自定义筛选查看匹配模型</div>';
+  document.getElementById('wizardMatchCount').textContent = '0';
+  toast('info', '筛选已重置');
+}
+
+function renderWizardModels() {
+  const list = wizardState.matchedModels;
+  document.getElementById('wizardMatchCount').textContent = list.length;
+  if (list.length === 0) {
+    document.getElementById('wizardModelsList').innerHTML = '<div class="empty-state">无匹配模型</div>';
+    return;
+  }
+  document.getElementById('wizardModelsList').innerHTML = list.map(m => {
+    const checked = wizardState.selectedPaths.has(m.path) ? 'checked' : '';
+    return `<label class="model-row">
+      <input type="checkbox" ${checked} onchange="toggleWizardPath('${escapeHtml(m.path)}', this.checked)">
+      <span style="flex:1;font-family:var(--mono);font-size:11px">${escapeHtml(m.id || m.path)}</span>
+      <span style="color:var(--text-2);font-size:10px">${escapeHtml(m.provider || '')}</span>
+    </label>`;
+  }).join('');
+}
+
+function toggleWizardPath(path, checked) {
+  if (checked) wizardState.selectedPaths.add(path);
+  else wizardState.selectedPaths.delete(path);
+}
+
+function wizardSelectAll() {
+  wizardState.matchedModels.forEach(m => wizardState.selectedPaths.add(m.path));
+  renderWizardModels();
+  toast('info', `已全选 ${wizardState.matchedModels.length} 个`);
+}
+
+function wizardSelectNone() {
+  wizardState.selectedPaths.clear();
+  renderWizardModels();
+  toast('info', '已清空选择');
+}
+
+async function previewWizardGroup() {
+  if (!wizardState.currentFilter) {
+    toast('warn', '请先应用筛选或选预设');
+    return;
+  }
+  toast('info', '预览生成', `${wizardState.matchedModels.length} 个匹配 / ${wizardState.selectedPaths.size} 个已选`);
+}
+
+async function generateWizardGroup() {
+  const groupName = document.getElementById('wizardGroupName').value.trim();
+  if (!groupName) { toast('warn', '请填分组名'); return; }
+  if (wizardState.selectedPaths.size === 0) { toast('warn', '请至少选一个模型'); return; }
+
+  const payload = {
+    name: groupName,
+    strategy: document.getElementById('wizardGroupStrategy').value,
+    paths: [...wizardState.selectedPaths],
+    filter: wizardState.currentFilter,
+    create_api_key: document.getElementById('wizardCreateApiKey').checked,
+    api_key_name: document.getElementById('wizardApiKeyName').value.trim() || (groupName + '-key'),
+  };
+
+  try {
+    const r = await fetch('/v1/admin/model-groups/from-filter', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload),
+    });
+    const data = await r.json();
+    if (data.error) { toast('error', '生成失败', data.error); return; }
+    showWizardResult(data);
+    toast('success', '分组生成成功', groupName);
+  } catch (e) {
+    toast('error', 'API 失败', e.message);
+  }
+}
+
+function showWizardResult(data) {
+  const panel = document.getElementById('wizardResultPanel');
+  const content = document.getElementById('wizardResultContent');
+  let html = `<div style="font-family:var(--mono);font-size:12px;color:var(--text-0)">
+    <div><b>分组名:</b> ${escapeHtml(data.name || '')}</div>
+    <div><b>匹配数:</b> ${data.matched_count || wizardState.matchedModels.length}</div>
+    <div><b>策略:</b> ${escapeHtml(data.strategy || '')}</div>
+    ${data.description ? `<div style="margin-top:8px;color:var(--text-1)">${escapeHtml(data.description)}</div>` : ''}
+  </div>`;
+  if (data.api_key) {
+    html += `<div style="margin-top:var(--space-3);padding-top:var(--space-3);border-top:1px solid var(--success)">
+      <strong style="color:var(--success)">🔑 API Key (仅显示这一次!)</strong>
+      <div style="margin-top:6px;padding:var(--space-2);background:var(--bg-0);border-radius:var(--radius-sm);font-family:var(--mono);font-size:12px;word-break:break-all;color:var(--warn)">
+        ${escapeHtml(data.api_key.key)}
+      </div>
+      <div style="margin-top:6px;font-size:11px;color:var(--text-2)">name: <code>${escapeHtml(data.api_key.name)}</code> · hash: <code>${escapeHtml(data.api_key.key_hash || '')}</code></div>
+    </div>`;
+  }
+  content.innerHTML = html;
+  panel.style.display = 'block';
+  panel.scrollIntoView({behavior: 'smooth', block: 'nearest'});
+}
 
 // ===== 启动 =====
 applyTheme();
