@@ -1,7 +1,29 @@
 """
 supermodel_router/version.py — 版本元数据 + GitHub release 检查
 
-v3.25.1 (2026-06-29 条件生成器 Wizard):
+v3.26.0 (2026-07-02 admin UI/UX 重做 + dark/light 主题切换 — 老大钦定):
+- admin_ui.py 从 3885 行精简到 777 行 (MVP 80% 精简, v3.27-3.29 增量迁移 wizard/参数量 badge/其他 modal)
+- 现代 Dashboard 重做 (8 条强反馈全部落地):
+  * 视觉层级: 卡片化 / 阴影 / hover 动效 / 径向光晕
+  * 交互反馈: toast / loading 态 / 空状态 / skeleton 骨架屏
+  * 可发现性: 全局搜索 ⌘K / Provider 筛选 / Wizard 入口
+  * 反馈及时: 操作后立即可见 (toast 4s 自动消失, 点击立即关闭)
+- Dark/Light 主题切换 (3 态循环 dark/light/system):
+  * localStorage 持久化偏好
+  * URL ?theme=light|dark|system 即时切换 (inline script 在 CSS 解析前生效)
+  * Ctrl+Shift+L 快捷键切换
+  * 主题切换按钮图标: 🌙 / ☀️ / 💻 跟随系统
+- 设计 token 集中管理: 8 颜色变量 + 8 间距 + 3 圆角 + 3 阴影 (dark/light 双套)
+- 响应式: 1024px → 2 列, 640px → 1 列 + sidebar 折叠
+- 新增组件: 4 KPI 卡片 (今日调用/成功率/平均延迟/免费路由) + Provider sparkline 12 段 + Activity Stream 路由决策流
+- 参考市面: OpenRouter (简洁卡片) + Portkey (observability) + Cloudflare AI Gateway (spend limits) + LiteLLM (open source dashboard)
+- 保留 router: /admin (v3.26 现代版) + /admin/9-gong (v3.11 8 卦布局)
+- TODO (下版增量):
+  * v3.27: v3.25.2 wizard DOM 完整迁移 (preset / 条件生成器 / preview / generate)
+  * v3.28: v3.15.0 参数量 badge + filterSizes 集成
+  * v3.29: 其他 modal 完整迁移 (provider edit / api-key / version / usage / probe)
+
+v3.25.2 (2026-06-29 wizard 默认 = 条件生成器):
 - Model Group Wizard 增强: "🔍 自定义筛选" tab 替换为 "🧪 条件生成器"
 - 核心需求 (老大反馈): 选逻辑关系 + 填关键词 → 生成正则表达式
 - 字段: model_id / provider (2 字段)
@@ -270,8 +292,8 @@ from typing import Optional
 LOG = logging.getLogger("version")
 
 # 当前版本 (跟随 release tag)
-VERSION = "3.25.1"
-BUILD_DATE = "2026-06-29"
+VERSION = "3.26.0"
+BUILD_DATE = "2026-07-02"
 
 GITHUB_REPO = "IGhostHuang/supermodel_router"  # 默认值, 可被 config.version_check.repo 覆盖
 RELEASE_CHECK_INTERVAL = 3600  # 1 小时检查一次
