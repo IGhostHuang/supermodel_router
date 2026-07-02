@@ -219,6 +219,37 @@ async def admin_routes():
     return JSONResponse({"routes": out, "total": len(out)})
 
 
+# v3.15.0: 参数量 cache loader (启动时加载,改 cache 需重启容器)
+import json as _json_size
+from pathlib import Path as _Path_size
+
+_MODEL_SIZE_CACHE_DICT: dict = {}
+
+def _load_model_size_cache():
+    """从 /app/data/model_size_cache.json (mount 自 WSL ./data/) 加载参数量 cache。
+    启动时调用一次;失败返回空 dict。"""
+    global _MODEL_SIZE_CACHE_DICT
+    try:
+        cache_path = _Path_size("/app/data/model_size_cache.json")
+        if not cache_path.exists():
+            print(f"WARN [model_size_cache] /app/data/model_size_cache.json 不存在")
+            _MODEL_SIZE_CACHE_DICT = {}
+            return
+        raw = _json_size.loads(cache_path.read_text())
+        _MODEL_SIZE_CACHE_DICT = {m["model_id"]: m for m in raw.get("models", [])}
+        print(f"INFO [model_size_cache] 加载 {len(_MODEL_SIZE_CACHE_DICT)} 个模型参数量")
+    except Exception as e:
+        print(f"WARN [model_size_cache] 加载失败: {e}")
+        _MODEL_SIZE_CACHE_DICT = {}
+
+# 启动时立即加载
+_load_model_size_cache()
+
+def _model_size_lookup(model_id: str, key: str, default=None):
+    """查 cache,返回 model 字段值 (默认 default)。"""
+    return _MODEL_SIZE_CACHE_DICT.get(model_id, {}).get(key, default)
+
+
 @router.get("/v1/admin/models")
 async def admin_models(provider: str | None = None, pricing: str | None = None):
     """v3.6: 详细模型列表 (含 pricing_type, capability_score, modality)
@@ -248,6 +279,11 @@ async def admin_models(provider: str | None = None, pricing: str | None = None):
                 "pricing_detail": price_info,
                 "is_free": p in {PRICING_FREE, PRICING_LIMITED_FREE},
                 "base_url": ps.base_url,
+                # v3.15.0: 参数量标签 (注入自 data/model_size_cache.json)
+                "size_b": _model_size_lookup(m.id, "size_b"),
+                "size_class": _model_size_lookup(m.id, "size_class", default="unknown"),
+                "size_source": _model_size_lookup(m.id, "source", default="none"),
+                "size_confidence": _model_size_lookup(m.id, "confidence", default=0.0),
             })
     return JSONResponse({"models": out, "total": len(out)})
 

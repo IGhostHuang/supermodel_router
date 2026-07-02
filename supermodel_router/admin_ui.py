@@ -481,6 +481,7 @@ body{display:flex;gap:0;padding:0;max-width:none;min-height:100vh;background:#0a
         <option value="context">按上下文</option>
         <option value="name">按模型名</option>
         <option value="price">按价格</option>
+        <option value="size">按参数量</option>  <!-- v3.15.0 -->
       </select>
       <button id="sortOrderBtn" class="models-sort-btn" onclick="toggleSortOrder()" title="切换升降序">↓ 降序</button>
     </div>
@@ -495,9 +496,13 @@ body{display:flex;gap:0;padding:0;max-width:none;min-height:100vh;background:#0a
       <span class="filter-label">Provider <span class="filter-clear" onclick="clearProviderFilter()">×</span></span>
       <div class="provider-filter" id="providerFilter"></div>
     </div>
+    <div class="filter-group">
+      <span class="filter-label">参数量 <span class="filter-clear" onclick="clearSizeFilter()">×</span></span>
+      <div class="size-filter" id="sizeFilter"></div>
+    </div>
   </div>
   <div id="modelSection">
-    <table><thead><tr><th>Model</th><th>Provider</th><th>分类</th><th>价格</th><th>能力分</th><th>🏥 健康度</th></tr></thead><tbody id="modelTable"></tbody></table>
+    <table><thead><tr><th>Model</th><th>Provider</th><th>分类</th><th>价格</th><th>能力分</th><th>🧮 参数量</th><th>🏥 健康度</th></tr></thead><tbody id="modelTable"></tbody></table>
   </div>
   <div class="pagination" id="modelPagination"></div>
 </div>
@@ -1008,6 +1013,7 @@ const BASE = '';
 let filterModality = '';
 let filterProviders = new Set();   // v3.14.0: Provider 多选筛选
 let filterSearch = '';              // v3.14.0: 搜索框 (model id / provider)
+let filterSizes = new Set();        // v3.15.0: 参数量 4 档多选筛选
 // v3.15.0: 模型健康度 (从 /v1/admin/model-health 拉, 5min 缓存)
 let lastModelHealth = {};           // path → health record
 let lastModelHealthFetch = 0;       // 上次拉取时间戳 (秒)
@@ -1502,6 +1508,27 @@ function renderHealthBadge(m){
   return `<span class="health-badge ${info.cls}" title="${escapeHtml(tooltip)}">${info.icon} ${info.label}</span>`;
 }
 
+// v3.15.0: 参数量 badge (4 档配色: 紫>200B / 黄70-200B / 蓝13-70B / 灰<13B / 灰? unknown)
+function renderSizeBadge(m){
+  const sc = m.size_class || 'unknown';
+  const sb = m.size_b;
+  const src = m.size_source || 'none';
+  const conf = (m.size_confidence || 0);
+  const COLOR = {
+    '>200B':   { bg:'#3a1a4a', fg:'#d8b4fe', icon:'🐘', label:'>200B' },
+    '70-200B': { bg:'#4a3a1a', fg:'#fde68a', icon:'🦏', label:'70-200B' },
+    '13-70B':  { bg:'#1a3a4a', fg:'#93c5fd', icon:'🐎', label:'13-70B' },
+    '<13B':    { bg:'#1a1a24', fg:'#94a3b8', icon:'🐇', label:'<13B' },
+    'unknown': { bg:'#1a1a24', fg:'#666',    icon:'❓', label:'unknown' },
+    'anomaly': { bg:'#4a1a1a', fg:'#fb7185', icon:'⚠️', label:'anomaly' },
+  };
+  const c = COLOR[sc] || COLOR.unknown;
+  const sbStr = (sb && typeof sb === 'number') ? `${sb}B` : (sc === 'unknown' ? '—' : '估算');
+  const srcLabel = src === 'regex' ? '规则' : (src === 'regex_moe_active' ? 'MoE-active' : src === 'estimate' ? '估算' : '—');
+  const tooltip = `${escapeHtml(m.id||'')}\nsize_class: ${sc}\nsize_b: ${sb ?? 'null'}\nsource: ${srcLabel}\nconfidence: ${(conf*100).toFixed(0)}%`;
+  return `<span class="size-badge" style="background:${c.bg};color:${c.fg};padding:3px 8px;border-radius:4px;font-size:11px;font-weight:600;display:inline-flex;align-items:center;gap:4px" title="${tooltip}">${c.icon} ${sbStr}</span>`;
+}
+
 function renderHealthSummaryBar(){
   // 在 toolbar 上方插入一行 summary (4 chip: 健康/降级/跳过/探测)
   let bar = document.getElementById('healthSummaryBar');
@@ -1600,10 +1627,10 @@ function escapeHtml(s){
 // v3.6.0: 模型分页 (v3.14.0: 多维筛选 + 排序 + 搜索)
 function getFilteredSortedModels(){
   if(!lastModelsData) return [];
-  const all = (lastModelsData?.data || lastModelsData?.models || []);
-  return all
+  return (lastModelsData?.data || lastModelsData?.models || [])
     .filter(m => !filterModality || m.modality === filterModality)
     .filter(m => filterProviders.size === 0 || filterProviders.has(m.provider))
+    .filter(m => filterSizes.size === 0 || filterSizes.has(m.size_class || 'unknown'))  // v3.15.0
     .filter(m => {
       if(!filterSearch) return true;
       const q = filterSearch.toLowerCase();
@@ -1621,6 +1648,7 @@ function getSortValue(m, key){
   if(key === 'capability') return m.capability_score || 0;
   if(key === 'context') return m.context_window || 0;
   if(key === 'name') return (m.id || '').toLowerCase();
+  if(key === 'size') return m.size_b || 0;  // v3.15.0: 参数量数字排序 (null=0 排最后)
   if(key === 'price'){
     // price 排: free=0, cheap=1, standard=2, premium=3 (按价位升序便宜优先)
     const pricing = m.pricing_tier || (m.pricing || '').toLowerCase() || '';
@@ -1654,8 +1682,8 @@ function renderModels(data){
   }
   // 渲染表格
   if(pageModels.length === 0){
-    const hasFilter = filterModality || filterProviders.size > 0 || filterSearch;
-    t.innerHTML = `<tr><td colspan="6">
+    const hasFilter = filterModality || filterProviders.size > 0 || filterSizes.size > 0 || filterSearch;
+    t.innerHTML = `<tr><td colspan="7">
       <div class="empty-state">
         <div class="empty-icon">🔍</div>
         <div class="empty-title">${hasFilter ? '没找到匹配的模型' : '暂无模型'}</div>
@@ -1672,12 +1700,14 @@ function renderModels(data){
     const color=sc>=80?'#4ade80':sc>=50?'#fbbf24':'#f87171';
     const priceBadge = renderPricingBadge(m);
     const healthBadge = renderHealthBadge(m);
+    const sizeBadge = renderSizeBadge(m);
     return `<tr>
       <td>${m.id}</td>
       <td><span class="provider-tag">${m.provider||'?'}</span></td>
       <td><span class="modality-tag ${renderModalityClass(m.modality)}">${m.modality_display||m.modality||'?'}</span></td>
       <td>${priceBadge}</td>
       <td><span class="score-bar" style="width:${pct*0.7}px;background:${color}"></span>${sc}</td>
+      <td>${sizeBadge}</td>
       <td>${healthBadge}</td>
     </tr>`;
   }).join('');
@@ -1745,6 +1775,7 @@ function toggleProviderFilter(name){
   if(filterProviders.has(name)) filterProviders.delete(name);
   else filterProviders.add(name);
   renderProviderFilter();
+  renderSizeFilter();   // v3.15.0
   currentPage = 0;
   renderModels();
 }
@@ -1754,21 +1785,32 @@ function clearProviderFilter(){
   currentPage = 0;
   renderModels();
 }
+function toggleSizeFilter(cls){   // v3.15.0: 参数量 chip 多选
+  if(filterSizes.has(cls)) filterSizes.delete(cls);
+  else filterSizes.add(cls);
+  renderSizeFilter();
+  currentPage = 0;
+  renderModels();
+}
+function clearSizeFilter(){
+  filterSizes.clear();
+  renderSizeFilter();
+  currentPage = 0;
+  renderModels();
+}
 function resetAllModelFilters(){
   filterModality = '';
   filterProviders.clear();
+  filterSizes.clear();   // v3.15.0
   filterSearch = '';
   sortBy = 'capability';
   sortOrder = 'desc';
   const searchEl = document.getElementById('modelSearch');
   if(searchEl) searchEl.value = '';
-  const sortByEl = document.getElementById('modelSortBy');
-  if(sortByEl) sortByEl.value = 'capability';
-  const sortBtn = document.getElementById('sortOrderBtn');
-  if(sortBtn) sortBtn.textContent = '↓ 降序';
-  currentPage = 0;
   renderModelFilter();
   renderProviderFilter();
+  renderSizeFilter();   // v3.15.0
+  currentPage = 0;
   renderModels();
 }
 function renderProviderFilter(){
@@ -1783,6 +1825,34 @@ function renderProviderFilter(){
   f.innerHTML = providers.map(p =>
     `<span class="chip ${filterProviders.has(p)?'selected':''}" onclick="toggleProviderFilter('${escapeHtml(p)}')">${escapeHtml(p)}</span>`
   ).join('');
+}
+// v3.15.0: 参数量 chip 渲染 (4 档固定顺序 + 计数)
+const SIZE_CLASS_ORDER = ['>200B', '70-200B', '13-70B', '<13B', 'unknown'];
+function renderSizeFilter(){
+  const f = document.getElementById('sizeFilter');
+  if(!f || !lastModelsData) return;
+  const all = lastModelsData?.data || lastModelsData?.models || [];
+  if(all.length === 0){
+    f.innerHTML = '<span style="color:#666;font-size:11px">暂无模型</span>';
+    return;
+  }
+  // 计数每个 size_class
+  const counts = {};
+  for(const m of all){ counts[m.size_class || 'unknown'] = (counts[m.size_class || 'unknown'] || 0) + 1; }
+  const COLOR = {
+    '>200B':   '#d8b4fe',
+    '70-200B': '#fde68a',
+    '13-70B':  '#93c5fd',
+    '<13B':    '#94a3b8',
+    'unknown': '#666',
+  };
+  f.innerHTML = SIZE_CLASS_ORDER.map(sc => {
+    const cnt = counts[sc] || 0;
+    const selected = filterSizes.has(sc);
+    return `<span class="size-chip ${selected?'selected':''}" data-size="${sc}" onclick="toggleSizeFilter('${sc}')" style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;background:${selected?COLOR[sc]:'transparent'};border:1px solid ${COLOR[sc]};color:${selected?'#000':COLOR[sc]};padding:4px 10px;border-radius:12px;font-size:11px;font-weight:600;margin-right:4px;transition:all .12s ease;user-select:none">
+      ${sc} <span style="opacity:0.7;font-weight:400">(${cnt})</span>
+    </span>`;
+  }).join('');
 }
 
 // v3.6.0: Stats 视图 (从 /v1/admin/stats 拿真数据)
