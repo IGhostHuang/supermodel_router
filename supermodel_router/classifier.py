@@ -287,6 +287,13 @@ IMAGE_GEN_PATTERNS = [
     r"anything.*v\d",
     r"rev.*animated",
     r"adventure.*diffusion",
+    # v3.28: 国产/开源生图模型 (魔塔免费 + HuggingFace 等)
+    r"qwen.*image",          # Qwen-Image / Qwen-Image-Edit (阿里通义)
+    r"kolors",               # 智谱 Kolors
+    r"wan.*image",           # 阿里 Wan2.x 系列
+    r"cogview",              # 智谱 CogView
+    r"hunyuan.*image",       # 腾讯混元生图
+    r"sdxl.*edit",           # SDXL-Edit 类编辑模型
 ]
 
 # 视频生成

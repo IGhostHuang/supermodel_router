@@ -4,6 +4,7 @@ supermodel_router/engine.py — 路由引擎 v3: 质量评分 + 模态路由 + �
 import re
 import json
 import time
+import asyncio  # v3.28: ModelScope 异步生图轮询用
 import datetime
 import logging
 import random
@@ -1001,7 +1002,10 @@ async def proxy_images_generations(
     body: dict,
     timeout: float = 120,
 ) -> dict:
-    """发送 images/generations 请求到生图模型"""
+    """发送 images/generations 请求到生图模型
+
+    v3.28: 加 ModelScope 异步模式分支 (api-inference.modelscope.cn 必须 X-ModelScope-Async-Mode)
+    """
     headers = {
         "Content-Type": "application/json",
     }
@@ -1012,6 +1016,19 @@ async def proxy_images_generations(
 
     payload = {**body, "model": route.model_id}
     base_url = route.base_url.rstrip("/")
+
+    # v3.28: ModelScope 必须异步 (同步模式 API 直接 400)
+    if "modelscope.cn" in base_url:
+        return await _proxy_modelscope_async(base_url, headers, payload, route, timeout=timeout)
+
+    # v3.28: HuggingFace inference API — 同步返回 image bytes, 转 OpenAI 格式
+    if "huggingface.co" in base_url:
+        return await _proxy_huggingface(base_url, headers, payload, route, timeout=timeout)
+
+    # v3.28: DashScope 阿里云百炼 (OpenAI 兼容模式) — sync 直接可用
+    if "dashscope.aliyuncs.com" in base_url:
+        return await _proxy_dashscope(base_url, headers, payload, route, timeout=timeout)
+
     url = f"{base_url}/images/generations"
 
     async with httpx.AsyncClient() as client:
@@ -1034,6 +1051,344 @@ async def proxy_images_generations(
             return result
         except Exception as e:
             return {"error": {"message": str(e), "type": "proxy_error"}}
+
+
+async def _proxy_dashscope(
+    base_url: str,
+    headers: dict,
+    payload: dict,
+    route: RouteResult,
+    timeout: float = 180,
+) -> dict:
+    """v3.28: DashScope 阿里云百炼 图像生成 (OpenAI 兼容模式)
+
+    端点: {base_url}/images/generations  (跟 OpenAI 一致)
+    流程:
+    1. POST /images/generations 同步
+       - 文生图: {"model": "wanx-v1", "prompt": "..."}
+       - 图生图: {"model": "qwen-image-edit", "prompt": "...", "image_url": "..."}
+    2. 响应: OpenAI 风格 JSON {"created": ts, "data": [{"url": "..."}]}
+    """
+    url = f"{base_url.rstrip('/')}/images/generations"
+
+    # DashScope OpenAI 兼容模式: 用 Bearer auth
+    auth_headers = {
+        "Authorization": headers.get("Authorization", ""),
+        "Content-Type": "application/json",
+    }
+
+    # payload 标准化: SMR 已有 prompt + image_url 字段, DashScope 直接支持
+    # 但 image_url 字段是 DashScope 内部 API 命名, OpenAI 兼容模式可能不同
+    # 兼容两种情况: 标准 image_url (qwen-image-edit) 或 messages 风格
+    if "image_url" in payload and payload["image_url"]:
+        # 保持 image_url 字段, qwen-image-edit 直接支持
+        pass
+
+    t0 = time.time()
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            resp = await client.post(url, json=payload, headers=auth_headers, timeout=timeout)
+        elapsed = time.time() - t0
+
+        if resp.status_code != 200:
+            return {
+                "error": {"message": resp.text[:500],
+                          "type": f"http_{resp.status_code}"},
+                "_router": {"provider": route.provider_name,
+                            "model": route.model_id,
+                            "latency_ms": round(elapsed * 1000, 1)},
+            }
+
+        result = resp.json()
+        result["_router"] = {
+            "provider": route.provider_name,
+            "model": route.model_id,
+            "latency_ms": round(elapsed * 1000, 1),
+        }
+        return result
+    except Exception as e:
+        return {"error": {"message": str(e), "type": "dashscope_proxy_error"},
+                "_router": {"provider": route.provider_name, "model": route.model_id,
+                            "latency_ms": round((time.time() - t0) * 1000, 1)}}
+
+
+async def _proxy_huggingface(
+    base_url: str,
+    headers: dict,
+    payload: dict,
+    route: RouteResult,
+    timeout: float = 180,
+) -> dict:
+    """v3.28: HuggingFace Inference API 图像生成/编辑
+
+    流程:
+    1. POST /models/{model_id} 同步
+       - text2img: {"inputs": "prompt", "parameters": {...}}
+       - img2img: {"inputs": base64_image, "parameters": {"prompt": "..."}}
+    2. 响应: image/png bytes (NOT JSON)
+    3. 转 OpenAI 格式 + base64 内嵌 (无 external URL)
+    """
+    model_id = route.model_id
+    url = f"{base_url.rstrip('/')}/{model_id}"
+
+    # 转换 payload: SMR image_url → HF inputs + parameters
+    # prompt / image_url 字段标准化
+    hf_inputs = payload.get("prompt", "")
+    hf_params = {}
+    if "image_url" in payload and payload["image_url"]:
+        # img2img 模式: inputs = base64 string, parameters.prompt = instruction
+        img_url = payload["image_url"]
+        # 剥 data URI 前缀
+        if img_url.startswith("data:image/") and ";base64," in img_url:
+            img_b64 = img_url.split(";base64,", 1)[1]
+        else:
+            img_b64 = img_url  # 假设纯 base64
+        # instruct-pix2pix: inputs = base64 string, parameters.prompt = instruction
+        # SDXL img2img: inputs = base64 string, parameters = {prompt, strength, ...}
+        # 但 HF API 文档: image-to-image 实际上 inputs 字段就是 image bytes, parameters.prompt 是文本
+        hf_inputs = img_b64
+        if hf_inputs.startswith("data:image"):
+            # 有些模型接受 data URI, instruct-pix2pix 是这种
+            pass
+        hf_params["prompt"] = payload.get("prompt", "")
+        # copy 其他 parameters
+        for k in ("negative_prompt", "guidance_scale", "num_inference_steps", "strength"):
+            if k in payload:
+                hf_params[k] = payload[k]
+    elif "messages" in payload:
+        # chat-style fallback (e.g. 内嵌消息)
+        msgs = payload["messages"]
+        for m in msgs:
+            if m.get("role") == "user":
+                content = m.get("content", "")
+                if isinstance(content, str):
+                    hf_inputs = content
+                elif isinstance(content, list):
+                    # 多模态: 找 text 和 image_url
+                    for part in content:
+                        if part.get("type") == "text":
+                            hf_inputs = part.get("text", "")
+                        elif part.get("type") == "image_url":
+                            url_v = part.get("image_url", {}).get("url", "")
+                            if url_v.startswith("data:image/"):
+                                hf_inputs = url_v.split(";base64,", 1)[1] if ";base64," in url_v else url_v
+                                hf_params["prompt"] = payload.get("prompt", "") or hf_inputs
+                                break
+                break
+
+    # 构造 request body
+    if hf_params:
+        body = {"inputs": hf_inputs, "parameters": hf_params}
+    else:
+        body = {"inputs": hf_inputs}
+
+    # 同步调用 HF API
+    t0 = time.time()
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            resp = await client.post(
+                url,
+                json=body,
+                headers={"Authorization": headers.get("Authorization", ""),
+                         "Content-Type": "application/json"},
+                timeout=timeout,
+            )
+        elapsed = time.time() - t0
+
+        if resp.status_code != 200:
+            return {
+                "error": {"message": resp.text[:500],
+                          "type": f"http_{resp.status_code}"},
+                "_router": {"provider": route.provider_name,
+                            "model": route.model_id,
+                            "latency_ms": round(elapsed * 1000, 1)},
+            }
+
+        # 检查 Content-Type
+        ct = resp.headers.get("Content-Type", "")
+        if "image/" in ct:
+            # 真返回 image bytes — 转 base64 内嵌
+            import base64
+            b64 = base64.b64encode(resp.content).decode()
+            data_uri = f"data:{ct};base64,{b64}"
+            return {
+                "created": int(time.time()),
+                "data": [{"url": None, "b64_json": data_uri}],
+                "_router": {
+                    "provider": route.provider_name,
+                    "model": route.model_id,
+                    "latency_ms": round(elapsed * 1000, 1),
+                },
+            }
+
+        # JSON 响应 (可能含 errors)
+        try:
+            result = resp.json()
+        except Exception:
+            return {
+                "error": {"message": f"HF returned non-image non-JSON: {ct}, body[:300]={resp.text[:300]}"},
+                "_router": {"provider": route.provider_name, "model": route.model_id,
+                            "latency_ms": round(elapsed * 1000, 1)},
+            }
+
+        # 可能是 error JSON
+        if isinstance(result, dict) and "error" in result:
+            return {
+                "error": result["error"] if isinstance(result["error"], dict)
+                        else {"message": str(result["error"])[:300],
+                              "type": "huggingface_error"},
+                "_router": {"provider": route.provider_name, "model": route.model_id,
+                            "latency_ms": round(elapsed * 1000, 1)},
+            }
+
+        # 数组形式 (HF 老 API)
+        if isinstance(result, list) and result:
+            return {
+                "created": int(time.time()),
+                "data": [{"url": None,
+                          "b64_json": item.get("generated_text", None) if isinstance(item, dict) else None}
+                         for item in result],
+                "_router": {"provider": route.provider_name, "model": route.model_id,
+                            "latency_ms": round(elapsed * 1000, 1)},
+            }
+
+        return {
+            "created": int(time.time()),
+            "data": [{"url": None, "b64_json": json.dumps(result)[:300]}],
+            "_router": {"provider": route.provider_name, "model": route.model_id,
+                        "latency_ms": round(elapsed * 1000, 1)},
+        }
+    except Exception as e:
+        return {"error": {"message": str(e), "type": "huggingface_proxy_error"},
+                "_router": {"provider": route.provider_name, "model": route.model_id,
+                            "latency_ms": round((time.time() - t0) * 1000, 1)}}
+
+
+async def _proxy_modelscope_async(
+    base_url: str,
+    headers: dict,
+    payload: dict,
+    route: RouteResult,
+    timeout: float = 120,
+    poll_interval: float = 1.5,
+    max_polls: int = 80,  # 80 * 1.5s = 120s 上限
+) -> dict:
+    """v3.28: ModelScope 异步生图 (image-gen 必须异步)
+
+    流程:
+    1. POST /v1/images/generations + X-ModelScope-Async-Mode: true
+       → 返回 task_id
+    2. GET /v1/tasks/{task_id} 轮询 status
+       → SUCCEED → 拿 image_urls
+       → FAILED → 报失败
+    3. 转成 OpenAI 格式 {"created": ts, "data": [{"url": "..."}]}
+    """
+    submit_url = f"{base_url}/images/generations"
+    submit_headers = {**headers, "X-ModelScope-Async-Mode": "true"}
+
+    t0 = time.time()
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        try:
+            # Step 1: 提交异步任务
+            sub_resp = await client.post(submit_url, json=payload, headers=submit_headers, timeout=30)
+            if sub_resp.status_code != 200:
+                return {
+                    "error": {"message": f"submit failed: {sub_resp.text[:300]}",
+                              "type": f"http_{sub_resp.status_code}"},
+                    "_router": {"provider": route.provider_name, "model": route.model_id,
+                                "latency_ms": round((time.time() - t0) * 1000, 1)},
+                }
+            sub_data = sub_resp.json()
+            task_id = sub_data.get("task_id") or sub_data.get("taskId") or sub_data.get("id")
+            if not task_id:
+                return {
+                    "error": {"message": f"no task_id in submit response: {json.dumps(sub_data)[:300]}",
+                              "type": "modelscope_no_task_id"},
+                    "_router": {"provider": route.provider_name, "model": route.model_id,
+                                "latency_ms": round((time.time() - t0) * 1000, 1)},
+                }
+
+            # Step 2: 轮询状态
+            task_url = f"{base_url}/tasks/{task_id}"
+            task_headers = {**headers}  # Bearer token 走 headers
+            for i in range(max_polls):
+                if time.time() - t0 > timeout:
+                    return {
+                        "error": {"message": f"task {task_id} timeout after {timeout}s",
+                                  "type": "modelscope_timeout"},
+                        "_router": {"provider": route.provider_name, "model": route.model_id,
+                                    "task_id": task_id,
+                                    "latency_ms": round((time.time() - t0) * 1000, 1)},
+                    }
+                await asyncio.sleep(poll_interval)
+                poll_resp = await client.get(task_url, headers=task_headers, timeout=15)
+                if poll_resp.status_code != 200:
+                    continue  # 网络抖动, 继续轮询
+                task_data = poll_resp.json()
+                status = (task_data.get("task_status")
+                          or task_data.get("status")
+                          or task_data.get("state")
+                          or "").upper()
+
+                if status in ("SUCCEED", "SUCCESS", "COMPLETED", "FINISHED"):
+                    # Step 3: 拿 image_urls 转 OpenAI 格式
+                    image_urls = (task_data.get("output_images")
+                                  or task_data.get("output", {}).get("images")
+                                  or task_data.get("images")
+                                  or task_data.get("results")
+                                  or [])
+                    # 也可能 image_urls 是 dict list with 'url' key
+                    if image_urls and isinstance(image_urls[0], dict):
+                        image_urls = [x.get("url") or x.get("image_url") or x.get("image") for x in image_urls]
+                    b64s = (task_data.get("output_images_base64")
+                            or task_data.get("output", {}).get("images_base64")
+                            or [])
+                    data_list = []
+                    for u in image_urls:
+                        data_list.append({"url": u, "b64_json": None})
+                    for b in b64s:
+                        data_list.append({"url": None, "b64_json": b})
+                    if not data_list:
+                        return {
+                            "error": {"message": f"task SUCCEED but no images: {json.dumps(task_data)[:300]}",
+                                      "type": "modelscope_no_images"},
+                            "_router": {"provider": route.provider_name, "model": route.model_id,
+                                        "task_id": task_id,
+                                        "latency_ms": round((time.time() - t0) * 1000, 1)},
+                        }
+                    return {
+                        "created": int(time.time()),
+                        "data": data_list,
+                        "_router": {
+                            "provider": route.provider_name,
+                            "model": route.model_id,
+                            "task_id": task_id,
+                            "async": True,
+                            "polls": i + 1,
+                            "latency_ms": round((time.time() - t0) * 1000, 1),
+                        },
+                    }
+                if status in ("FAILED", "FAILURE", "ERROR"):
+                    return {
+                        "error": {"message": task_data.get("message") or task_data.get("error") or f"task FAILED: {json.dumps(task_data)[:300]}",
+                                  "type": "modelscope_task_failed"},
+                        "_router": {"provider": route.provider_name, "model": route.model_id,
+                                    "task_id": task_id,
+                                    "latency_ms": round((time.time() - t0) * 1000, 1)},
+                    }
+                # PENDING / RUNNING / PROCESSING → 继续轮询
+
+            return {
+                "error": {"message": f"task {task_id} exhausted {max_polls} polls",
+                          "type": "modelscope_polls_exhausted"},
+                "_router": {"provider": route.provider_name, "model": route.model_id,
+                            "task_id": task_id,
+                            "latency_ms": round((time.time() - t0) * 1000, 1)},
+            }
+        except Exception as e:
+            return {"error": {"message": str(e), "type": "modelscope_proxy_error"},
+                    "_router": {"provider": route.provider_name, "model": route.model_id,
+                                "latency_ms": round((time.time() - t0) * 1000, 1)}}
 
 
 async def _proxy_normal(url, headers, payload, timeout, route) -> dict:

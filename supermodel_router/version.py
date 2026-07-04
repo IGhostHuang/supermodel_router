@@ -1,6 +1,14 @@
 """
 supermodel_router/version.py — 版本元数据 + GitHub release 检查
 
+v3.28.0 (2026-07-04 admin guide + wizard v3.27 全量集成 — 老大钦定):
+- admin_ui.py 加 /admin/guide 路由 (跟 9-gong 同级)
+- Topnav 加 📖 链接 (主 dashboard 一键进)
+- 新文件 admin_ui_guide.py (24KB, 10 段: 概览/快速/Dashboard/Wizard/常用/高级/FAQ/故障/快捷键/版本)
+- 基于 v3.27.0 真实状态, 标注 12 个 v3.27 stub 按钮 (点下去是 toast)
+- admin_ui.py 路由 + topnav +13 行, 备份 admin_ui.py.bak-v327-guide-*
+- 标题 brand v3.26.0 → v3.28.0 同步
+
 v3.27.0 (2026-07-02 v3.25.2 wizard 完整迁移 — 老大拍"都干"增量):
 - v3.25.2 wizard DOM 完整迁移 (5 段: preset / 自定义筛选 / 匹配模型列表 / 一键生成 / 结果展示)
 - 13 个 preset 卡片渲染 (📚 长上下文 / 📖 32K / 📕 200K / ⚡ 快速 / ⚖️ 速度质量 / 🎯 高质量 / 🏆 顶级 / 🎨 图像 / 👁 视觉 / 🌐 Any-to-Any / 🧠 强推理 / 💻 代码 / 💰 性价比)
