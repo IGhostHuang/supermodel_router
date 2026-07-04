@@ -1,7 +1,7 @@
 """
-supermodel_router/admin_ui.py — Modern Dashboard + Dark/Light Theme (v3.26.0)
+supermodel_router/admin_ui.py — Modern Dashboard + Dark/Light Theme (v3.28.0)
 
-- ADMIN_HTML: 现代 dashboard (v3.26 重做 CSS + HTML body)
+- ADMIN_HTML: 现代 dashboard (v3.28 集成 guide 页)
 - 主题切换: dark / light / system 三态循环, localStorage 持久化, ⌘K + Ctrl+Shift+L 快捷键
 - 视觉层级: 阴影 / hover / 动画 / 骨架屏 / 统一 toast / 响应式 / 设计 token
 - /admin 与 /admin/: 返回 ADMIN_HTML
@@ -21,7 +21,7 @@ router = APIRouter()
 
 
 # ============================================================
-# v3.26.0 ADMIN_HTML — 现代 Dashboard + Dark/Light 主题
+# v3.28.0 ADMIN_HTML — 现代 Dashboard + Dark/Light 主题 + Guide 页
 # ============================================================
 
 ADMIN_HTML = r"""<!DOCTYPE html>
@@ -40,7 +40,7 @@ ADMIN_HTML = r"""<!DOCTYPE html>
 </script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>SuperModel Router v3.26</title>
+<title>SuperModel Router v3.28</title>
 <style>
 /* ===== 设计 Token (Dark + Light 双套) ===== */
 :root[data-theme="dark"]{
@@ -212,7 +212,7 @@ body{padding:var(--space-5);min-height:100vh}
 .skeleton{background:linear-gradient(90deg,var(--bg-2) 25%,var(--bg-3) 50%,var(--bg-2) 75%);background-size:200% 100%;animation:shimmer 1.5s infinite;border-radius:var(--radius-sm)}
 @keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
 
-/* ===== Modal (v3.26 通用) ===== */
+/* ===== Modal (v3.28 通用) ===== */
 .modal-overlay{position:fixed;inset:0;background:var(--overlay);z-index:500;display:none;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(4px)}
 .modal-overlay.active{display:flex}
 .modal-content{background:var(--bg-1);border:1px solid var(--border);border-radius:var(--radius-lg);max-width:900px;width:100%;max-height:90vh;overflow:auto;padding:var(--space-5);box-shadow:var(--shadow-lg)}
@@ -387,7 +387,7 @@ body{padding:var(--space-5);min-height:100vh}
 </div>
 
 <div class="footer">
-  SuperModel Router v3.26.0 · Dark/Light theme toggle · Press <kbd>Ctrl+Shift+L</kbd> to cycle theme
+  SuperModel Router v3.28.0 · Dark/Light theme toggle · Press <kbd>Ctrl+Shift+L</kbd> to cycle theme
 </div>
 
 <!-- ===== Toast Container ===== -->
@@ -508,7 +508,7 @@ body{padding:var(--space-5);min-height:100vh}
 
 <script>
 /* ============================================================
- * SMR v3.26.0 — Modern Dashboard
+ * SMR v3.28.0 — Modern Dashboard + Guide Page
  * ============================================================ */
 
 // ===== 工具函数 =====
@@ -1171,7 +1171,7 @@ document.addEventListener('keydown', (e) => {
 @router.get("/admin", response_class=HTMLResponse)
 @router.get("/admin/", response_class=HTMLResponse)
 async def admin_page():
-    """v3.26: 现代 dashboard + dark/light 主题切换"""
+    """v3.28: 现代 dashboard + dark/light 主题切换 + guide 页"""
     from .version import VERSION as _V
     return HTMLResponse(content=ADMIN_HTML.replace("__SMR_VERSION__", _V))
 

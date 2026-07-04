@@ -16,6 +16,7 @@ services:
     volumes:
     - ./config.yaml:/app/config.yaml:rw
     - ./supermodel_router/admin_ui.py:/app/supermodel_router/admin_ui.py:ro
+    - ./supermodel_router/admin_ui_guide.py:/app/supermodel_router/admin_ui_guide.py:ro
     - ./supermodel_router/version.py:/app/supermodel_router/version.py:ro
     - ./supermodel_router/engine.py:/app/supermodel_router/engine.py:ro
     - ./supermodel_router/admin_api.py:/app/supermodel_router/admin_api.py:ro
