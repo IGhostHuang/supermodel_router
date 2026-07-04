@@ -25,10 +25,11 @@ v3.5.0 新增 (2026-06-17 22:25 老大拍):
 """
 import json
 import time
-import asyncio
+import asyncio  # v3.28: ModelScope 异步生图轮询用
 import logging
 import uuid
 from typing import Any, cast, AsyncGenerator
+from starlette.datastructures import UploadFile  # v3.28: multipart img upload type check
 
 import httpx
 from fastapi import APIRouter, Request
@@ -450,8 +451,25 @@ async def chat_completions(request: Request):
 
 @router.post("/v1/images/generations")
 async def images_generations(request: Request):
-    """图像生成 — 自动路由到生图模型分组"""
-    body = await request.json()
+    """图像生成 — 自动路由到生图模型分组
+
+    v3.28: 加 image 字段支持 (img2img / 图生图)
+    - body.image = str URL or {"url": "..."} 或 {"base64": "..."}
+    - 检测到 image → 视为 img2img, 传给 provider 用 image_url 字段
+    - 没 image → 走 text2img 流程
+    """
+    content_type = request.headers.get("content-type", "")
+    if "application/json" in content_type:
+        body = await request.json()
+    else:
+        # multipart/form-data: prompt 在表单, image 文件在文件字段
+        form = await request.form()
+        body = {}
+        for k, v in form.items():
+            if k == "image" and isinstance(v, UploadFile):
+                body[k] = await v.read()  # UploadFile → bytes
+            else:
+                body[k] = v
     params = detect_image_gen_params(body)
     prompt = params["prompt"]
     if not prompt:
@@ -464,6 +482,23 @@ async def images_generations(request: Request):
             {"error": {"message": "No image generation models available", "type": "routing_error"}},
             status_code=503,
         )
+
+    # v3.28: img2img 时, 把 image 字段转成 image_url (ModelScope Qwen-Image-Edit 标准格式)
+    # 注意: ModelScope 不接受 chat messages 格式, 必须是 image_url 字段
+    if "image" in body and body["image"] is not None:
+        img_val = body["image"]
+        if isinstance(img_val, dict):
+            img_url_or_b64 = img_val.get("url") or img_val.get("base64") or img_val.get("b64_json")
+        elif isinstance(img_val, (bytes, bytearray)):
+            # multipart 上传 → base64 data URI
+            import base64
+            img_url_or_b64 = f"data:image/png;base64,{base64.b64encode(img_val).decode()}"
+        else:
+            img_url_or_b64 = img_val
+        if img_url_or_b64:
+            body["image_url"] = img_url_or_b64
+            body.pop("image", None)
+            # chat messages 模式不要 (ModelScope 不支持)
 
     t0 = time.time()
     try:
@@ -488,8 +523,8 @@ async def images_generations(request: Request):
 
 @router.post("/v1/images/edits")
 async def images_edits(request: Request):
-    """图片编辑 — 路由到生图模型"""
-    # 简化: 转发相同
+    """图片编辑 — 路由到生图模型 (multipart image upload)
+    v3.28: 真接 multipart/form-data + forward to engine"""
     return await images_generations(request)
 
 

@@ -281,7 +281,7 @@ body{padding:var(--space-5);min-height:100vh}
   <div class="brand">
     <div class="brand-logo">⚡</div>
     <span>SuperModel Router</span>
-    <span class="brand-version" id="brandVersion">v3.26.0</span>
+    <span class="brand-version" id="brandVersion">v3.28.0</span>
   </div>
   <div class="search">
     <span class="search-icon">🔍</span>
@@ -289,6 +289,7 @@ body{padding:var(--space-5);min-height:100vh}
     <kbd>⌘K</kbd>
   </div>
   <div class="topnav-actions">
+    <a class="btn-icon" href="/admin/guide" title="使用指引 (G)">📖</a>
     <button class="btn-icon" onclick="refreshAll()" title="刷新所有 (R)">↻</button>
     <button class="btn-icon" onclick="probeHealthAll()" title="健康检查 (H)">⚡</button>
     <button class="btn-icon" onclick="openLogs()" title="日志 (L)">📋</button>
@@ -1187,3 +1188,16 @@ async def admin_9gong():
     if not dashboard_path.exists():
         return HTMLResponse("<h1>8 卦 dashboard HTML 缺</h1><p>需要复制到 static/dashboard-9gong.html</p>", status_code=500)
     return HTMLResponse(dashboard_path.read_text(encoding='utf-8'))
+
+
+@router.get("/admin/guide", response_class=HTMLResponse)
+async def admin_guide_page():
+    """v3.28 增量: SMR Admin 使用指引页 (老大 2026-07-04 钦定)
+
+    来源: 让伊芙整体 review 一次 SMR → 写使用指引页 → 集成进 admin UI
+    内容: 10 段 (概览/快速开始/Dashboard/Wizard/常用/高级/FAQ/故障/快捷键/版本)
+    基于: v3.27.0 真实状态, 标注 stub 按钮
+    """
+    from .version import VERSION as _V
+    from .admin_ui_guide import GUIDE_HTML
+    return HTMLResponse(content=GUIDE_HTML.replace("__SMR_VERSION__", _V))

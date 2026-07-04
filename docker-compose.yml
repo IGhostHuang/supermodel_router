@@ -4,7 +4,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: supermodel_router:v3.20.0
+    image: supermodel_router:v3.27.0
     container_name: supermodel_router
     restart: unless-stopped
     network_mode: bridge
@@ -37,6 +37,9 @@ services:
     - ./.backups:/app/.backups
     - ./secrets:/run/secrets:ro
     - ./logs:/app/logs
+    # v3.15.0: 参数量 cache mount (data/model_size_cache.json WSL→容器)
+    # 注意: entrypoint 需要在 /app/data 下创建 .backups 子目录,所以不能 ro
+    - ./data:/app/data
     environment:
     - LOG_LEVEL=INFO
     - HOST=0.0.0.0
