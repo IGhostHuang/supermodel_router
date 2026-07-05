@@ -14,7 +14,7 @@ GUIDE_HTML = """<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>SMR Admin 使用指引 · v__SMR_VERSION__</title>
+<title>SMR Admin 使用指引 · __SMR_VERSION__</title>
 <style>
 :root {
   --bg-1: #0f1419; --bg-2: #1a1f26; --bg-3: #232932;
@@ -152,7 +152,7 @@ pre code { background: none; padding: 0; }
   <div class="brand">
     <div class="brand-logo">⚡</div>
     <span>SuperModel Router</span>
-    <span class="brand-version" id="brandVersion">v__SMR_VERSION__</span>
+    <span class="brand-version" id="brandVersion">__SMR_VERSION__</span>
   </div>
   <div class="topnav-actions">
     <a class="btn-icon" href="/admin" title="返回 Dashboard">↩ Dashboard</a>
@@ -164,13 +164,13 @@ pre code { background: none; padding: 0; }
 <!-- ===== Hero ===== -->
 <div class="hero">
   <h1>📖 SMR Admin 使用指引</h1>
-  <p>本页是 SuperModel Router Admin UI 的官方使用手册。基于 v__SMR_VERSION__ 真实状态编写, 标注每个功能
+  <p>本页是 SuperModel Router Admin UI 的官方使用手册。基于 __SMR_VERSION__ 真实状态编写, 标注每个功能
     <strong style="color:var(--success)">✅ 可用</strong> /
     <strong style="color:var(--warn)">🟡 部分可用</strong> /
     <strong style="color:var(--danger)">❌ 待集成</strong>。
     适用于通过浏览器管理 LLM Provider、模型分组、配额和路由策略。</p>
   <div class="meta">
-    <span>📌 v__SMR_VERSION__</span>
+    <span>📌 __SMR_VERSION__</span>
     <span>🕐 更新于 2026-07-04</span>
     <span>🎯 面向: Admin / DevOps</span>
     <span>📂 <a href="/admin/api/v1/admin/version">API 版本</a></span>
@@ -505,7 +505,7 @@ curl -X POST http://localhost:8765/admin/api/v1/admin/upgrade -d '{"method":"git
 </div>
 
 <div class="footer">
-  <p>SMR v__SMR_VERSION__ · 📖 使用指引 ·
+  <p>SMR __SMR_VERSION__ · 📖 使用指引 ·
     <a href="/admin">↩ Dashboard</a> ·
     <a href="/admin/api/v1/admin/version">API</a> ·
     <a href="/docs/">📚 Docs</a></p>
