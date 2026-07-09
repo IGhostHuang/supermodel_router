@@ -43,3 +43,15 @@ secrets/
 config.yaml
 config.yaml.bak.*
 config.yaml.restore
+
+# v3.28.0 收尾 - 运行时产物, 不入库
+loop_engine_tick_*.json
+free_models.json
+.push_cron.log
+.backup-r84-final-*/
+.proofrail/
+data/
+loop_memory.json
+model_health.json
+tools/__pycache__/
+supermodel_router/tools/__pycache__/

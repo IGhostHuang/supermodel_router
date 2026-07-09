@@ -482,6 +482,7 @@ curl -X POST http://localhost:8765/admin/api/v1/admin/upgrade -d '{"method":"git
   <h2>10. 版本历史</h2>
   <table class="feature-table">
     <tr><th>版本</th><th>日期</th><th>亮点</th></tr>
+    <tr><td>v3.28.0</td><td>2026-07-07</td><td>Admin UI toast 文案修复 + Provider 配置清理</td></tr>
     <tr><td>v3.27.0</td><td>2026-07-02</td><td>Wizard 完整集成 (5 段流程 / 13 preset / 自定义筛选)</td></tr>
     <tr><td>v3.26.0</td><td>2026-07-02</td><td>Admin UI/UX 重做 + Dark/Light 主题切换</td></tr>
     <tr><td>v3.25.x</td><td>2026-06-28</td><td>Wizard DOM 部分迁移</td></tr>
@@ -492,7 +493,7 @@ curl -X POST http://localhost:8765/admin/api/v1/admin/upgrade -d '{"method":"git
 
   <h3>未来增量 (TODO)</h3>
   <ul>
-    <li>v3.28: 参数量 badge + 完整筛选集成</li>
+    <li>v3.29: 参数量 badge + 完整筛选集成</li>
     <li>v3.29: Provider edit / API key / usage / probe modal 完整迁移</li>
     <li>v3.30+: 日志面板 / 设置面板 / 导出 / 备份 UI 集成 (替代 stub)</li>
   </ul>

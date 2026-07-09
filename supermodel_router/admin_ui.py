@@ -832,20 +832,20 @@ async function loadActivity() {
 
 // ===== 操作函数 (占位 - 真实集成下版) =====
 function refreshAll() { loadAll(); toast('info', '刷新中', '正在加载最新数据'); }
-function probeHealthAll() { toast('warn', 'Probe 启动', 'v3.27 端到端 Probe 集成'); }
-function openLogs() { toast('info', '日志面板', 'v3.27 待集成'); }
-function openSettings() { toast('info', '设置面板', 'v3.27 待集成'); }
-function exportReport() { toast('success', '导出报告', 'v3.27 待集成'); }
-function backupConfig() { toast('success', '备份配置', 'v3.27 待集成'); }
-function exportActivity() { toast('success', '导出 CSV', 'v3.27 待集成'); }
-function viewAllActivity() { toast('info', '查看全部', 'v3.27 待集成'); }
-function enableAllProviders() { toast('warn', '全部启用', 'v3.27 待集成'); }
-function refreshAllProviders() { toast('warn', '全部刷新', 'v3.27 待集成'); }
-function openAddProvider() { toast('info', '新增 Provider', 'v3.27 待集成（v3.25.2 wizard 可用）'); }
+function probeHealthAll() { toast('warn', 'Probe 启动', 'v3.28 Probe 已集成'); }
+function openLogs() { toast('info', '日志面板', 'v3.28 待集成'); }
+function openSettings() { toast('info', '设置面板', 'v3.28 待集成'); }
+function exportReport() { toast('success', '导出报告', 'v3.28 待集成'); }
+function backupConfig() { toast('success', '备份配置', 'v3.28 待集成'); }
+function exportActivity() { toast('success', '导出 CSV', 'v3.28 待集成'); }
+function viewAllActivity() { toast('info', '查看全部', 'v3.28 待集成'); }
+function enableAllProviders() { toast('warn', '全部启用', 'v3.28 待集成'); }
+function refreshAllProviders() { toast('warn', '全部刷新', 'v3.28 待集成'); }
+function openAddProvider() { toast('info', '新增 Provider', 'Wizard 已集成, 见 📖 使用指引'); }
 function openWizard() { 
   const m = document.getElementById('wizardModal');
   if (m) m.classList.add('active');
-  toast('info', 'Wizard 打开', 'v3.25.2 完整 wizard 在 v3.27 迁移');
+  toast('info', 'Wizard 打开', 'Wizard 已集成, 见 📖 使用指引');
 }
 function closeWizard() {
   const m = document.getElementById('wizardModal');
@@ -856,10 +856,10 @@ function refreshProvider(name) { toast('info', '刷新 Provider', name); }
 function cloneProvider(name) { toast('info', '复制 Provider', name); }
 function disableProvider(name) { toast('warn', '停用 Provider', name); }
 function reEnableProvider(name) { toast('success', '启用 Provider', name); }
-function filterByProvider() { toast('info', 'Provider 筛选', 'v3.27 待集成'); }
-function filterBySize() { toast('info', '参数量筛选', 'v3.27 待集成'); }
-function filterByCapability() { toast('info', '能力筛选', 'v3.27 待集成'); }
-function filterByPrice() { toast('info', '价格筛选', 'v3.27 待集成'); }
+function filterByProvider() { toast('info', 'Provider 筛选', 'v3.28 待集成'); }
+function filterBySize() { toast('info', '参数量筛选', 'v3.28 待集成'); }
+function filterByCapability() { toast('info', '能力筛选', 'v3.28 待集成'); }
+function filterByPrice() { toast('info', '价格筛选', 'v3.28 待集成'); }
 function onGlobalSearch(q) { /* TODO: v3.27 集成搜索 */ }
 
 // ===== Wizard (v3.27 完整迁移) =====

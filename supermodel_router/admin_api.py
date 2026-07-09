@@ -307,6 +307,7 @@ async def admin_providers_list(include_disabled: bool = True):
             "key_fingerprint": keys[0][:8] + "..." + keys[0][-4:] if keys and len(keys[0]) > 12 else ("***" if keys else ""),
             "model_rules": pcfg.get("model_rules", {"mode": "all"}),
             "max_concurrent": pcfg.get("max_concurrent", 3),
+            "model_count": len(registry.get_model_ids(pname)),
         })
     return JSONResponse({"providers": out, "total": len(out)})
 

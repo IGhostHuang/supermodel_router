@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SMR Token 监控看板</title>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <style>
+        :root {
+            --bg: #0a0a0a;
+            --bg-card: #111111;
+            --bg-hover: #1a1a1a;
+            --border: #2a2a2a;
+            --text: #e0e0e0;
+            --text-dim: #888888;
+            --text-muted: #555555;
+            --success: #22c55e;
+            --danger: #ef4444;
+            --primary: #3b82f6;
+            --amber: #f59e0b;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            padding: 24px;
+            min-height: 100vh;
+        }
+        .container { max-width: 1400px; margin: 0 auto; }
+        
+        /* Header */
+        header { margin-bottom: 24px; }
+        h1 { font-size: 28px; font-weight: 700; color: var(--text); margin-bottom: 8px; }
+        .subtitle { color: var(--text-dim); font-size: 14px; }
+        
+        /* Time Range Tabs */
+        .time-tabs { display: flex; gap: 8px; margin-top: 16px; }
+        .time-tab {
+            padding: 6px 16px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text-dim);
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .time-tab:hover { background: var(--bg-hover); color: var(--text); }
+        .time-tab.active {
+            background: var(--text);
+            color: var(--bg);
+            font-weight: 600;
+        }
+        
+        /* KPI Cards */
+        .kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(6, 1fr);
+            gap: 12px;
+            margin-bottom: 24px;
+        }
+        .kpi-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 16px;
+            transition: all 0.2s;
+            cursor: default;
+        }
+        .kpi-card:hover {
+            border-color: var(--text-muted);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+        }
+        .kpi-label {
+            font-size: 11px;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-weight: 500;
+        }
+        .kpi-value {
+            font-size: 24px;
+            font-weight: 700;
+            margin-top: 8px;
+            color: var(--text);
+            font-family: 'SF Mono', 'Fira Code', Consolas, monospace;
+        }
+        .kpi-unit { font-size: 12px; color: var(--text-dim); margin-left: 4px; }
+        
+        /* Charts Row */
+        .charts-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        .chart-panel {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 20px;
+        }
+        .chart-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text);
+            margin-bottom: 16px;
+        }
+        .chart-container { height: 280px; }
+        
+        /* Trend Chart (full width) */
+        .trend-panel {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 24px;
+        }
+        .trend-container { height: 300px; }
+        
+        /* Tables */
+        .table-panel {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 16px;
+        }
+        .table-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text);
+            margin-bottom: 16px;
+        }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        th {
+            text-align: left;
+            padding: 10px 12px;
+            color: var(--text-dim);
+            font-weight: 500;
+            border-bottom: 1px solid var(--border);
+            font-size: 12px;
+        }
+        td {
+            padding: 10px 12px;
+            border-bottom: 1px solid var(--border);
+            color: var(--text);
+        }
+        tr:hover td { background: var(--bg-hover); }
+        tr:last-child td { border-bottom: none; }
+        .text-right { text-align: right; }
+        .text-center { text-align: center; }
+        .text-success { color: var(--success); }
+        .text-danger { color: var(--danger); }
+        .font-mono { font-family: 'SF Mono', 'Fira Code', Consolas, monospace; }
+        
+        /* Error section */
+        .error-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+        }
+        .error-chart-container { height: 200px; }
+        
+        /* Loading skeleton */
+        .skeleton {
+            background: linear-gradient(90deg, var(--bg-card) 25%, var(--bg-hover) 50%, var(--bg-card) 75%);
+            background-size: 200% 100%;
+            animation: shimmer 1.5s infinite;
+            border-radius: 4px;
+        }
+        @keyframes shimmer {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+        
+        /* Responsive */
+        @media (max-width: 1200px) {
+            .kpi-grid { grid-template-columns: repeat(3, 1fr); }
+            .charts-row, .error-row { grid-template-columns: 1fr; }
+        }
+        @media (max-width: 768px) {
+            .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+            body { padding: 16px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header>
+            <h1>分析</h1>
+            <p class="subtitle">请求量、延迟、令牌用量与失败情况</p>
+            <div class="time-tabs">
+                <button class="time-tab" data-range="24h">24 小时</button>
+                <button class="time-tab active" data-range="7d">7 天</button>
+                <button class="time-tab" data-range="30d">30 天</button>
+            </div>
+        </header>
+        
+        <!-- 6 KPI Cards -->
+        <div class="kpi-grid">
+            <div class="kpi-card">
+                <div class="kpi-label">请求数</div>
+                <div class="kpi-value" id="kpi-requests">—</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-label">成功率</div>
+                <div class="kpi-value" id="kpi-success-rate">—</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-label">输入令牌</div>
+                <div class="kpi-value" id="kpi-input-tokens">—<span class="kpi-unit">M</span></div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-label">输出令牌</div>
+                <div class="kpi-value" id="kpi-output-tokens">—<span class="kpi-unit">K</span></div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-label">平均延迟</div>
+                <div class="kpi-value" id="kpi-avg-latency">—<span class="kpi-unit">ms</span></div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-label">预估节省</div>
+                <div class="kpi-value" id="kpi-savings">—<span class="kpi-unit">$</span></div>
+            </div>
+        </div>
+        
+        <!-- Provider Bar Charts -->
+        <div class="charts-row">
+            <div class="chart-panel">
+                <div class="chart-title">按 Provider 请求数</div>
+                <div id="chart-provider-requests" class="chart-container"></div>
+            </div>
+            <div class="chart-panel">
+                <div class="chart-title">按 Provider 平均延迟</div>
+                <div id="chart-provider-latency" class="chart-container"></div>
+            </div>
+        </div>
+        
+        <!-- Request Trend Line Chart -->
+        <div class="trend-panel">
+            <div class="chart-title">请求趋势</div>
+            <div id="chart-trend" class="trend-container"></div>
+        </div>
+        
+        <!-- Model Breakdown Table -->
+        <div class="table-panel">
+            <div class="chart-title">按模型细分</div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>模型</th>
+                        <th>Provider</th>
+                        <th class="text-right">请求数</th>
+                        <th class="text-right">失败数</th>
+                        <th class="text-right">成功率</th>
+                        <th class="text-right">平均延迟</th>
+                        <th class="text-right">输入令牌</th>
+                        <th class="text-right">输出令牌</th>
+                        <th class="text-right">估算成本</th>
+                    </tr>
+                </thead>
+                <tbody id="model-table-body">
+                    <tr><td colspan="9" class="text-center" style="color: var(--text-dim); padding: 40px;">加载中...</td></tr>
+                </tbody>
+            </table>
+        </div>
+        
+        <!-- Error Section -->
+        <div class="error-row">
+            <div class="chart-panel">
+                <div class="chart-title">按 Provider 错误数</div>
+                <div id="chart-provider-errors" class="error-chart-container"></div>
+            </div>
+            <div class="table-panel" style="margin-bottom: 0;">
+                <div class="chart-title">最近错误</div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Provider</th>
+                            <th>消息</th>
+                            <th class="text-right">时间</th>
+                        </tr>
+                    </thead>
+                    <tbody id="error-table-body">
+                        <tr><td colspan="3" class="text-center" style="color: var(--text-dim); padding: 40px;">暂无错误</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+    // ===== Utility Functions =====
+    function fmt(n) { return Number(n).toLocaleString(); }
+    function fmtCompact(n) {
+        if (n >= 1e9) return (n / 1e9).toFixed(1) + 'B';
+        if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
+        if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K';
+        return n.toString();
+    }
+    
+    // ===== ECharts Instances =====
+    let chartProviderRequests, chartProviderLatency, chartTrend, chartProviderErrors;
+    
+    // ===== Mock Data (待替换为真实 API) =====
+    const mockData = {
+        kpi: {
+            requests: 2739,
+            successRate: 69.8,
+            inputTokens: 47.8,
+            outputTokens: 702.9,
+            avgLatency: 19680,
+            savings: 86.72
+        },
+        byProvider: [
+            { name: 'nvidia', requests: 850, latency: 12000, errors: 12 },
+            { name: 'openrouter', requests: 620, latency: 18500, errors: 45 },
+            { name: 'kilo', requests: 410, latency: 22000, errors: 8 },
+            { name: 'opencode', requests: 380, latency: 15000, errors: 22 },
+            { name: 'cloudflare', requests: 240, latency: 25000, errors: 5 },
+            { name: 'zhipu', requests: 150, latency: 30000, errors: 18 },
+            { name: 'pollinations', requests: 89, latency: 35000, errors: 3 }
+        ],
+        trend: {
+            dates: ['2026-06-29', '2026-06-30', '2026-07-01', '2026-07-02', '2026-07-03', '2026-07-04'],
+            success: [320, 450, 380, 520, 480, 590],
+            failed: [80, 120, 95, 140, 110, 165]
+        },
+        byModel: [
+            { model: 'gpt-4o', provider: 'openrouter', requests: 520, failed: 38, latency: 18000, tokensIn: 12500000, tokensOut: 180000, cost: 45.20 },
+            { model: 'claude-sonnet-4', provider: 'openrouter', requests: 380, failed: 25, latency: 20000, tokensIn: 8200000, tokensOut: 120000, cost: 32.10 },
+            { model: 'llama-3.1-405b', provider: 'nvidia', requests: 450, failed: 12, latency: 11000, tokensIn: 9800000, tokensOut: 95000, cost: 0 },
+            { model: 'gemini-1.5-pro', provider: 'opencode', requests: 280, failed: 18, latency: 16000, tokensIn: 6500000, tokensOut: 85000, cost: 0 },
+            { model: 'qwen2.5-72b', provider: 'kilo', requests: 310, failed: 8, latency: 21000, tokensIn: 5200000, tokensOut: 72000, cost: 0 },
+        ],
+        recentErrors: [
+            { provider: 'openrouter', message: 'Rate limit exceeded', time: '2026-07-04 15:32:18' },
+            { provider: 'zhipu', message: 'Model not found', time: '2026-07-04 14:18:45' },
+            { provider: 'opencode', message: 'Timeout after 120s', time: '2026-07-04 13:05:22' },
+            { provider: 'nvidia', message: 'API key invalid', time: '2026-07-04 11:42:10' },
+            { provider: 'cloudflare', message: 'Service unavailable', time: '2026-07-04 10:15:33' },
+        ]
+    };
+    
+    // ===== Render Functions =====
+    function renderKPIs() {
+        document.getElementById('kpi-requests').textContent = fmt(mockData.kpi.requests);
+        document.getElementById('kpi-success-rate').textContent = mockData.kpi.successRate.toFixed(1) + '%';
+        document.getElementById('kpi-input-tokens').innerHTML = mockData.kpi.inputTokens.toFixed(1) + '<span class="kpi-unit">M</span>';
+        document.getElementById('kpi-output-tokens').innerHTML = mockData.kpi.outputTokens.toFixed(1) + '<span class="kpi-unit">K</span>';
+        document.getElementById('kpi-avg-latency').textContent = fmt(mockData.kpi.avgLatency);
+        document.getElementById('kpi-savings').textContent = '$' + mockData.kpi.savings.toFixed(2);
+    }
+    
+    function initProviderRequestsChart() {
+        const dom = document.getElementById('chart-provider-requests');
+        chartProviderRequests = echarts.init(dom, 'dark', { renderer: 'canvas' });
+        const option = {
+            tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+            grid: { left: '3%', right: '4%', bottom: '3%', top: '10%', containLabel: true },
+            xAxis: {
+                type: 'category',
+                data: mockData.byProvider.map(p => p.name),
+                axisLabel: { color: '#888' },
+                axisLine: { lineStyle: { color: '#2a2a2a' } }
+            },
+            yAxis: {
+                type: 'value',
+                axisLabel: { color: '#888' },
+                splitLine: { lineStyle: { color: '#2a2a2a' } }
+            },
+            series: [{
+                data: mockData.byProvider.map(p => p.requests),
+                type: 'bar',
+                barWidth: '60%',
+                itemStyle: {
+                    color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                        { offset: 0, color: '#3b82f6' },
+                        { offset: 1, color: '#1e40af' }
+                    ])
+                }
+            }]
+        };
+        chartProviderRequests.setOption(option);
+    }
+    
+    function initProviderLatencyChart() {
+        const dom = document.getElementById('chart-provider-latency');
+        chartProviderLatency = echarts.init(dom, 'dark', { renderer: 'canvas' });
+        const option = {
+            tooltip: { trigger: 'axis', formatter: '{b}<br/>{a}: {c} ms' },
+            grid: { left: '3%', right: '4%', bottom: '3%', top: '10%', containLabel: true },
+            xAxis: {
+                type: 'category',
+                data: mockData.byProvider.map(p => p.name),
+                axisLabel: { color: '#888', rotate: 0 },
+                axisLine: { lineStyle: { color: '#2a2a2a' } }
+            },
+            yAxis: {
+                type: 'value',
+                axisLabel: { color: '#888', formatter: '{value} ms' },
+                splitLine: { lineStyle: { color: '#2a2a2a' } }
+            },
+            series: [{
+                data: mockData.byProvider.map(p => p.latency),
+                type: 'bar',
+                barWidth: '60%',
+                itemStyle: {
+                    color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                        { offset: 0, color: '#f59e0b' },
+                        { offset: 1, color: '#b45309' }
+                    ])
+                }
+            }]
+        };
+        chartProviderLatency.setOption(option);
+    }
+    
+    function initTrendChart() {
+        const dom = document.getElementById('chart-trend');
+        chartTrend = echarts.init(dom, 'dark', { renderer: 'canvas' });
+        const option = {
+            tooltip: { trigger: 'axis' },
+            legend: { data: ['成功', '失败'], textStyle: { color: '#888' }, bottom: 0 },
+            grid: { left: '3%', right: '4%', bottom: '10%', top: '10%', containLabel: true },
+            xAxis: {
+                type: 'category',
+                boundaryGap: false,
+                data: mockData.trend.dates,
+                axisLabel: { color: '#888' },
+                axisLine: { lineStyle: { color: '#2a2a2a' } }
+            },
+            yAxis: {
+                type: 'value',
+                axisLabel: { color: '#888' },
+                splitLine: { lineStyle: { color: '#2a2a2a' } }
+            },
+            series: [
+                {
+                    name: '成功',
+                    type: 'line',
+                    smooth: true,
+                    data: mockData.trend.success,
+                    lineStyle: { color: '#22c55e', width: 3 },
+                    itemStyle: { color: '#22c55e' },
+                    areaStyle: {
+                        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                            { offset: 0, color: 'rgba(34, 197, 94, 0.3)' },
+                            { offset: 1, color: 'rgba(34, 197, 94, 0)' }
+                        ])
+                    }
+                },
+                {
+                    name: '失败',
+                    type: 'line',
+                    smooth: true,
+                    data: mockData.trend.failed,
+                    lineStyle: { color: '#ef4444', width: 3 },
+                    itemStyle: { color: '#ef4444' },
+                    areaStyle: {
+                        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                            { offset: 0, color: 'rgba(239, 68, 68, 0.3)' },
+                            { offset: 1, color: 'rgba(239, 68, 68, 0)' }
+                        ])
+                    }
+                }
+            ]
+        };
+        chartTrend.setOption(option);
+    }
+    
+    function initProviderErrorsChart() {
+        const dom = document.getElementById('chart-provider-errors');
+        chartProviderErrors = echarts.init(dom, 'dark', { renderer: 'canvas' });
+        const option = {
+            tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+            grid: { left: '3%', right: '4%', bottom: '3%', top: '10%', containLabel: true },
+            xAxis: {
+                type: 'category',
+                data: mockData.byProvider.map(p => p.name),
+                axisLabel: { color: '#888' },
+                axisLine: { lineStyle: { color: '#2a2a2a' } }
+            },
+            yAxis: {
+                type: 'value',
+                axisLabel: { color: '#888' },
+                splitLine: { lineStyle: { color: '#2a2a2a' } }
+            },
+            series: [{
+                data: mockData.byProvider.map(p => p.errors),
+                type: 'bar',
+                barWidth: '60%',
+                itemStyle: {
+                    color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                        { offset: 0, color: '#ef4444' },
+                        { offset: 1, color: '#991b1b' }
+                    ])
+                }
+            }]
+        };
+        chartProviderErrors.setOption(option);
+    }
+    
+    function renderModelTable() {
+        const tbody = document.getElementById('model-table-body');
+        tbody.innerHTML = mockData.byModel.map(m => `
+            <tr>
+                <td><b>${m.model}</b></td>
+                <td>${m.provider}</td>
+                <td class="text-right font-mono">${fmt(m.requests)}</td>
+                <td class="text-right font-mono text-danger">${fmt(m.failed)}</td>
+                <td class="text-right font-mono">${(100 * (1 - m.failed / m.requests)).toFixed(1)}%</td>
+                <td class="text-right font-mono">${fmt(m.latency)}</td>
+                <td class="text-right font-mono">${fmtCompact(m.tokensIn)}</td>
+                <td class="text-right font-mono">${fmtCompact(m.tokensOut)}</td>
+                <td class="text-right font-mono text-success">$${m.cost.toFixed(2)}</td>
+            </tr>
+        `).join('');
+    }
+    
+    function renderErrorTable() {
+        const tbody = document.getElementById('error-table-body');
+        tbody.innerHTML = mockData.recentErrors.map(e => `
+            <tr>
+                <td>${e.provider}</td>
+                <td style="color: var(--text-dim);">${e.message}</td>
+                <td class="text-right" style="color: var(--text-dim);">${e.time}</td>
+            </tr>
+        `).join('');
+    }
+    
+    // ===== Time Range Tab Handler =====
+    document.querySelectorAll('.time-tab').forEach(tab => {
+        tab.addEventListener('click', function() {
+            document.querySelectorAll('.time-tab').forEach(t => t.classList.remove('active'));
+            this.classList.add('active');
+            // TODO: Fetch real data based on selected range
+            console.log('Time range changed to:', this.dataset.range);
+        });
+    });
+    
+    // ===== Initialize Dashboard =====
+    function init() {
+        renderKPIs();
+        initProviderRequestsChart();
+        initProviderLatencyChart();
+        initTrendChart();
+        initProviderErrorsChart();
+        renderModelTable();
+        renderErrorTable();
+        
+        // Auto-resize charts on window resize
+        window.addEventListener('resize', () => {
+            chartProviderRequests?.resize();
+            chartProviderLatency?.resize();
+            chartTrend?.resize();
+            chartProviderErrors?.resize();
+        });
+    }
+    
+    // Start
+    init();
+    </script>
+</body>
+</html>
