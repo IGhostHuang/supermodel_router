@@ -55,3 +55,4 @@ loop_memory.json
 model_health.json
 tools/__pycache__/
 supermodel_router/tools/__pycache__/
+supermodel_router/static/token-dashboard.html
