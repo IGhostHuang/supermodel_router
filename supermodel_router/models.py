@@ -354,7 +354,19 @@ class ModelRegistry:
 
         v4 修复: 之前第 1 个 key 401 → raise_for_status 直接抛, 0 models。
         现在: 401/403 → 跳到下一个 key, 全部 key 失败才返回空。
+
+        v3.28 R84v10: cloudflare Workers AI 静态列表 (端点不支持 /v1/models, /v1/models 返回 405)
         """
+        # v3.28 R84v10: cloudflare 静态模型列表（来源 freellmapi dist/db/model-pricing.js）
+        if ps.name.startswith("cloudflare"):
+            LOG.info("cloudflare: using static model list (v3.28 R84v10)")
+            return [
+                {"id": "@cf/meta/llama-3.3-70b-instruct-fp8-fast", "object": "model", "created": 0, "owned_by": "cloudflare"},
+                {"id": "@cf/meta/llama-4-scout-17b-16e-instruct", "object": "model", "created": 0, "owned_by": "cloudflare"},
+                {"id": "@cf/qwen/qwen3-30b-a3b-fp8", "object": "model", "created": 0, "owned_by": "cloudflare"},
+                {"id": "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b", "object": "model", "created": 0, "owned_by": "cloudflare"},
+                {"id": "@cf/google/gemma-4-26b-a4b-it", "object": "model", "created": 0, "owned_by": "cloudflare"},
+            ]
         if not ps.api_keys:
             LOG.warning("%s: no api_key configured", ps.name)
             return []

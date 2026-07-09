@@ -1,53 +1,1053 @@
 {
-  "ts": 1781711770.2109044,
+  "ts": 1783189367.7739193,
   "models": {
-    "mock/gpt-4o": {
-      "provider": "mock",
-      "modality": "multimodal",
-      "capability_score": 85
-    },
-    "mock/gpt-4o-mini": {
-      "provider": "mock",
-      "modality": "text-only",
-      "capability_score": 35
-    },
-    "mock/gpt-4-turbo": {
-      "provider": "mock",
-      "modality": "multimodal",
-      "capability_score": 100
-    },
-    "mock/claude-3-opus-20240229": {
-      "provider": "mock",
-      "modality": "text-only",
-      "capability_score": 50
-    },
-    "mock/claude-3-sonnet-20240229": {
-      "provider": "mock",
-      "modality": "multimodal",
-      "capability_score": 85
-    },
-    "mock/qwen-2.5-72b-instruct": {
-      "provider": "mock",
-      "modality": "text-only",
-      "capability_score": 50
-    },
-    "mock/deepseek-v3": {
-      "provider": "mock",
-      "modality": "text-only",
-      "capability_score": 50
-    },
-    "mock/doubao-pro-256k": {
-      "provider": "mock",
+    "openrouter/poolside/laguna-xs-2.1:free": {
+      "provider": "openrouter",
       "modality": "text-only",
       "capability_score": 70
     },
-    "mock/llama-3.1-405b-instruct": {
-      "provider": "mock",
+    "openrouter/cohere/north-mini-code:free": {
+      "provider": "openrouter",
+      "modality": "text-only",
+      "capability_score": 55
+    },
+    "openrouter/nvidia/nemotron-3.5-content-safety:free": {
+      "provider": "openrouter",
+      "modality": "text-only",
+      "capability_score": 64
+    },
+    "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free": {
+      "provider": "openrouter",
+      "modality": "text-only",
+      "capability_score": 95
+    },
+    "openrouter/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free": {
+      "provider": "openrouter",
       "modality": "text-only",
       "capability_score": 50
     },
-    "mock/gemma-2-27b-it": {
-      "provider": "mock",
+    "openrouter/poolside/laguna-xs.2:free": {
+      "provider": "openrouter",
+      "modality": "text-only",
+      "capability_score": 70
+    },
+    "openrouter/poolside/laguna-m.1:free": {
+      "provider": "openrouter",
+      "modality": "text-only",
+      "capability_score": 70
+    },
+    "openrouter/google/gemma-4-26b-a4b-it:free": {
+      "provider": "openrouter",
+      "modality": "text-only",
+      "capability_score": 64
+    },
+    "openrouter/google/gemma-4-31b-it:free": {
+      "provider": "openrouter",
+      "modality": "text-only",
+      "capability_score": 70
+    },
+    "openrouter/nvidia/nemotron-3-super-120b-a12b:free": {
+      "provider": "openrouter",
+      "modality": "text-only",
+      "capability_score": 70
+    },
+    "openrouter/openrouter/free": {
+      "provider": "openrouter",
+      "modality": "text-only",
+      "capability_score": 50
+    },
+    "openrouter/liquid/lfm-2.5-1.2b-thinking:free": {
+      "provider": "openrouter",
+      "modality": "text-only",
+      "capability_score": 57
+    },
+    "openrouter/liquid/lfm-2.5-1.2b-instruct:free": {
+      "provider": "openrouter",
+      "modality": "text-only",
+      "capability_score": 57
+    },
+    "openrouter/nvidia/nemotron-3-nano-30b-a3b:free": {
+      "provider": "openrouter",
+      "modality": "text-only",
+      "capability_score": 50
+    },
+    "openrouter/nvidia/nemotron-nano-12b-v2-vl:free": {
+      "provider": "openrouter",
+      "modality": "multimodal",
+      "capability_score": 79
+    },
+    "openrouter/qwen/qwen3-next-80b-a3b-instruct:free": {
+      "provider": "openrouter",
+      "modality": "text-only",
+      "capability_score": 70
+    },
+    "openrouter/nvidia/nemotron-nano-9b-v2:free": {
+      "provider": "openrouter",
+      "modality": "text-only",
+      "capability_score": 44
+    },
+    "openrouter/openai/gpt-oss-120b:free": {
+      "provider": "openrouter",
+      "modality": "text-only",
+      "capability_score": 64
+    },
+    "openrouter/openai/gpt-oss-20b:free": {
+      "provider": "openrouter",
+      "modality": "text-only",
+      "capability_score": 64
+    },
+    "openrouter/qwen/qwen3-coder:free": {
+      "provider": "openrouter",
+      "modality": "text-only",
+      "capability_score": 70
+    },
+    "openrouter/cognitivecomputations/dolphin-mistral-24b-venice-edition:free": {
+      "provider": "openrouter",
+      "modality": "text-only",
+      "capability_score": 57
+    },
+    "openrouter/meta-llama/llama-3.3-70b-instruct:free": {
+      "provider": "openrouter",
+      "modality": "text-only",
+      "capability_score": 60
+    },
+    "openrouter/meta-llama/llama-3.2-3b-instruct:free": {
+      "provider": "openrouter",
+      "modality": "text-only",
+      "capability_score": 64
+    },
+    "openrouter/nousresearch/hermes-3-llama-3.1-405b:free": {
+      "provider": "openrouter",
+      "modality": "text-only",
+      "capability_score": 64
+    },
+    "nvidia/abacusai/dracarys-llama-3.1-70b-instruct": {
+      "provider": "nvidia",
+      "modality": "text-only",
+      "capability_score": 50
+    },
+    "nvidia/google/diffusiongemma-26b-a4b-it": {
+      "provider": "nvidia",
+      "modality": "text-only",
+      "capability_score": 50
+    },
+    "nvidia/google/gemma-2-2b-it": {
+      "provider": "nvidia",
+      "modality": "text-only",
+      "capability_score": 50
+    },
+    "nvidia/google/gemma-2b": {
+      "provider": "nvidia",
+      "modality": "text-only",
+      "capability_score": 50
+    },
+    "nvidia/meta/llama-3.1-70b-instruct": {
+      "provider": "nvidia",
+      "modality": "text-only",
+      "capability_score": 50
+    },
+    "nvidia/meta/llama-3.1-8b-instruct": {
+      "provider": "nvidia",
+      "modality": "text-only",
+      "capability_score": 50
+    },
+    "nvidia/meta/llama-3.3-70b-instruct": {
+      "provider": "nvidia",
+      "modality": "text-only",
+      "capability_score": 50
+    },
+    "fusion/auto": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 70
+    },
+    "fusion/fusion": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 70
+    },
+    "fusion/kimi-k2.6": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 70
+    },
+    "fusion/kimi-k2.7-code": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 70
+    },
+    "fusion/minimax-m3": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 49
+    },
+    "fusion/qwen3-coder-480b": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 70
+    },
+    "fusion/deepseek-v4-pro": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 99
+    },
+    "fusion/gemini-3.5-flash": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 75
+    },
+    "fusion/minimax-m2.7": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 49
+    },
+    "fusion/mistral-large-3-675b": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 64
+    },
+    "fusion/qwen3-next-80b": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 70
+    },
+    "fusion/deepseek-v4-flash": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 69
+    },
+    "fusion/glm-5.1": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 70
+    },
+    "fusion/glm-5.2": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 70
+    },
+    "fusion/gpt-oss-120b": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 64
+    },
+    "fusion/qwen3.5-122b-a10b": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 70
+    },
+    "fusion/nemotron-3-ultra-550b": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 95
+    },
+    "fusion/qwen3-30b-a3b-fp8": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 64
+    },
+    "fusion/llama-4-maverick": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 64
+    },
+    "fusion/deepseek-r1-distill-qwen-32b": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 64
+    },
+    "fusion/nemotron-3-120b": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 70
+    },
+    "fusion/nemotron-super-49b-v1.5": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 64
+    },
+    "fusion/big-pickle": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 64
+    },
+    "fusion/glm-4.7-flash": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 69
+    },
+    "fusion/mistral-small-4-119b": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 49
+    },
+    "fusion/llama-4-scout": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 64
+    },
+    "fusion/poolside-laguna-m.1": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 70
+    },
+    "fusion/north-mini-code": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 55
+    },
+    "fusion/step-3.7-flash": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 65
+    },
+    "fusion/gpt-oss-20b": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 64
+    },
+    "fusion/mimo-v2.5": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 64
+    },
+    "fusion/poolside-laguna-xs.2": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 70
+    },
+    "fusion/stepfun-step-3.7-flash": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 75
+    },
+    "fusion/agnes-2.0-flash": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 75
+    },
+    "fusion/hermes-3-405b": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 64
+    },
+    "fusion/llama-3.1-70b": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 64
+    },
+    "fusion/llama-3.3-70b": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 64
+    },
+    "fusion/llama-3.3-70b-fp8-fast": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 55
+    },
+    "fusion/free-router": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 70
+    },
+    "fusion/gemini-3.1-flash-lite": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 75
+    },
+    "fusion/kilo-auto": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 70
+    },
+    "fusion/gemma-4-31b": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 70
+    },
+    "fusion/gemma-4-31b-it": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 57
+    },
+    "fusion/agnes-1.5-flash": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 75
+    },
+    "fusion/gemini-2.5-flash": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 75
+    },
+    "fusion/gemma-4-26b-it": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 57
+    },
+    "fusion/glm-4.6v-flash": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 69
+    },
+    "fusion/gemma-4-26b-a4b": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 70
+    },
+    "fusion/gemma-4-26b-a4b-it": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 70
+    },
+    "fusion/glm-4.5-flash": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 69
+    },
+    "fusion/nemotron-3-nano-30b": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 50
+    },
+    "fusion/nemotron-3-super-120b": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 70
+    },
+    "fusion/sarvam-m": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 57
+    },
+    "fusion/nemotron-3-nano-30b-reasoning": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 50
+    },
+    "fusion/nemotron-3-nano-omni-reasoning": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 50
+    },
+    "fusion/dolphin-mistral-24b-venice": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 57
+    },
+    "fusion/gemini-2.5-flash-lite": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 75
+    },
+    "fusion/nemotron-nano-9b-v2": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 44
+    },
+    "fusion/granite-4.0-h-micro": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 64
+    },
+    "fusion/liquid-lfm-2.5-1.2b": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 57
+    },
+    "fusion/liquid-lfm-2.5-1.2b-thinking": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 57
+    },
+    "fusion/llama-3.2-3b": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 64
+    },
+    "fusion/nemotron-3.5-content-safety": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 64
+    },
+    "fusion/longcat-2.0": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 50
+    },
+    "fusion/mainrouter": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 50
+    },
+    "fusion/skyfall-31b-v4.2": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 53
+    },
+    "fusion/cydonia-24b-v4.3": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 53
+    },
+    "fusion/gemma-4-12b-instruct": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 52
+    },
+    "fusion/llama-3.1-8b-instruct": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 52
+    },
+    "fusion/mini-magnum-12b-v1.1": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 37
+    },
+    "fusion/gemma-4-e4b-instruct": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 52
+    },
+    "fusion/qwen3-coder-next": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 70
+    },
+    "fusion/qwen3-235b": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 64
+    },
+    "fusion/deepseek-r1": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 60
+    },
+    "fusion/qwen3.5-397b": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 70
+    },
+    "fusion/compound": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 64
+    },
+    "fusion/glm-4.7": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 64
+    },
+    "fusion/qwen3-32b": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 64
+    },
+    "fusion/bazaarlink-auto": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 64
+    },
+    "fusion/nous-coder": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 64
+    },
+    "fusion/gemini-flash": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 69
+    },
+    "fusion/llama-3.3-70b-instruct": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 64
+    },
+    "fusion/nemotron-3-nano-30b-a3b": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 50
+    },
+    "fusion/qwen3-14b": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 64
+    },
+    "fusion/command-a-2": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 64
+    },
+    "fusion/reka-flash": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 65
+    },
+    "fusion/command-a-reasoning": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 70
+    },
+    "fusion/mistral-large-3": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 70
+    },
+    "fusion/mistral-medium-3.5": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 64
+    },
+    "fusion/mistral-small-4": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 55
+    },
+    "fusion/phi-4-reasoning": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 53
+    },
+    "fusion/qwen3-8b": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 64
+    },
+    "fusion/command-a-vision": {
+      "provider": "fusion",
+      "modality": "multimodal",
+      "capability_score": 99
+    },
+    "fusion/llama-3.1-8b": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 64
+    },
+    "fusion/codestral": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 70
+    },
+    "fusion/deepseek-v3-0324": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 64
+    },
+    "fusion/devstral": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 70
+    },
+    "fusion/mistral-medium-2505": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 53
+    },
+    "fusion/qwen3.6-27b": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 64
+    },
+    "fusion/compound-mini": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 49
+    },
+    "fusion/gpt-oss-safeguard-20b": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 64
+    },
+    "fusion/llama-3.2-3b-instruct": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 55
+    },
+    "fusion/qwen3-coder-30b": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 70
+    },
+    "fusion/aya-vision-32b": {
+      "provider": "fusion",
+      "modality": "multimodal",
+      "capability_score": 90
+    },
+    "fusion/command-a": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 64
+    },
+    "fusion/gpt-4.1": {
+      "provider": "fusion",
+      "modality": "multimodal",
+      "capability_score": 99
+    },
+    "fusion/reka-edge": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 55
+    },
+    "fusion/magistral-medium": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 64
+    },
+    "fusion/aya-expanse-32b": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 64
+    },
+    "fusion/gpt-4.1-mini": {
+      "provider": "fusion",
+      "modality": "multimodal",
+      "capability_score": 73
+    },
+    "fusion/command-r": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 64
+    },
+    "fusion/gpt-4o": {
+      "provider": "fusion",
+      "modality": "multimodal",
+      "capability_score": 88
+    },
+    "fusion/command-r-2": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 64
+    },
+    "fusion/gpt-4o-mini": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 38
+    },
+    "fusion/llama-3.1-8b-instant": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 64
+    },
+    "fusion/ministral-3-8b": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 55
+    },
+    "fusion/command-r7b": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 64
+    },
+    "fusion/gpt-4.1-nano": {
+      "provider": "fusion",
+      "modality": "multimodal",
+      "capability_score": 68
+    },
+    "fusion/allam-2-7b": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 52
+    },
+    "fusion/gemini-3.1-pro-preview": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 100
+    },
+    "fusion/nemotron-3-ultra": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 89
+    },
+    "fusion/gemini-3-flash-preview": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 75
+    },
+    "fusion/gemini-2.5-pro": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 100
+    },
+    "fusion/nemotron-nano-12b-vl": {
+      "provider": "fusion",
+      "modality": "multimodal",
+      "capability_score": 79
+    },
+    "fusion/behemoth-x-123b-v2.1": {
+      "provider": "fusion",
+      "modality": "text-only",
+      "capability_score": 53
+    },
+    "魔塔免费模型/deepseek-ai/DeepSeek-V3.2": {
+      "provider": "魔塔免费模型",
+      "modality": "text-only",
+      "capability_score": 50
+    },
+    "魔塔免费模型/deepseek-ai/DeepSeek-V4-Flash": {
+      "provider": "魔塔免费模型",
+      "modality": "text-only",
+      "capability_score": 55
+    },
+    "魔塔免费模型/deepseek-ai/DeepSeek-V4-Pro": {
+      "provider": "魔塔免费模型",
+      "modality": "text-only",
+      "capability_score": 85
+    },
+    "魔塔免费模型/iic/GUI-Owl-1.5-8B-Instruct": {
+      "provider": "魔塔免费模型",
+      "modality": "text-only",
+      "capability_score": 50
+    },
+    "魔塔免费模型/iic/GUI-Owl-1.5-8B-Think": {
+      "provider": "魔塔免费模型",
+      "modality": "text-only",
+      "capability_score": 50
+    },
+    "魔塔免费模型/LLM-Research/Llama-4-Maverick-17B-128E-Instruct": {
+      "provider": "魔塔免费模型",
+      "modality": "text-only",
+      "capability_score": 50
+    },
+    "魔塔免费模型/MedAIBase/AntAngelMed": {
+      "provider": "魔塔免费模型",
+      "modality": "text-only",
+      "capability_score": 50
+    },
+    "魔塔免费模型/meituan-longcat/LongCat-Flash-Lite": {
+      "provider": "魔塔免费模型",
+      "modality": "text-only",
+      "capability_score": 55
+    },
+    "魔塔免费模型/MiniMax/MiniMax-M1-80k": {
+      "provider": "魔塔免费模型",
+      "modality": "text-only",
+      "capability_score": 35
+    },
+    "魔塔免费模型/MiniMax/MiniMax-M2.5": {
+      "provider": "魔塔免费模型",
+      "modality": "text-only",
+      "capability_score": 35
+    },
+    "魔塔免费模型/MiniMax/MiniMax-M2.7": {
+      "provider": "魔塔免费模型",
+      "modality": "text-only",
+      "capability_score": 35
+    },
+    "魔塔免费模型/MiniMax/MiniMax-M3": {
+      "provider": "魔塔免费模型",
+      "modality": "text-only",
+      "capability_score": 35
+    },
+    "魔塔免费模型/mistralai/Mistral-Large-Instruct-2407": {
+      "provider": "魔塔免费模型",
+      "modality": "text-only",
+      "capability_score": 50
+    },
+    "魔塔免费模型/moonshotai/Kimi-K2.5": {
+      "provider": "魔塔免费模型",
+      "modality": "text-only",
+      "capability_score": 50
+    },
+    "魔塔免费模型/MusePublic/Qwen-Image-Edit": {
+      "provider": "魔塔免费模型",
+      "modality": "image-gen",
+      "capability_score": 70
+    },
+    "魔塔免费模型/nex-agi/Nex-N2-Pro": {
+      "provider": "魔塔免费模型",
+      "modality": "text-only",
+      "capability_score": 85
+    },
+    "魔塔免费模型/opencompass/CompassJudger-1-32B-Instruct": {
+      "provider": "魔塔免费模型",
+      "modality": "text-only",
+      "capability_score": 50
+    },
+    "魔塔免费模型/OpenGVLab/InternVL3_5-241B-A28B": {
+      "provider": "魔塔免费模型",
+      "modality": "multimodal",
+      "capability_score": 85
+    },
+    "魔塔免费模型/PaddlePaddle/ERNIE-4.5-0.3B-PT": {
+      "provider": "魔塔免费模型",
+      "modality": "text-only",
+      "capability_score": 50
+    },
+    "魔塔免费模型/PaddlePaddle/ERNIE-4.5-21B-A3B-PT": {
+      "provider": "魔塔免费模型",
+      "modality": "text-only",
+      "capability_score": 50
+    },
+    "魔塔免费模型/PaddlePaddle/ERNIE-4.5-300B-A47B-PT": {
+      "provider": "魔塔免费模型",
+      "modality": "text-only",
+      "capability_score": 50
+    },
+    "魔塔免费模型/PaddlePaddle/ERNIE-4.5-VL-28B-A3B-PT": {
+      "provider": "魔塔免费模型",
+      "modality": "multimodal",
+      "capability_score": 85
+    },
+    "魔塔免费模型/Qwen/Qwen-Image-Edit": {
+      "provider": "魔塔免费模型",
+      "modality": "image-gen",
+      "capability_score": 70
+    },
+    "魔塔免费模型/Qwen/Qwen3-14B": {
+      "provider": "魔塔免费模型",
+      "modality": "text-only",
+      "capability_score": 50
+    },
+    "魔塔免费模型/Qwen/Qwen3-235B-A22B": {
+      "provider": "魔塔免费模型",
+      "modality": "text-only",
+      "capability_score": 50
+    },
+    "魔塔免费模型/Qwen/Qwen3-235B-A22B-Instruct-2507": {
+      "provider": "魔塔免费模型",
+      "modality": "text-only",
+      "capability_score": 50
+    },
+    "魔塔免费模型/Qwen/Qwen3-235B-A22B-Thinking-2507": {
+      "provider": "魔塔免费模型",
+      "modality": "text-only",
+      "capability_score": 50
+    },
+    "魔塔免费模型/Qwen/Qwen3-30B-A3B": {
+      "provider": "魔塔免费模型",
+      "modality": "text-only",
+      "capability_score": 50
+    },
+    "魔塔免费模型/Qwen/Qwen3-30B-A3B-Thinking-2507": {
+      "provider": "魔塔免费模型",
+      "modality": "text-only",
+      "capability_score": 50
+    },
+    "魔塔免费模型/Qwen/Qwen3-32B": {
+      "provider": "魔塔免费模型",
+      "modality": "text-only",
+      "capability_score": 50
+    },
+    "魔塔免费模型/Qwen/Qwen3-4B": {
+      "provider": "魔塔免费模型",
+      "modality": "text-only",
+      "capability_score": 50
+    },
+    "魔塔免费模型/Qwen/Qwen3-8B": {
+      "provider": "魔塔免费模型",
+      "modality": "text-only",
+      "capability_score": 50
+    },
+    "魔塔免费模型/Qwen/Qwen3-Coder-30B-A3B-Instruct": {
+      "provider": "魔塔免费模型",
+      "modality": "text-only",
+      "capability_score": 50
+    },
+    "魔塔免费模型/Qwen/Qwen3-Next-80B-A3B-Instruct": {
+      "provider": "魔塔免费模型",
+      "modality": "text-only",
+      "capability_score": 50
+    },
+    "魔塔免费模型/Qwen/Qwen3-Next-80B-A3B-Thinking": {
+      "provider": "魔塔免费模型",
+      "modality": "text-only",
+      "capability_score": 50
+    },
+    "魔塔免费模型/Qwen/Qwen3-VL-235B-A22B-Instruct": {
+      "provider": "魔塔免费模型",
+      "modality": "multimodal",
+      "capability_score": 85
+    },
+    "魔塔免费模型/Qwen/Qwen3-VL-8B-Instruct": {
+      "provider": "魔塔免费模型",
+      "modality": "multimodal",
+      "capability_score": 85
+    },
+    "魔塔免费模型/Qwen/Qwen3-VL-8B-Thinking": {
+      "provider": "魔塔免费模型",
+      "modality": "multimodal",
+      "capability_score": 85
+    },
+    "魔塔免费模型/Qwen/Qwen3.5-122B-A10B": {
+      "provider": "魔塔免费模型",
+      "modality": "text-only",
+      "capability_score": 50
+    },
+    "魔塔免费模型/Qwen/Qwen3.5-27B": {
+      "provider": "魔塔免费模型",
+      "modality": "text-only",
+      "capability_score": 50
+    },
+    "魔塔免费模型/Qwen/Qwen3.5-35B-A3B": {
+      "provider": "魔塔免费模型",
+      "modality": "text-only",
+      "capability_score": 50
+    },
+    "魔塔免费模型/Qwen/Qwen3.5-397B-A17B": {
+      "provider": "魔塔免费模型",
+      "modality": "text-only",
+      "capability_score": 50
+    },
+    "魔塔免费模型/Shanghai_AI_Laboratory/Intern-S1": {
+      "provider": "魔塔免费模型",
+      "modality": "text-only",
+      "capability_score": 50
+    },
+    "魔塔免费模型/Shanghai_AI_Laboratory/Intern-S1-mini": {
+      "provider": "魔塔免费模型",
+      "modality": "text-only",
+      "capability_score": 35
+    },
+    "魔塔免费模型/Shanghai_AI_Laboratory/Intern-S2-Preview": {
+      "provider": "魔塔免费模型",
+      "modality": "text-only",
+      "capability_score": 50
+    },
+    "魔塔免费模型/stepfun-ai/Step-3.5-Flash": {
+      "provider": "魔塔免费模型",
+      "modality": "text-only",
+      "capability_score": 55
+    },
+    "魔塔免费模型/stepfun-ai/Step-3.7-Flash": {
+      "provider": "魔塔免费模型",
+      "modality": "text-only",
+      "capability_score": 55
+    },
+    "魔塔免费模型/XGenerationLab/XiYanSQL-QwenCoder-32B-2412": {
+      "provider": "魔塔免费模型",
+      "modality": "text-only",
+      "capability_score": 50
+    },
+    "魔塔免费模型/XGenerationLab/XiYanSQL-QwenCoder-32B-2504": {
+      "provider": "魔塔免费模型",
+      "modality": "text-only",
+      "capability_score": 50
+    },
+    "魔塔免费模型/XiaomiMiMo/MiMo-V2-Flash": {
+      "provider": "魔塔免费模型",
+      "modality": "text-only",
+      "capability_score": 55
+    },
+    "魔塔免费模型/ZhipuAI/GLM-4.7-Flash": {
+      "provider": "魔塔免费模型",
+      "modality": "text-only",
+      "capability_score": 55
+    },
+    "魔塔免费模型/ZhipuAI/GLM-5": {
+      "provider": "魔塔免费模型",
+      "modality": "text-only",
+      "capability_score": 50
+    },
+    "魔塔免费模型/ZhipuAI/GLM-5.1": {
+      "provider": "魔塔免费模型",
+      "modality": "text-only",
+      "capability_score": 50
+    },
+    "魔塔免费模型/ZhipuAI/GLM-5.2": {
+      "provider": "魔塔免费模型",
       "modality": "text-only",
       "capability_score": 50
     }
