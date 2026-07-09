@@ -48,3 +48,7 @@ Dockerfile
 docker-compose.yml
 .dockerignore
 # docker-entrypoint.sh 必须打包进 image (跟 Dockerfile COPY 配套)
+data/
+loop_engine_tick_*.json
+loop_memory.json
+model_health.json
