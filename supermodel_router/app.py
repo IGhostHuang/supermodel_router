@@ -244,6 +244,13 @@ async def lifespan(app: FastAPI):
     LOG.info("ModelHealthManager v3.15.0 initialized (state_dir=%s, skip_threshold=%d, probe_interval=%ds)",
              state_dir, mhm.cfg["consecutive_fails_skip"], mhm.cfg["probe_interval_seconds"])
 
+    # ── v3.29: Token 成本追踪 ─────────────────────────────────────
+    from .pricing import init_pricing
+    from pathlib import Path
+    pricing_path = Path("/app/pricing.json")
+    init_pricing(pricing_path)
+    LOG.info("PricingDB v1.0.0 initialized (pricing_file=%s)", pricing_path)
+
     # ── v3.23.0: L1 Free Resource (老大钦定重点 6/27) ─────────────────────
     from .free_models import init_free_model_registry, get_free_model_registry
     free_reg = init_free_model_registry(

@@ -2521,3 +2521,37 @@ async def admin_system_full(status_code=200):
     return JSONResponse(response)
 
 
+# ── v3.29: Token 成本 API ────────────────────────────────────
+
+@router.get("/v1/admin/cost")
+async def admin_cost_lookup(model: str = "", provider: str = ""):
+    """查询模型 token 成本
+
+    Query params:
+      - model: 模型名 (支持模糊匹配)
+      - provider: provider 名 (可选)
+    """
+    from .pricing import get_pricing
+    pricing = get_pricing()
+
+    if model:
+        in_cost, out_cost, is_free = pricing.lookup(model, provider)
+        cost_1k = pricing.calculate_cost(model, provider, 1000, 1000) * 1000
+        return JSONResponse({
+            "model": model,
+            "provider": provider or "auto",
+            "input_cost_per_1m": in_cost,
+            "output_cost_per_1m": out_cost,
+            "is_free": is_free,
+            "estimated_1k_input_1k_output_usd": round(cost_1k, 8),
+        })
+
+    # 返回已知模型清单
+    all_models = pricing._models if pricing else {}
+    return JSONResponse({
+        "total_models": len(all_models),
+        "models": {k: {"input": v.get("input",0), "output": v.get("output",0)} for k,v in list(all_models.items())[:50]},
+        "providers": {k: {"default_input": v.get("default_input",0), "default_output": v.get("default_output",0)}
+                      for k,v in (pricing._providers if pricing else {}).items()},
+    })
+

@@ -19,6 +19,8 @@ import httpx
 from .config import Config
 from .models import ModelRegistry
 from .classifier import TEXT_ONLY, MULTIMODAL, IMAGE_GEN, VIDEO_GEN, AUDIO_GEN
+from .scoring_engine import compute_auto_combo_score  # v3.29: Auto-Combo 9 因子评分
+from .pricing import get_pricing  # v3.29: Token 成本追踪
 
 LOG = logging.getLogger("engine")
 
@@ -528,6 +530,87 @@ class RouteEngine:
                 -(m.speed_score or 0) if prefer_low_latency else 0,  # 3. 速度快
                 m.id                                       # 4. id 稳定排序
             ))
+        elif strategy == "auto_combo":
+            # v3.29: 9 因子 Auto-Combo 评分 (对标 OmniRoute)
+            mhm = self.model_health
+            stats = self._get_all_stats()
+            scores: dict[str, float] = {}
+            for m in models:
+                # 从 model_health 取健康数据
+                mh = mhm.get(str(m.id)) if mhm else None
+                health_state = mh.state if mh else "healthy"
+                rolling_sr = mh.rolling_success_rate() if mh else 100.0
+                consec_fails = mh.consecutive_fails if mh else 0
+                ewma_lat = mh.ewma_latency_ms if mh else 0.0
+                # 从 engine_stats 取延迟
+                ps = stats.get(m.provider)
+                p95 = float(getattr(ps, "latency_p95", 0) or 0) if ps else 0.0
+                p50 = float(getattr(ps, "latency_p50", 0) or 0) if ps else 0.0
+                std = float(getattr(ps, "latency_std", 0) or 0) if ps else 0.0
+                # 负载分散: 同 provider 有多少 active
+                slot = self._slots.get(m.provider, {})
+                same_active = slot.get("used", 0)
+                same_cap = slot.get("max", 1) or 1
+                scores[m.id] = compute_auto_combo_score(
+                    model_id=m.id, provider=m.provider,
+                    capability_score=m.capability_score or 0,
+                    health_state=health_state,
+                    rolling_success_rate=rolling_sr,
+                    consecutive_fails=consec_fails,
+                    ewma_latency_ms=ewma_lat,
+                    latency_p95_ms=p95, latency_p50_ms=p50, latency_std_ms=std,
+                    task_type=alias_cfg.get("task_type", "chat"),
+                    same_provider_active=same_active,
+                    same_provider_capacity=same_cap,
+                )
+            models.sort(key=lambda m: -(scores.get(m.id, 0)))
+        elif strategy == "priority":
+            # v3.29: 优先级列表 — 按 provider 顺序, 前一个不可用才切下一个
+            priority_list = alias_cfg.get("priority_providers", []) or []
+            if priority_list:
+                def _priority(m):
+                    try:
+                        return priority_list.index(m.provider)
+                    except ValueError:
+                        return len(priority_list)  # 未列出的排最后
+                models.sort(key=_priority)
+            else:
+                models.sort(key=lambda m: -(m.quality_score or 0))
+        elif strategy == "weighted":
+            # v3.29: 加权随机 — 按 weights 分配概率
+            provider_weights = alias_cfg.get("provider_weights", {}) or {}
+            if provider_weights:
+                # 给每个 model 赋权, 排序后让 pick_chain 自然选第一
+                def _weight(m):
+                    return provider_weights.get(m.provider, 0)
+                models.sort(key=_weight, reverse=True)
+            else:
+                import random as _r
+                _r.shuffle(models)
+        elif strategy == "cost_optimized":
+            # v3.29: 成本优先 — 免费模型排最前, 付费按价格排序
+            def _cost(m):
+                pricing = getattr(m, "pricing", "") or ""
+                is_free = (pricing == "free" or pricing == "limited_free"
+                           or "free" in str(getattr(m, "extra", {})).lower())
+                return (0 if is_free else 1, getattr(m, "cost_per_token", 999) or 999)
+            models.sort(key=_cost)
+        elif strategy == "lkgp":
+            # v3.29: Last-Known-Good-Path — 黏住上次成功的 provider/model
+            last_good = alias_cfg.get("last_good_path", "") or ""
+            if last_good:
+                def _lkgp(m):
+                    return 0 if f"{m.provider}/{m.id}" == last_good else 1
+                models.sort(key=_lkgp)
+            else:
+                models.sort(key=lambda m: -(m.quality_score or 0))
+        elif strategy == "round_robin":
+            # v3.29: 轮询 — 均衡分散到所有候选项
+            idx = self._rr_index
+            self._rr_index = (idx + 1) % max(len(models), 1)
+            # 从当前 index 开始重新排列
+            rotated = models[idx:] + models[:idx]
+            models[:] = rotated
         elif strategy == "free_only":
             # 只 free 模型 (openrouter :free 后缀 / extra.pricing == "0" / provider 默认 free) + 按 quality 排序
             models = [m for m in self._filter_free_models(models)]
