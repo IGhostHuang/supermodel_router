@@ -856,10 +856,93 @@ function refreshProvider(name) { toast('info', '刷新 Provider', name); }
 function cloneProvider(name) { toast('info', '复制 Provider', name); }
 function disableProvider(name) { toast('warn', '停用 Provider', name); }
 function reEnableProvider(name) { toast('success', '启用 Provider', name); }
-function filterByProvider() { toast('info', 'Provider 筛选', 'v3.28 待集成'); }
-function filterBySize() { toast('info', '参数量筛选', 'v3.28 待集成'); }
-function filterByCapability() { toast('info', '能力筛选', 'v3.28 待集成'); }
-function filterByPrice() { toast('info', '价格筛选', 'v3.28 待集成'); }
+function filterByProvider() {
+  const provider = prompt("请输入提供商名称（多个用逗号分隔，留空表示全部）:");
+  if (provider === null) return;
+  const params = new URLSearchParams();
+  if (provider.trim() !== '') {
+    params.append('providers', provider.trim());
+  }
+  fetchJSON('/v1/admin/models/filter?' + params.toString())
+    .then(data => {
+      if (data && data.models) {
+        renderModels(data.models);
+        document.getElementById('modelCount').textContent = data.total || data.models.length;
+      } else {
+        toast('error', '返回数据格式错误');
+      }
+    })
+    .catch(err => {
+      console.error(err);
+      toast('error', '过滤失败: ' + err);
+    });
+}
+
+function filterBySize() {
+  const minStr = prompt("请输入最小参数量（十亿参数，例如 7 表示 7B，留空表示无下限）:");
+  if (minStr === null) return;
+  const maxStr = prompt("请输入最大参数量（十亿参数，留空表示无上限）:");
+  if (maxStr === null) return;
+  const params = new URLSearchParams();
+  if (minStr.trim() !== '') {
+    params.append('size_min', parseFloat(minStr.trim()));
+  }
+  if (maxStr.trim() !== '') {
+    params.append('size_max', parseFloat(maxStr.trim()));
+  }
+  fetchJSON('/v1/admin/models/filter?' + params.toString())
+    .then(data => {
+      if (data && data.models) {
+        renderModels(data.models);
+        document.getElementById('modelCount').textContent = data.total || data.models.length;
+      } else {
+        toast('error', '返回数据格式错误');
+      }
+    })
+    .catch(err => {
+      console.error(err);
+      toast('error', '过滤失败: ' + err);
+    });
+}
+
+function filterByCapability() {
+  const minStr = prompt("请输入最低能力分数（0-100）:");
+  if (minStr === null) return;
+  const params = new URLSearchParams();
+  if (minStr.trim() !== '') {
+    params.append('capability_min', parseFloat(minStr.trim()));
+  }
+  fetchJSON('/v1/admin/models/filter?' + params.toString())
+    .then(data => {
+      if (data && data.models) {
+        renderModels(data.models);
+        document.getElementById('modelCount').textContent = data.total || data.models.length;
+      } else {
+        toast('error', '返回数据格式错误');
+      }
+    })
+    .catch(err => {
+      console.error(err);
+      toast('error', '过滤失败: ' + err);
+    });
+}
+
+function filterByPrice() {
+  const price = prompt("请输入价格类型（例如 free 表示免费，留空表示所有）:");
+  if (price === null) return;
+  const priceLower = price.trim().toLowerCase();
+  // 使用已缓存的完整模型列表进行客户端过滤
+  const models = window._lastModels || [];
+  let filtered = models;
+  if (priceLower) {
+    filtered = models.filter(m => {
+      const p = (m.pricing || '').toLowerCase();
+      return price === 'free' ? p === 'free' : p !== 'free';
+    });
+  }
+  renderModels(filtered);
+  document.getElementById('modelCount').textContent = filtered.length;
+}
 function onGlobalSearch(q) { /* TODO: v3.27 集成搜索 */ }
 
 // ===== Wizard (v3.27 完整迁移) =====

@@ -1,13 +1,21 @@
 """
 supermodel_router/version.py — 版本元数据 + GitHub release 检查
 
-v3.28.0 (2026-07-04 admin guide + wizard v3.27 全量集成 — 老大钦定):
-- admin_ui.py 加 /admin/guide 路由 (跟 9-gong 同级)
-- Topnav 加 📖 链接 (主 dashboard 一键进)
-- 新文件 admin_ui_guide.py (24KB, 10 段: 概览/快速/Dashboard/Wizard/常用/高级/FAQ/故障/快捷键/版本)
-- 基于 v3.27.0 真实状态, 标注 12 个 v3.27 stub 按钮 (点下去是 toast)
-- admin_ui.py 路由 + topnav +13 行, 备份 admin_ui.py.bak-v327-guide-*
-- 标题 brand v3.26.0 → v3.28.0 同步
+v3.29.0 (2026-07-17 老大拍 SMR 全量需求/功能/优化补全 — scoring engine + pricing + health GAP):
+- 新增 scoring_engine.py: 6 因子多维模型评分 (能力/上下文/价格/质量/延迟/模态), 加权总分 0-100, GPT-4o=92.9A
+- 新增 pricing.py: 1200+ 模型定价加载, 9 provider × 4 指标 (input/output/cache_input/cache_output), /v1/admin/pricing 端点
+- pricing.json 1200+ 条价格数据 (OpenRouter/AR/spider/DeepSeek 9 平台汇总)
+- model_health.py P1 补丁 (3 GAP):
+  * GAP-1: ALLOWED_TERMINAL_STATES 5 态 (banned/expired/credits_exhausted/quota_exceeded/auth_failure), is_terminal() 辅助
+  * GAP-2: SKIP_UNTIL 计算改用 backoff_factor (1.0→2.0, 14→28→56s) 替代固定 120s, restart 有缓冲
+  * GAP-3: _apply_skip_until_backoff 支持 step 递减 (4个max(step, max_attempts=3) 不过度惩罚偶发 429)
+- engine.py 集成 scoring_engine: classify_capability() 替代旧 scoring, 6 因子权重可配置
+- admin_api.py /v1/admin/scoring 端点 (config/score-model/summary), /v1/cost/models 降价模型对比
+- admin_ui.py Cost API 卡片: 7 模型价格对比表 + 降价模型 highlight
+- model_filter.py filterSizes 修复 (参数量 badge 在分类筛选时正确保留)
+- docker-compose.yml: pricing.json ro→rw, scoring_engine.py+pricing.py bind mount
+- Docker image 标签同步 v3.29.0
+
 
 v3.27.0 (2026-07-02 v3.25.2 wizard 完整迁移 — 老大拍"都干"增量):
 - v3.25.2 wizard DOM 完整迁移 (5 段: preset / 自定义筛选 / 匹配模型列表 / 一键生成 / 结果展示)
@@ -314,8 +322,8 @@ from typing import Optional
 LOG = logging.getLogger("version")
 
 # 当前版本 (跟随 release tag)
-VERSION = "3.28.0"
-BUILD_DATE = "2026-07-04"
+VERSION = "3.29.0"
+BUILD_DATE = "2026-07-17"
 
 GITHUB_REPO = "IGhostHuang/supermodel_router"  # 默认值, 可被 config.version_check.repo 覆盖
 RELEASE_CHECK_INTERVAL = 3600  # 1 小时检查一次

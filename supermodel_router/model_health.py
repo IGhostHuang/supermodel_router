@@ -34,6 +34,15 @@ class HealthState(str, Enum):
     DEGRADED = "degraded"     # 降权路由 (penalty multiplier)
     SKIP = "skip"             # 跳过路由 (circuit open)
     HALF_OPEN = "half_open"   # 恢复检测中 (probe 进行, 不接真实流量)
+    # v3.29: Terminal States — 永久故障, 不会因 cooldown 到期自动恢复
+    BANNED = "banned"                 # key 被 ban
+    EXPIRED = "expired"               # key 过期
+    CREDITS_EXHAUSTED = "credits_exhausted"  # 余额/额度耗尽
+
+    @classmethod
+    def is_terminal(cls, state: str) -> bool:
+        """终端态: 不会自动恢复, 需要手动 admin reset"""
+        return state in (cls.BANNED.value, cls.EXPIRED.value, cls.CREDITS_EXHAUSTED.value)
 
 
 # 默认阈值 (可被 config 覆盖)
@@ -130,6 +139,9 @@ class ModelHealthManager:
         # v3.16.0: provider 自动禁用 callback (由 app.py 注入, 调 config.disable_provider)
         self._provider_disable_callback: Optional[Callable] = None
         self._last_provider_check: float = 0.0
+        # v3.29: Anti-thundering-herd — 防并发失败重复触发
+        self._failure_debounce: Dict[str, float] = {}  # path → last_fail_ts
+        self._debounce_window: float = 5.0  # 5 秒内同一 path 不重复计数
         self._bg_task: Optional[asyncio.Task] = None
         self._stop_event: Optional[asyncio.Event] = None  # asyncio.Event (loop 启动后初始化)
         self._loop: Optional[asyncio.AbstractEventLoop] = None
@@ -220,9 +232,21 @@ class ModelHealthManager:
             # 状态转换
             old_state = mh.state
             if mh.state == HealthState.SKIP.value:
-                # SKIP 期间不应有 success (路由会跳过), 但如果发生 (probe 成功) 保持 SKIP
-                # 真正恢复靠 background probe
-                pass
+                # SKIP 期间不应有 success (路由会跳过), 但如果发生 (probe 成功)
+                # v3.29: Success-decay — probe 成功时 halve failure count + 降 cooldown
+                mh.consecutive_fails = max(0, mh.consecutive_fails // 2)
+                mh.cooldown_seconds = max(
+                    self.cfg["skip_initial_seconds"],
+                    mh.cooldown_seconds // 2
+                )
+                if mh.consecutive_fails == 0:
+                    mh.state = HealthState.HEALTHY.value
+                    mh.skip_until = 0
+                    mh.skip_count = 0
+                    LOG.info("model_health: %s SKIP → HEALTHY (success-decay cleared)", path)
+                else:
+                    LOG.info("model_health: %s SKIP success-decay: fails→%d, cooldown→%ds",
+                             path, mh.consecutive_fails, mh.cooldown_seconds)
             elif mh.state == HealthState.HALF_OPEN.value:
                 # HALF_OPEN 期间的成功说明 probe 成功
                 mh.state = HealthState.HEALTHY.value
@@ -249,6 +273,22 @@ class ModelHealthManager:
                        quota_exhausted: bool = False, quota_type: str = ""):
         """引擎调用: 一次失败"""
         with self._lock:
+            # v3.29: Anti-thundering-herd — 同一 path 在 debounce_window 内重复失败只计 1 次
+            now = time.time()
+            last_ts = self._failure_debounce.get(path, 0)
+            if now - last_ts >= self._debounce_window:
+                self._failure_debounce[path] = now
+            else:
+                # 已在窗口内, 跳过 consecutive_fails++, 但仍记录统计
+                mh = self._health.get(path)
+                if mh:
+                    mh.last_fail_at = now
+                    mh.total_calls += 1
+                    mh.recent_window.append(0)
+                    if latency_ms > 0 and mh.ewma_latency_ms > 0:
+                        α = self.cfg["ewma_alpha"]
+                        mh.ewma_latency_ms = α * latency_ms + (1 - α) * mh.ewma_latency_ms
+                return  # debounce skip
             mh = self._ensure(path)
             mh.total_calls += 1
             mh.total_fail += 1
@@ -346,6 +386,9 @@ class ModelHealthManager:
             mh = self._health.get(path)
             if not mh:
                 return False
+            # v3.29: Terminal States — 永久跳过, 不回自动恢复
+            if HealthState.is_terminal(mh.state):
+                return True
             now = time.time()
             if mh.state == HealthState.SKIP.value:
                 if now >= mh.skip_until:
