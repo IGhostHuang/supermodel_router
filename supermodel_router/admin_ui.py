@@ -289,6 +289,9 @@ body{padding:var(--space-5);min-height:100vh}
     <kbd>⌘K</kbd>
   </div>
   <div class="topnav-actions">
+    <button class="btn-icon" onclick="openProviderKeys()" title="Provider Key 管理 — 下游 provider 的 key (K)">🔑</button>
+    <button class="btn-icon" onclick="openPublicKeys()" title="Public Key 管理 — SMR 对外发的 wizard key (P)">🗝️</button>
+    <button class="btn-icon" onclick="openWizard()" title="Wizard 智能分组 (W)">🧙</button>
     <a class="btn-icon" href="/admin/guide" title="使用指引 (G)">📖</a>
     <button class="btn-icon" onclick="refreshAll()" title="刷新所有 (R)">↻</button>
     <button class="btn-icon" onclick="probeHealthAll()" title="健康检查 (H)">⚡</button>
@@ -502,6 +505,58 @@ body{padding:var(--space-5);min-height:100vh}
     <div id="wizardResultPanel" style="display:none;margin-top:var(--space-5);padding:var(--space-4);background:var(--success-glow);border:1px solid var(--success);border-radius:var(--radius)">
       <h3 style="font-size:14px;color:var(--success);margin:0 0 var(--space-3)">✅ 分组生成成功</h3>
       <div id="wizardResultContent"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== Provider Keys Modal (v3.28.1) ===== -->
+<div id="providerKeysModal" class="modal-overlay" onclick="if(event.target===this)closeProviderKeys()">
+  <div class="modal-content" style="max-width:900px">
+    <div class="modal-header">
+      <div class="modal-title">🔑 Provider Key 管理 <span style="font-size:12px;color:var(--text-2);font-weight:400">下游 provider 的 API key (openrouter/nvidia/newapi…)</span></div>
+      <button class="modal-close" onclick="closeProviderKeys()">×</button>
+    </div>
+    <div style="margin-bottom:var(--space-4);padding:var(--space-3);background:var(--bg-2);border-radius:var(--radius);font-size:12px;color:var(--text-2)">
+      💡 <b>Provider Key</b> = SMR 用来调下游 (openrouter/nvidia 等) 的凭证。多 key 会轮询。<br>
+      ⚠️ 添加后自动刷新 provider 目录, 新 key 可能解锁新模型。
+    </div>
+    <div id="providerKeysList"><div class="empty-state">⏳ 加载中…</div></div>
+    <div style="margin-top:var(--space-5);padding-top:var(--space-4);border-top:1px solid var(--border)">
+      <h3 style="font-size:14px;margin:0 0 var(--space-3)">➕ 添加新 Key</h3>
+      <div style="display:grid;grid-template-columns:200px 1fr auto;gap:var(--space-2)">
+        <select id="pkProviderSel" class="filter-select"></select>
+        <input type="text" id="pkNewKey" placeholder="sk-... / nvapi-... / 粘贴 API key" class="filter-input">
+        <button class="btn primary" onclick="addProviderKey()">添加</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== Public Keys Modal (v3.28.1) ===== -->
+<div id="publicKeysModal" class="modal-overlay" onclick="if(event.target===this)closePublicKeys()">
+  <div class="modal-content" style="max-width:1000px">
+    <div class="modal-header">
+      <div class="modal-title">🗝️ Public Key 管理 <span style="font-size:12px;color:var(--text-2);font-weight:400">SMR 对外发放的 key (给 Hermes / 客户端用)</span></div>
+      <button class="modal-close" onclick="closePublicKeys()">×</button>
+    </div>
+    <div style="margin-bottom:var(--space-4);padding:var(--space-3);background:var(--bg-2);border-radius:var(--radius);font-size:12px;color:var(--text-2)">
+      💡 <b>Public Key</b> = 别人调 SMR 时用的 <code>smr-pub-...</code> key。可挂 model_filter 限制模型 + rate_limit_rpm 限流。<br>
+      ⚠️ 原始 key 只在创建那一次返回, 之后只存哈希 — 一定要复制保存。
+    </div>
+    <div id="publicKeysList"><div class="empty-state">⏳ 加载中…</div></div>
+    <div style="margin-top:var(--space-5);padding-top:var(--space-4);border-top:1px solid var(--border)">
+      <h3 style="font-size:14px;margin:0 0 var(--space-3)">➕ 创建新 Public Key</h3>
+      <div style="display:grid;grid-template-columns:1fr 100px 1fr auto;gap:var(--space-2)">
+        <input type="text" id="ppkName" placeholder="name (字母/数字/-/_)" class="filter-input">
+        <input type="number" id="ppkRpm" placeholder="60" value="60" class="filter-input" title="rate_limit_rpm">
+        <input type="text" id="ppkFilter" placeholder="model_filter (逗号分隔, 如 *:free, openrouter:*)" class="filter-input">
+        <button class="btn primary" onclick="createPublicKey()">创建</button>
+      </div>
+      <div id="ppkNewKeyDisplay" style="display:none;margin-top:var(--space-3);padding:var(--space-3);background:var(--success-glow);border:1px solid var(--success);border-radius:var(--radius)">
+        <div style="font-size:12px;color:var(--success);margin-bottom:var(--space-2);font-weight:600">⚠️ 请立刻复制保存原始 Key (仅显示这一次)</div>
+        <code id="ppkNewKeyValue" style="display:block;padding:var(--space-2);background:var(--bg-0);border-radius:var(--radius-sm);font-family:monospace;word-break:break-all;user-select:all"></code>
+        <button class="btn ghost sm" style="margin-top:var(--space-2)" onclick="copyToClipboard(document.getElementById('ppkNewKeyValue').textContent)">📋 复制</button>
+      </div>
     </div>
   </div>
 </div>
@@ -1238,9 +1293,155 @@ document.addEventListener('keydown', (e) => {
     e.preventDefault();
     cycleTheme();
   }
-  // ESC: 关闭 wizard modal
-  if (e.key === 'Escape') closeWizard();
+  // ESC: 关闭所有 modal
+  if (e.key === 'Escape') { closeWizard(); closeProviderKeys(); closePublicKeys(); }
 });
+// ===== v3.28.1 Provider/Public Key 前端桥接 (BEGIN) =====
+function copyToClipboard(text) {
+  const done = () => toast('success', '已复制', 'Key 在剪贴板');
+  const fail = () => toast('warn', '复制失败', '请手动选中');
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(text).then(done, fail);
+  } else {
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); done(); } catch { fail(); }
+    document.body.removeChild(ta);
+  }
+}
+
+function openProviderKeys()  { document.getElementById('providerKeysModal').style.display = 'flex'; loadProviderKeys(); }
+function closeProviderKeys() { document.getElementById('providerKeysModal').style.display = 'none'; }
+function openPublicKeys()    { document.getElementById('publicKeysModal').style.display = 'flex'; loadPublicKeys(); }
+function closePublicKeys()   {
+  document.getElementById('publicKeysModal').style.display = 'none';
+  const disp = document.getElementById('ppkNewKeyDisplay');
+  if (disp) disp.style.display = 'none';
+}
+
+async function loadProviderKeys() {
+  const list = document.getElementById('providerKeysList');
+  list.innerHTML = '<div class="empty-state">⏳ 加载中…</div>';
+  const [keysData, provData] = await Promise.all([
+    fetchJSON('/v1/admin/api-keys'),
+    fetchJSON('/v1/admin/providers?include_disabled=true'),
+  ]);
+  const sel = document.getElementById('pkProviderSel');
+  sel.innerHTML = '<option value="">选择 provider…</option>';
+  const provs = provData?.providers || {};
+  Object.keys(provs).sort().forEach(name => {
+    sel.innerHTML += `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`;
+  });
+  if (!keysData?.keys?.length) {
+    list.innerHTML = '<div class="empty-state">📭 无 Provider Key</div>';
+    return;
+  }
+  let html = '<table class="data-table" style="width:100%;font-size:13px"><thead><tr><th>Provider</th><th>数</th><th>预览</th><th>指纹</th><th></th></tr></thead><tbody>';
+  keysData.keys.forEach(k => {
+    const prev = (k.preview || []).map(p => `<code style="font-size:11px">${escapeHtml(p)}</code>`).join('<br>') || '—';
+    const fp = k.fingerprint ? `<code style="font-size:11px">${escapeHtml(k.fingerprint.slice(0, 12))}…</code>` : '—';
+    html += `<tr><td><b>${escapeHtml(k.provider)}</b>${k.enabled === false ? ' ⏸' : ''}</td><td>${k.count}</td><td>${prev}</td><td>${fp}</td><td><button class="btn ghost sm" onclick="deleteProviderKey('${escapeHtml(k.provider)}')">🗑 清空</button></td></tr>`;
+  });
+  list.innerHTML = html + '</tbody></table>';
+}
+
+async function addProviderKey() {
+  const provider = document.getElementById('pkProviderSel').value.trim();
+  const apiKey   = document.getElementById('pkNewKey').value.trim();
+  if (!provider || !apiKey) return toast('warn', '缺少信息', 'Provider + Key 都要填');
+  try {
+    const r = await fetch(BASE + '/v1/admin/api-keys', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({provider, api_key: apiKey}),
+    });
+    const data = await r.json();
+    if (data.error) return toast('error', '添加失败', data.error);
+    toast('success', '已添加', `${provider} 现有 ${data.count ?? '?'} 个 key`);
+    document.getElementById('pkNewKey').value = '';
+    loadProviderKeys();
+  } catch (e) { toast('error', '网络错误', e.message); }
+}
+
+async function deleteProviderKey(provider) {
+  if (!confirm(`清空 ${provider} 的全部 key? (不可恢复)`)) return;
+  try {
+    const r = await fetch(`${BASE}/v1/admin/api-keys/${encodeURIComponent(provider)}`, {method: 'DELETE'});
+    const data = await r.json();
+    if (data.error) return toast('error', '删除失败', data.error);
+    toast('success', '已清空', provider);
+    loadProviderKeys();
+  } catch (e) { toast('error', '网络错误', e.message); }
+}
+
+async function loadPublicKeys() {
+  const list = document.getElementById('publicKeysList');
+  list.innerHTML = '<div class="empty-state">⏳ 加载中…</div>';
+  const data = await fetchJSON('/v1/admin/public-keys');
+  if (!data?.keys?.length) {
+    list.innerHTML = '<div class="empty-state">📭 无 Public Key</div>';
+    return;
+  }
+  let html = '<table class="data-table" style="width:100%;font-size:13px"><thead><tr><th>名称</th><th>哈希</th><th>RPM</th><th>过滤</th><th>末次</th><th></th></tr></thead><tbody>';
+  data.keys.forEach(k => {
+    const hash = k.key_hash ? escapeHtml(k.key_hash.slice(0, 16)) + '…' : '—';
+    const filter = Array.isArray(k.model_filter) && k.model_filter.length
+      ? (k.model_filter.length > 3 ? k.model_filter.slice(0,3).join(', ') + '…' : k.model_filter.join(', '))
+      : '全部';
+    const last = k.last_used ? new Date(k.last_used * 1000).toLocaleString() : '—';
+    html += `<tr>
+      <td><b>${escapeHtml(k.name)}</b>${k.enabled === false ? ' ⏸' : ''}</td>
+      <td><code style="font-size:11px">${hash}</code></td>
+      <td>${k.rate_limit_rpm ?? 60}</td>
+      <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px" title="${escapeHtml(filter)}">${escapeHtml(filter)}</td>
+      <td style="font-size:11px">${escapeHtml(last)}</td>
+      <td><button class="btn ghost sm" onclick="deletePublicKey('${escapeHtml(k.name)}')">🗑</button></td>
+    </tr>`;
+  });
+  list.innerHTML = html + '</tbody></table>';
+}
+
+async function createPublicKey() {
+  const name = document.getElementById('ppkName').value.trim();
+  const rpm  = parseInt(document.getElementById('ppkRpm').value) || 60;
+  const filterRaw = document.getElementById('ppkFilter').value.trim();
+  if (!name) return toast('warn', '缺少名称', 'Name 必填');
+  if (!/^[a-zA-Z0-9_-]+$/.test(name)) return toast('warn', '格式错误', '仅字母/数字/下划线/连字符');
+  const body = { name, rate_limit_rpm: rpm };
+  if (filterRaw) body.model_filter = filterRaw.split(',').map(s => s.trim()).filter(Boolean);
+  try {
+    const r = await fetch(BASE + '/v1/admin/public-keys', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body),
+    });
+    const data = await r.json();
+    if (data.error) return toast('error', '创建失败', data.error);
+    if (data.key) {
+      document.getElementById('ppkNewKeyValue').textContent = data.key;
+      document.getElementById('ppkNewKeyDisplay').style.display = 'block';
+      toast('warn', '⚠️ 仅此一次', `${name} — 请立即复制保存`);
+    } else {
+      toast('success', '已创建', name);
+    }
+    document.getElementById('ppkName').value = '';
+    document.getElementById('ppkRpm').value = '60';
+    document.getElementById('ppkFilter').value = '';
+    loadPublicKeys();
+  } catch (e) { toast('error', '网络错误', e.message); }
+}
+
+async function deletePublicKey(name) {
+  if (!confirm(`永久删除 Key "${name}"? (不可恢复, 立即失效)`)) return;
+  try {
+    const r = await fetch(`${BASE}/v1/admin/public-keys/${encodeURIComponent(name)}`, {method: 'DELETE'});
+    const data = await r.json();
+    if (data.error) return toast('error', '删除失败', data.error);
+    toast('success', '已删除', name);
+    loadPublicKeys();
+  } catch (e) { toast('error', '网络错误', e.message); }
+}
+// ===== v3.28.1 Provider/Public Key 前端桥接 (END) =====
+
 </script>
 
 </body>
