@@ -1354,6 +1354,7 @@ async function addProviderKey() {
     const r = await fetch(BASE + '/v1/admin/api-keys', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({provider, api_key: apiKey}),
+      signal: AbortSignal.timeout(10000),
     });
     const data = await r.json();
     if (data.error) return toast('error', '添加失败', data.error);
@@ -1366,7 +1367,7 @@ async function addProviderKey() {
 async function deleteProviderKey(provider) {
   if (!confirm(`清空 ${provider} 的全部 key? (不可恢复)`)) return;
   try {
-    const r = await fetch(`${BASE}/v1/admin/api-keys/${encodeURIComponent(provider)}`, {method: 'DELETE'});
+    const r = await fetch(`${BASE}/v1/admin/api-keys/${encodeURIComponent(provider)}`, {method: 'DELETE', signal: AbortSignal.timeout(10000)});
     const data = await r.json();
     if (data.error) return toast('error', '删除失败', data.error);
     toast('success', '已清空', provider);
@@ -1413,6 +1414,7 @@ async function createPublicKey() {
     const r = await fetch(BASE + '/v1/admin/public-keys', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify(body),
+      signal: AbortSignal.timeout(10000),
     });
     const data = await r.json();
     if (data.error) return toast('error', '创建失败', data.error);
@@ -1433,7 +1435,7 @@ async function createPublicKey() {
 async function deletePublicKey(name) {
   if (!confirm(`永久删除 Key "${name}"? (不可恢复, 立即失效)`)) return;
   try {
-    const r = await fetch(`${BASE}/v1/admin/public-keys/${encodeURIComponent(name)}`, {method: 'DELETE'});
+    const r = await fetch(`${BASE}/v1/admin/public-keys/${encodeURIComponent(name)}`, {method: 'DELETE', signal: AbortSignal.timeout(10000)});
     const data = await r.json();
     if (data.error) return toast('error', '删除失败', data.error);
     toast('success', '已删除', name);
