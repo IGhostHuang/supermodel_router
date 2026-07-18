@@ -513,7 +513,7 @@ body{padding:var(--space-5);min-height:100vh}
 <div id="providerKeysModal" class="modal-overlay" onclick="if(event.target===this)closeProviderKeys()">
   <div class="modal-content" style="max-width:900px">
     <div class="modal-header">
-      <div class="modal-title">🔑 Provider Key 管理 <span style="font-size:12px;color:var(--text-2);font-weight:400">下游 provider 的 API key (openrouter/nvidia/newapi…)</span></div>
+      <div class="modal-title">🔑 Provider Key 管理 <span style="font-size:12px;color:var(--text-2);font-weight:400">下游 provider 的 API key (openrouter/nvidia/newapi…)</span> <button id="pkToggleBtn" class="btn ghost sm" style="margin-left:8px" onclick="toggleProviderKeyVisibility()" title="切换完整 key 可见性">👁️ 显示完整</button></div>
       <button class="modal-close" onclick="closeProviderKeys()">×</button>
     </div>
     <div style="margin-bottom:var(--space-4);padding:var(--space-3);background:var(--bg-2);border-radius:var(--radius);font-size:12px;color:var(--text-2)">
@@ -1297,6 +1297,8 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') { closeWizard(); closeProviderKeys(); closePublicKeys(); }
 });
 // ===== v3.28.1 Provider/Public Key 前端桥接 (BEGIN) =====
+let showFullProviderKeys = false;
+
 function copyToClipboard(text) {
   const done = () => toast('success', '已复制', 'Key 在剪贴板');
   const fail = () => toast('warn', '复制失败', '请手动选中');
@@ -1320,11 +1322,18 @@ function closePublicKeys()   {
   if (disp) disp.style.display = 'none';
 }
 
+async function toggleProviderKeyVisibility() {
+  showFullProviderKeys = !showFullProviderKeys;
+  const btn = document.getElementById('pkToggleBtn');
+  if (btn) btn.textContent = showFullProviderKeys ? '🙈 隐藏' : '👁️ 显示完整';
+  await loadProviderKeys();
+}
+
 async function loadProviderKeys() {
   const list = document.getElementById('providerKeysList');
   list.innerHTML = '<div class="empty-state">⏳ 加载中…</div>';
   const [keysData, provData] = await Promise.all([
-    fetchJSON('/v1/admin/api-keys'),
+    fetchJSON('/v1/admin/api-keys' + (showFullProviderKeys ? '?show_full_keys=true' : '')),
     fetchJSON('/v1/admin/providers?include_disabled=true'),
   ]);
   const sel = document.getElementById('pkProviderSel');
@@ -1339,7 +1348,13 @@ async function loadProviderKeys() {
   }
   let html = '<table class="data-table" style="width:100%;font-size:13px"><thead><tr><th>Provider</th><th>数</th><th>预览</th><th>指纹</th><th></th></tr></thead><tbody>';
   keysData.keys.forEach(k => {
-    const prev = (k.preview || []).map(p => `<code style="font-size:11px">${escapeHtml(p)}</code>`).join('<br>') || '—';
+    const prev = (k.preview || []).map(p => {
+      const safe = escapeHtml(p);
+      if (showFullProviderKeys) {
+        return `<code style="font-size:11px;word-break:break-all;cursor:pointer" onclick="copyToClipboard(this.textContent)" title="点击复制完整 key">${safe}</code>`;
+      }
+      return `<code style="font-size:11px">${safe}</code>`;
+    }).join('<br>') || '—';
     const fp = k.fingerprint ? `<code style="font-size:11px">${escapeHtml(k.fingerprint.slice(0, 12))}…</code>` : '—';
     html += `<tr><td><b>${escapeHtml(k.provider)}</b>${k.enabled === false ? ' ⏸' : ''}</td><td>${k.count}</td><td>${prev}</td><td>${fp}</td><td><button class="btn ghost sm" onclick="deleteProviderKey('${escapeHtml(k.provider)}')">🗑 清空</button></td></tr>`;
   });
