@@ -587,8 +587,10 @@ def _fingerprint_key(key: str) -> str:
 
 
 @router.get("/v1/admin/api-keys")
-async def admin_api_keys_list(provider: str | None = None):
-    """列出所有 provider 的 API key 摘要 (脱敏指纹 + 数量, 不含真实 key)."""
+async def admin_api_keys_list(provider: str | None = None, show_full_keys: bool = False):
+    """列出所有 provider 的 API key 摘要 (脱敏指纹 + 数量).
+    show_full_keys=true 返回完整 key (admin 本机场景).
+    """
     providers = config.data.get("providers", {})
     items = []
     for name, pcfg in providers.items():
@@ -602,12 +604,13 @@ async def admin_api_keys_list(provider: str | None = None):
             "count": len(keys),
             "fingerprint": _fingerprint_key(joined) if keys else None,
             "preview": [
-                (k[:8] + "..." + k[-4:]) if len(k) > 12 else "***"
+                k if show_full_keys else ((k[:8] + "..." + k[-4:]) if len(k) > 12 else "***")
                 for k in keys
             ],
+            "show_full_keys": show_full_keys,
             "enabled": pcfg.get("enabled", True),
         })
-    return JSONResponse({"version": "3.7.0", "count": len(items), "keys": items})
+    return JSONResponse({"version": "3.7.0", "count": len(items), "keys": items, "show_full_keys": show_full_keys})
 
 
 @router.post("/v1/admin/api-keys")
