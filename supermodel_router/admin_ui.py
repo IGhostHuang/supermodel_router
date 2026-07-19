@@ -536,7 +536,7 @@ body{padding:var(--space-5);min-height:100vh}
 <div id="publicKeysModal" class="modal-overlay" onclick="if(event.target===this)closePublicKeys()">
   <div class="modal-content" style="max-width:1000px">
     <div class="modal-header">
-      <div class="modal-title">🗝️ Public Key 管理 <span style="font-size:12px;color:var(--text-2);font-weight:400">SMR 对外发放的 key (给 Hermes / 客户端用)</span></div>
+      <div class="modal-title">🗝️ Public Key 管理 <span style="font-size:12px;color:var(--text-2);font-weight:400">SMR 对外发放的 key (给 Hermes / 客户端用)</span> <button id="pubKeyToggleBtn" class="btn ghost sm" style="margin-left:8px" onclick="togglePublicKeyVisibility()" title="显示本会话内新建时缓存的原始 key (刷新即丢, 旧 key 无法恢复)">👁️ 显示完整</button></div>
       <button class="modal-close" onclick="closePublicKeys()">×</button>
     </div>
     <div style="margin-bottom:var(--space-4);padding:var(--space-3);background:var(--bg-2);border-radius:var(--radius);font-size:12px;color:var(--text-2)">
@@ -1298,6 +1298,9 @@ document.addEventListener('keydown', (e) => {
 });
 // ===== v3.28.1 Provider/Public Key 前端桥接 (BEGIN) =====
 let showFullProviderKeys = false;
+let showFullPublicKeys = false;
+// 会话级缓存: 本次页面加载后新建的 Public Key 原文 (刷新即丢, 旧 key 无法恢复 — 安全设计)
+const pubKeyCache = new Map();
 
 function copyToClipboard(text) {
   const done = () => toast('success', '已复制', 'Key 在剪贴板');
@@ -1320,6 +1323,10 @@ function closePublicKeys()   {
   document.getElementById('publicKeysModal').style.display = 'none';
   const disp = document.getElementById('ppkNewKeyDisplay');
   if (disp) disp.style.display = 'none';
+  // B1: 关闭时重置 toggle 状态和按钮文字, 与 Provider Key modal 行为对齐
+  showFullPublicKeys = false;
+  const btn = document.getElementById('pubKeyToggleBtn');
+  if (btn) btn.textContent = '👁️ 显示完整';
 }
 
 async function toggleProviderKeyVisibility() {
@@ -1327,6 +1334,13 @@ async function toggleProviderKeyVisibility() {
   const btn = document.getElementById('pkToggleBtn');
   if (btn) btn.textContent = showFullProviderKeys ? '🙈 隐藏' : '👁️ 显示完整';
   await loadProviderKeys();
+}
+
+async function togglePublicKeyVisibility() {
+  showFullPublicKeys = !showFullPublicKeys;
+  const btn = document.getElementById('pubKeyToggleBtn');
+  if (btn) btn.textContent = showFullPublicKeys ? '🙈 隐藏' : '👁️ 显示完整';
+  await loadPublicKeys();
 }
 
 async function loadProviderKeys() {
@@ -1398,23 +1412,48 @@ async function loadPublicKeys() {
     list.innerHTML = '<div class="empty-state">📭 无 Public Key</div>';
     return;
   }
-  let html = '<table class="data-table" style="width:100%;font-size:13px"><thead><tr><th>名称</th><th>哈希</th><th>RPM</th><th>过滤</th><th>末次</th><th></th></tr></thead><tbody>';
+  const headLabel = showFullPublicKeys ? '完整 Key / 哈希' : '哈希';
+  let html = `<table class="data-table" style="width:100%;font-size:13px"><thead><tr><th>名称</th><th>${headLabel}</th><th>RPM</th><th>过滤</th><th>末次</th><th></th></tr></thead><tbody>`;
   data.keys.forEach(k => {
-    const hash = k.key_hash ? escapeHtml(k.key_hash.slice(0, 16)) + '…' : '—';
+    const hashShort = k.key_hash ? escapeHtml(k.key_hash.slice(0, 16)) + '…' : '—';
+    let keyCell;
+    if (showFullPublicKeys) {
+      const raw = k.key_hash ? pubKeyCache.get(k.key_hash) : null;
+      if (raw) {
+        // 命中会话缓存: 显示原文 + 点击复制 (走 textContent, 无 XSS 面)
+        keyCell = `<code style="font-size:11px;word-break:break-all;cursor:pointer;color:var(--success)" onclick="copyToClipboard(this.textContent)" title="点击复制完整 key"></code>`;
+      } else {
+        // 未命中: 页面刷新前的旧 key 无法恢复 (安全设计)
+        keyCell = `<code style="font-size:11px">${hashShort}</code> <span style="font-size:10px;color:var(--warn)" title="Public Key 仅创建时返回一次, 本会话之前建的无法恢复; 需要看完整值请重新生成">⚠️ 已丢失</span>`;
+      }
+    } else {
+      keyCell = `<code style="font-size:11px">${hashShort}</code>`;
+    }
     const filter = Array.isArray(k.model_filter) && k.model_filter.length
       ? (k.model_filter.length > 3 ? k.model_filter.slice(0,3).join(', ') + '…' : k.model_filter.join(', '))
       : '全部';
     const last = k.last_used ? new Date(k.last_used * 1000).toLocaleString() : '—';
     html += `<tr>
       <td><b>${escapeHtml(k.name)}</b>${k.enabled === false ? ' ⏸' : ''}</td>
-      <td><code style="font-size:11px">${hash}</code></td>
+      <td>${keyCell}</td>
       <td>${k.rate_limit_rpm ?? 60}</td>
       <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px" title="${escapeHtml(filter)}">${escapeHtml(filter)}</td>
       <td style="font-size:11px">${escapeHtml(last)}</td>
       <td><button class="btn ghost sm" onclick="deletePublicKey('${escapeHtml(k.name)}')">🗑</button></td>
     </tr>`;
   });
+  // 先注入 HTML, 再同步用 textContent 填充原文 (避免 setTimeout 竞态)
   list.innerHTML = html + '</tbody></table>';
+  if (showFullPublicKeys) {
+    const rows = list.querySelectorAll('tbody tr');
+    data.keys.forEach((k, idx) => {
+      const raw = k.key_hash ? pubKeyCache.get(k.key_hash) : null;
+      if (raw && rows[idx]) {
+        const codeEl = rows[idx].querySelector('td:nth-child(2) code');
+        if (codeEl) codeEl.textContent = raw;
+      }
+    });
+  }
 }
 
 async function createPublicKey() {
@@ -1436,6 +1475,8 @@ async function createPublicKey() {
     if (data.key) {
       document.getElementById('ppkNewKeyValue').textContent = data.key;
       document.getElementById('ppkNewKeyDisplay').style.display = 'block';
+      // B1: 本会话内缓存原始 key, 供 👁️ toggle 时回显 (刷新即丢)
+      if (data.key_hash) pubKeyCache.set(data.key_hash, data.key);
       toast('warn', '⚠️ 仅此一次', `${name} — 请立即复制保存`);
     } else {
       toast('success', '已创建', name);
