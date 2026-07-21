@@ -1,20 +1,11 @@
 """
 supermodel_router/version.py — 版本元数据 + GitHub release 检查
 
-v3.29.0 (2026-07-17 老大拍 SMR 全量需求/功能/优化补全 — scoring engine + pricing + health GAP):
-- 新增 scoring_engine.py: 6 因子多维模型评分 (能力/上下文/价格/质量/延迟/模态), 加权总分 0-100, GPT-4o=92.9A
-- 新增 pricing.py: 1200+ 模型定价加载, 9 provider × 4 指标 (input/output/cache_input/cache_output), /v1/admin/pricing 端点
-- pricing.json 1200+ 条价格数据 (OpenRouter/AR/spider/DeepSeek 9 平台汇总)
-- model_health.py P1 补丁 (3 GAP):
-  * GAP-1: ALLOWED_TERMINAL_STATES 5 态 (banned/expired/credits_exhausted/quota_exceeded/auth_failure), is_terminal() 辅助
-  * GAP-2: SKIP_UNTIL 计算改用 backoff_factor (1.0→2.0, 14→28→56s) 替代固定 120s, restart 有缓冲
-  * GAP-3: _apply_skip_until_backoff 支持 step 递减 (4个max(step, max_attempts=3) 不过度惩罚偶发 429)
-- engine.py 集成 scoring_engine: classify_capability() 替代旧 scoring, 6 因子权重可配置
-- admin_api.py /v1/admin/scoring 端点 (config/score-model/summary), /v1/cost/models 降价模型对比
-- admin_ui.py Cost API 卡片: 7 模型价格对比表 + 降价模型 highlight
-- model_filter.py filterSizes 修复 (参数量 badge 在分类筛选时正确保留)
-- docker-compose.yml: pricing.json ro→rw, scoring_engine.py+pricing.py bind mount
-- Docker image 标签同步 v3.29.0
+v3.30.0 (2026-07-20 定价模型落地 — classify_error 精准配额检测 + Cloudflare 10013 支持):
+- engine.py classify_error(): 新增 401/403 volc_ark/StepFun 配额耗尽检测 (10001/10002, insufficient/balance)
+- engine.py classify_error(): 新增 Cloudflare Workers AI 免费额度用完检测 (code 10013) → 1h skip
+- model_health.py 已有 quota_skip_until/quota_type 字段，配合使用
+- 无需改动 model_health.py，现有字段足以记录配额耗尽导致的长 SKIP
 
 
 v3.27.0 (2026-07-02 v3.25.2 wizard 完整迁移 — 老大拍"都干"增量):

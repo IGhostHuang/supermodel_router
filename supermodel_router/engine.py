@@ -116,8 +116,30 @@ def classify_error(http_code: int, body_text: str = "") -> dict:
     if http_code == 400:
         return {"retryable": True, "disable_model": False, "rate_limit": False, "retry_after": 0, "quota_exhausted": False, "quota_type": ""}
     elif http_code == 401:
+        body_lower = body_text.lower() if body_text else ""
+        # volc_ark / 阶跃星辰 TokenPlan 401 — 配额耗尽
+        if '"code": "10001"' in body_text or '"code": "10002"' in body_text:
+            ra = 86400
+            qt = "token_plan"
+            if "daily" in body_lower or "日" in body_lower:
+                ra, qt = 86400, "daily"
+            elif "weekly" in body_lower or "周" in body_lower:
+                ra, qt = 604800, "weekly"
+            elif "monthly" in body_lower or "月" in body_lower:
+                ra, qt = 2592000, "monthly"
+            return {"retryable": False, "disable_model": True, "rate_limit": True,
+                    "retry_after": ra, "quota_exhausted": True, "quota_type": qt}
+        # StepFun / 其他 balance 不足
+        if "insufficient" in body_lower or "balance" in body_lower or "余额" in body_lower:
+            return {"retryable": False, "disable_model": True, "rate_limit": True,
+                    "retry_after": 2592000, "quota_exhausted": True, "quota_type": "monthly"}
         return {"retryable": False, "disable_model": True, "rate_limit": False, "retry_after": 0, "quota_exhausted": False, "quota_type": ""}
     elif http_code == 403:
+        body_lower = body_text.lower() if body_text else ""
+        # volc_ark 403 也可能是配额问题
+        if '"code": "10001"' in body_text or '"code": "10002"' in body_text:
+            return {"retryable": False, "disable_model": True, "rate_limit": True,
+                    "retry_after": 86400, "quota_exhausted": True, "quota_type": "token_plan"}
         return {"retryable": True, "disable_model": False, "rate_limit": False, "retry_after": 0, "quota_exhausted": False, "quota_type": ""}
     elif http_code == 404:
         return {"retryable": False, "disable_model": True, "rate_limit": False, "retry_after": 0, "quota_exhausted": False, "quota_type": ""}
@@ -131,28 +153,34 @@ def classify_error(http_code: int, body_text: str = "") -> dict:
         ra = 120
         quota_type = ""
         quota_exhausted = False
+        body_lower = body_text.lower() if body_text else ""
+        # Cloudflare Workers AI 免费额度用完 (code 10013)
+        if '"code": 10013' in body_text or '"code":10013' in body_text or 'workers ai: free daily request limit reached' in body_lower:
+            ra = 3600  # 等 1 小时 (每日重置)
+            quota_type = "daily"
+            quota_exhausted = True
         # 日限额 → skip 24h (跟 model_health.quota_durations['daily']=86400 对齐, R65 伊芙发现)
-        if "today" in body_lower or "daily" in body_lower or "今日" in body_lower or "日额度" in body_lower:
+        elif "today" in body_lower or "daily" in body_lower or "今日" in body_lower or "日额度" in body_lower:
             ra = 86400
             quota_type = "daily"
             quota_exhausted = True
         # 周限额 → skip 7 天
-        if "weekly" in body_lower or "week" in body_lower or "周" in body_lower:
+        elif "weekly" in body_lower or "week" in body_lower or "周" in body_lower:
             ra = 604800
             quota_type = "weekly"
             quota_exhausted = True
         # 月限额 → skip 30 天
-        if "monthly" in body_lower or "billing" in body_lower or "充值" in body_lower or "月额度" in body_lower or "month" in body_lower:
+        elif "monthly" in body_lower or "billing" in body_lower or "充值" in body_lower or "月额度" in body_lower or "month" in body_lower:
             ra = 2592000
             quota_type = "monthly"
             quota_exhausted = True
         # 套餐限额 (TokenPlan) → skip 24h
-        if "tokenplan" in body_lower or "套餐" in body_lower or "plan" in body_lower:
+        elif "tokenplan" in body_lower or "套餐" in body_lower or "plan" in body_lower:
             ra = 86400
             quota_type = "token_plan"
             quota_exhausted = True
         # 账户余额不足 → skip 24h
-        if "balance" in body_lower or "余额" in body_lower or "insufficient" in body_lower:
+        elif "balance" in body_lower or "余额" in body_lower or "insufficient" in body_lower:
             ra = 86400
             quota_type = "balance"
             quota_exhausted = True
