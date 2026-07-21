@@ -114,6 +114,10 @@ async def chat_completions(request: Request):
     chain_id = body.get("_smr_chain_id") or smr_request_id
     request_start_time = time.time()
 
+    # v3.32.0 九字真言'行' span 追踪 (跨模块 grep 目标: span_start=api_entry / span_end=api_entry)
+    LOG.info("span_start=api_entry smr_request_id=%s chain=%s model=%s stream=%s",
+             smr_request_id, chain_id, str(requested_model)[:40], stream)
+
     # 鉴权
     # v3.7.0: 多 key 体系 — 先查 public_key_manager (per-tenant), 退到 config.server.api_key (单 key)
     from .public_api import public_key_manager, PublicKeyManager
@@ -362,6 +366,9 @@ async def chat_completions(request: Request):
                     media_type="text/event-stream",
                 )
             else:
+                # v3.32.0 span: proxy 调用前
+                LOG.info("span_start=proxy_call smr_request_id=%s path=%s attempt=%d",
+                         smr_request_id, route.full_model_path, attempts)
                 result = await proxy_chat_request(route, current_body, stream=False, timeout=300)
                 assert isinstance(result, dict), f"expected dict, got {type(result)}"
                 latency = time.time() - t0
@@ -369,6 +376,9 @@ async def chat_completions(request: Request):
                     http_code = result.get("error", {}).get("code", 0)
                     error_msg = result.get("error", {}).get("message", "")
                     engine.record_failure(route.provider_name, route.model_id, http_code, error_msg)
+                    # v3.32.0 span: proxy 失败结束
+                    LOG.warning("span_end=proxy_call smr_request_id=%s path=%s status=error http=%s latency_ms=%.0f",
+                                smr_request_id, route.full_model_path, http_code, latency * 1000)
                     last_error = result
                     # v3.4.0: 切下一个 candidate, 记录 switch + inject
                     advance = _advance_to_next_chain(
@@ -389,6 +399,11 @@ async def chat_completions(request: Request):
                     continue
                 # 成功
                 engine.record_success(route.provider_name, latency)
+                # v3.32.0 span: proxy 成功结束 + api_entry 全链路结束
+                LOG.info("span_end=proxy_call smr_request_id=%s path=%s status=ok latency_ms=%.0f",
+                         smr_request_id, route.full_model_path, latency * 1000)
+                LOG.info("span_end=api_entry smr_request_id=%s total_ms=%.0f chain_pos=%d/%d",
+                         smr_request_id, (time.time() - request_start_time) * 1000, chain_idx + 1, len(chain))
                 router_meta = {
                     "smr_request_id": smr_request_id,  # v3.5.0: 错配检测
                     "chain_id": chain_id,  # v3.5.0: 跨 candidate 一致
@@ -413,6 +428,9 @@ async def chat_completions(request: Request):
             latency = time.time() - t0
             LOG.warning("timeout %s (attempt %d, %.1fs)",
                         route.full_model_path, attempts, latency)
+            # v3.32.0 span: proxy timeout 结束
+            LOG.warning("span_end=proxy_call smr_request_id=%s path=%s status=timeout latency_ms=%.0f",
+                        smr_request_id, route.full_model_path, latency * 1000)
             engine.record_failure(route.provider_name, route.model_id, 0, "timeout")
             last_error = {"error": {"message": "Upstream timeout", "type": "timeout"}}
             # v3.4.0: 切链 + 记录
