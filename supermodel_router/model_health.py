@@ -243,9 +243,9 @@ class ModelHealthManager:
                     mh.state = HealthState.HEALTHY.value
                     mh.skip_until = 0
                     mh.skip_count = 0
-                    LOG.info("model_health: %s SKIP → HEALTHY (success-decay cleared)", path)
+                    LOG.info("state_transition=SKIP->HEALTHY path=%s reason=success_decay_cleared", path)
                 else:
-                    LOG.info("model_health: %s SKIP success-decay: fails→%d, cooldown→%ds",
+                    LOG.info("state_transition=SKIP->SKIP path=%s reason=success_decay fails=%d cooldown=%d",
                              path, mh.consecutive_fails, mh.cooldown_seconds)
             elif mh.state == HealthState.HALF_OPEN.value:
                 # HALF_OPEN 期间的成功说明 probe 成功
@@ -253,12 +253,12 @@ class ModelHealthManager:
                 mh.consecutive_success = 0
                 mh.skip_until = 0
                 mh.cooldown_seconds = self.cfg["skip_initial_seconds"]
-                LOG.info("model_health: %s HALF_OPEN → HEALTHY (probe success via record)", path)
+                LOG.info("state_transition=HALF_OPEN->HEALTHY path=%s reason=probe_success", path)
             elif mh.state == HealthState.DEGRADED.value:
                 if mh.consecutive_success >= self.cfg["degraded_consecutive_success_recover"]:
                     mh.state = HealthState.HEALTHY.value
                     mh.consecutive_success = 0
-                    LOG.info("model_health: %s DEGRADED → HEALTHY (consecutive_success=%d)", path, mh.consecutive_success)
+                    LOG.info("state_transition=DEGRADED->HEALTHY path=%s reason=recovery consec_success=%d", path, mh.consecutive_success)
             else:  # HEALTHY
                 mh.state = HealthState.HEALTHY.value
             mh.updated_at = time.time()
@@ -325,12 +325,12 @@ class ModelHealthManager:
                 mh.state = HealthState.SKIP.value
                 mh.last_probe_success = False
                 mh.last_probe_error = f"quota_exhausted({quota_type})"[:200]
-                LOG.warning("model_health: %s → SKIP (quota_exhausted=%s, skip_until=%.0f)",
-                            path, quota_type, mh.quota_skip_until)
+                LOG.warning("state_transition=%s->SKIP path=%s reason=quota_exhausted quota_type=%s skip_until=%.0f",
+                            old_state, path, quota_type, mh.quota_skip_until)
             # 2) SKIP 到期检查 → HALF_OPEN
             elif mh.state == HealthState.SKIP.value and now >= mh.skip_until:
                 mh.state = HealthState.HALF_OPEN.value
-                LOG.info("model_health: %s SKIP → HALF_OPEN (cooldown expired)", path)
+                LOG.info("state_transition=SKIP->HALF_OPEN path=%s reason=cooldown_expired", path)
                 old_state = mh.state
             # 3) HALF_OPEN + 失败 → 重新 SKIP (指数退避)
             elif mh.state == HealthState.HALF_OPEN.value:
@@ -343,7 +343,7 @@ class ModelHealthManager:
                 mh.state = HealthState.SKIP.value
                 mh.last_probe_success = False
                 mh.last_probe_error = error[:200]
-                LOG.warning("model_health: %s HALF_OPEN → SKIP (cooldown=%ds, skip_count=%d, err=%s)",
+                LOG.warning("state_transition=HALF_OPEN->SKIP path=%s reason=probe_failed cooldown=%d skip_count=%d error=%s",
                             path, mh.cooldown_seconds, mh.skip_count, error[:80])
             # 4) HEALTHY/DEGRADED + 连续失败 ≥ 阈值 → SKIP
             elif mh.state in (HealthState.HEALTHY.value, HealthState.DEGRADED.value):
@@ -351,12 +351,12 @@ class ModelHealthManager:
                     mh.skip_count += 1
                     mh.skip_until = now + mh.cooldown_seconds
                     mh.state = HealthState.SKIP.value
-                    LOG.warning("model_health: %s %s → SKIP (consecutive_fails=%d, cooldown=%ds, err=%s)",
-                                path, old_state, mh.consecutive_fails, mh.cooldown_seconds, error[:80])
+                    LOG.warning("state_transition=%s->SKIP path=%s reason=consecutive_fails fails=%d cooldown=%d error=%s",
+                                old_state, path, mh.consecutive_fails, mh.cooldown_seconds, error[:80])
                 elif mh.consecutive_fails >= 1:
                     mh.state = HealthState.DEGRADED.value
                     if old_state != HealthState.DEGRADED.value:
-                        LOG.info("model_health: %s → DEGRADED (consecutive_fails=%d)", path, mh.consecutive_fails)
+                        LOG.info("state_transition=HEALTHY->DEGRADED path=%s reason=first_fail fails=%d", path, mh.consecutive_fails)
             # 5) 滚动成功率 + EWMA 检查 (仅 HEALTHY/DEGRADED)
             if mh.state in (HealthState.HEALTHY.value, HealthState.DEGRADED.value):
                 rate = mh.rolling_success_rate()
@@ -364,14 +364,14 @@ class ModelHealthManager:
                     mh.skip_count += 1
                     mh.skip_until = now + mh.cooldown_seconds
                     mh.state = HealthState.SKIP.value
-                    LOG.warning("model_health: %s → SKIP (rolling_rate=%.1f%% < %.1f%%)",
-                                path, rate, self.cfg["rolling_rate_skip_below"])
+                    LOG.warning("state_transition=%s->SKIP path=%s reason=low_success_rate rate=%.1f threshold=%.1f",
+                                old_state, path, rate, self.cfg["rolling_rate_skip_below"])
                 elif mh.ewma_latency_ms > self.cfg["ewma_latency_skip_ms"] and mh.ewma_latency_ms > 0:
                     mh.skip_count += 1
                     mh.skip_until = now + self.cfg["skip_initial_seconds"]
                     mh.state = HealthState.SKIP.value
-                    LOG.warning("model_health: %s → SKIP (ewma_latency=%.0fms > %.0fms)",
-                                path, mh.ewma_latency_ms, self.cfg["ewma_latency_skip_ms"])
+                    LOG.warning("state_transition=%s->SKIP path=%s reason=slow_response latency=%.0f threshold=%.0f",
+                                old_state, path, mh.ewma_latency_ms, self.cfg["ewma_latency_skip_ms"])
             mh.updated_at = time.time()
             # v3.16.0: 进入 SKIP 时记录 first_skip_at (首次, 续期不变)
             if mh.state == HealthState.SKIP.value and mh.first_skip_at == 0.0:
@@ -394,7 +394,7 @@ class ModelHealthManager:
                 if now >= mh.skip_until:
                     # 到期 → 标记 HALF_OPEN (等 probe)
                     mh.state = HealthState.HALF_OPEN.value
-                    LOG.info("model_health: %s SKIP → HALF_OPEN (cooldown expired during should_skip)", path)
+                    LOG.info("state_transition=SKIP->HALF_OPEN path=%s reason=cooldown_expired_route", path)
                     return False
                 return True
             if mh.state == HealthState.HALF_OPEN.value:
@@ -659,7 +659,7 @@ class ModelHealthManager:
                 mh.consecutive_success = 0
                 mh.skip_until = 0
                 mh.cooldown_seconds = self.cfg["skip_initial_seconds"]
-                LOG.info("model_health: %s HALF_OPEN/SKIP → HEALTHY (probe success)", path)
+                LOG.info("state_transition=*->HEALTHY path=%s reason=probe_recovery", path)
             else:
                 # 失败 → 重新 SKIP (指数退避)
                 mh.skip_count += 1
@@ -669,7 +669,7 @@ class ModelHealthManager:
                 )
                 mh.skip_until = time.time() + mh.cooldown_seconds
                 mh.state = HealthState.SKIP.value
-                LOG.warning("model_health: %s HALF_OPEN → SKIP (probe failed, cooldown=%ds, err=%s)",
+                LOG.warning("state_transition=HALF_OPEN->SKIP path=%s reason=probe_failed cooldown=%d error=%s",
                             path, mh.cooldown_seconds, error[:80])
             mh.updated_at = time.time()
             # v3.16.0: probe 失败转 SKIP 时记录 first_skip_at
