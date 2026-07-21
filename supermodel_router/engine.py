@@ -1097,7 +1097,8 @@ async def proxy_chat_request(
     else:
         headers["Authorization"] = f"Bearer {route.api_key}"
 
-    payload = {**body, "model": route.model_id}
+    # v3.32.0: 剥离 SMR 内部字段 (_smr_request_id / _smr_chain_id / _smr_compress) 不泄漏到上游 API
+    payload = {**{k: v for k, v in body.items() if not k.startswith("_smr_")}, "model": route.model_id}
 
     base_url = route.base_url.rstrip("/")
     url = f"{base_url}/chat/completions"
@@ -1125,7 +1126,8 @@ async def proxy_images_generations(
     else:
         headers["Authorization"] = f"Bearer {route.api_key}"
 
-    payload = {**body, "model": route.model_id}
+    # v3.32.0: 剥离 SMR 内部字段 (_smr_request_id / _smr_chain_id / _smr_compress) 不泄漏到上游 API
+    payload = {**{k: v for k, v in body.items() if not k.startswith("_smr_")}, "model": route.model_id}
     base_url = route.base_url.rstrip("/")
 
     # v3.28: ModelScope 必须异步 (同步模式 API 直接 400)
