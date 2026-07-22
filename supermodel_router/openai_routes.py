@@ -177,6 +177,8 @@ async def chat_completions(request: Request):
                               groups=groups,
                               group_weights=config.group_weights())
     if not chain:
+        LOG.info("span_end=api_entry smr_request_id=%s status=no_chain total_ms=%.0f chain_pos=0/0",
+                 smr_request_id, (time.time() - request_start_time) * 1000)
         return JSONResponse(
             {"error": {"message": "No available models", "type": "routing_error"}},
             status_code=503,
@@ -198,6 +200,8 @@ async def chat_completions(request: Request):
     candidate = chain[0]
     route = candidate.materialize(registry)
     if not route:
+        LOG.info("span_end=api_entry smr_request_id=%s status=no_route total_ms=%.0f chain_pos=0/%d",
+                 smr_request_id, (time.time() - request_start_time) * 1000, len(chain))
         return JSONResponse(
             {"error": {"message": "No available models (materialize failed)", "type": "routing_error"}},
             status_code=503,
@@ -261,10 +265,20 @@ async def chat_completions(request: Request):
 
     # v4: traverse 候选链 — 5xx/timeout/429 (短) 自动切下一个候选
     attempts = 0
+
+    def _log_api_entry_end(status: str, chain_pos: int = 0, chain_len: int = 0) -> None:
+        """v3.32.1 补丁: 统一 api_entry span_end 出口 (支持 6 return 分支)
+        chain_pos/chain_len 默认 0 处理 no-chain 分支 (chain_idx 未定义时)"""
+        LOG.info("span_end=api_entry smr_request_id=%s status=%s total_ms=%.0f chain_pos=%d/%d",
+                 smr_request_id, status,
+                 (time.time() - request_start_time) * 1000,
+                 chain_pos, chain_len)
+
     while True:
         attempts += 1
         if attempts > max_retry + len(chain):
             # 兜底: 链遍历完仍失败
+            _log_api_entry_end("exhausted")
             return JSONResponse(
                 last_error or {"error": {"message": "All candidates exhausted"}},
                 status_code=502,
@@ -387,6 +401,7 @@ async def chat_completions(request: Request):
                         failure_msg=error_msg,
                     )
                     if advance is None:
+                        _log_api_entry_end("exhausted", chain_idx + 1, len(chain))
                         return JSONResponse(
                             last_error or {"error": {"message": "All candidates exhausted"}},
                             status_code=502,
@@ -440,6 +455,7 @@ async def chat_completions(request: Request):
                 failure_msg=f"upstream timeout after {latency:.1f}s",
             )
             if advance is None:
+                _log_api_entry_end("exhausted", chain_idx + 1, len(chain))
                 return JSONResponse(
                     last_error or {"error": {"message": "All candidates exhausted"}},
                     status_code=502,
@@ -455,6 +471,7 @@ async def chat_completions(request: Request):
                 failure_msg=str(e),
             )
             if advance is None:
+                _log_api_entry_end("exhausted", chain_idx + 1, len(chain))
                 return JSONResponse(
                     last_error or {"error": {"message": "All candidates exhausted"}},
                     status_code=502,
