@@ -4,6 +4,7 @@ supermodel_router/engine.py — 路由引擎 v3: 质量评分 + 模态路由 + �
 import re
 import json
 import time
+import uuid  # v3.32.1: engine span 打点用
 import asyncio  # v3.28: ModelScope 异步生图轮询用
 import datetime
 import logging
@@ -1089,6 +1090,12 @@ async def proxy_chat_request(
     """
     发送 chat/completions 请求, 自动处理不同模态的特殊请求体构造
     """
+    # v3.32.1: engine 层 span 打点 (v0.2 补齐 proxy_normal/proxy_stream 入口)
+    smr_engine_id = uuid.uuid4().hex[:12]
+    _t_engine = time.time()
+    LOG.info("span_start=engine_proxy smr_engine_id=%s provider=%s model=%s stream=%s",
+             smr_engine_id, route.provider_name, route.model_id, stream)
+
     headers = {
         "Content-Type": "application/json",
     }
@@ -1104,9 +1111,16 @@ async def proxy_chat_request(
     url = f"{base_url}/chat/completions"
 
     if stream:
+        # v3.32.1 span: stream 分支立即返回 generator, span 结束由 caller 负责
+        LOG.info("span_end=engine_proxy smr_engine_id=%s status=stream_started latency_ms=%.0f",
+                 smr_engine_id, (time.time() - _t_engine) * 1000)
         return _proxy_stream(url, headers, payload, timeout)
     else:
-        return await _proxy_normal(url, headers, payload, timeout, route)
+        result = await _proxy_normal(url, headers, payload, timeout, route)
+        status = "error" if isinstance(result, dict) and result.get("error") else "ok"
+        LOG.info("span_end=engine_proxy smr_engine_id=%s status=%s latency_ms=%.0f",
+                 smr_engine_id, status, (time.time() - _t_engine) * 1000)
+        return result
 
 
 async def proxy_images_generations(
@@ -1117,7 +1131,14 @@ async def proxy_images_generations(
     """发送 images/generations 请求到生图模型
 
     v3.28: 加 ModelScope 异步模式分支 (api-inference.modelscope.cn 必须 X-ModelScope-Async-Mode)
+    v3.32.1: 加 engine 层 span 打点 (v0.2 补齐)
     """
+    # v3.32.1 span_start
+    smr_img_id = uuid.uuid4().hex[:12]
+    _t_img = time.time()
+    LOG.info("span_start=engine_images smr_img_id=%s provider=%s model=%s",
+             smr_img_id, route.provider_name, route.model_id)
+
     headers = {
         "Content-Type": "application/json",
     }
@@ -1132,15 +1153,24 @@ async def proxy_images_generations(
 
     # v3.28: ModelScope 必须异步 (同步模式 API 直接 400)
     if "modelscope.cn" in base_url:
-        return await _proxy_modelscope_async(base_url, headers, payload, route, timeout=timeout)
+        result = await _proxy_modelscope_async(base_url, headers, payload, route, timeout=timeout)
+        LOG.info("span_end=engine_images smr_img_id=%s branch=modelscope status=%s latency_ms=%.0f",
+                 smr_img_id, "error" if result.get("error") else "ok", (time.time() - _t_img) * 1000)
+        return result
 
     # v3.28: HuggingFace inference API — 同步返回 image bytes, 转 OpenAI 格式
     if "huggingface.co" in base_url:
-        return await _proxy_huggingface(base_url, headers, payload, route, timeout=timeout)
+        result = await _proxy_huggingface(base_url, headers, payload, route, timeout=timeout)
+        LOG.info("span_end=engine_images smr_img_id=%s branch=huggingface status=%s latency_ms=%.0f",
+                 smr_img_id, "error" if result.get("error") else "ok", (time.time() - _t_img) * 1000)
+        return result
 
     # v3.28: DashScope 阿里云百炼 (OpenAI 兼容模式) — sync 直接可用
     if "dashscope.aliyuncs.com" in base_url:
-        return await _proxy_dashscope(base_url, headers, payload, route, timeout=timeout)
+        result = await _proxy_dashscope(base_url, headers, payload, route, timeout=timeout)
+        LOG.info("span_end=engine_images smr_img_id=%s branch=dashscope status=%s latency_ms=%.0f",
+                 smr_img_id, "error" if result.get("error") else "ok", (time.time() - _t_img) * 1000)
+        return result
 
     url = f"{base_url}/images/generations"
 
@@ -1150,6 +1180,8 @@ async def proxy_images_generations(
             resp = await client.post(url, json=payload, headers=headers, timeout=timeout)
             elapsed = time.time() - t0
             if resp.status_code != 200:
+                LOG.warning("span_end=engine_images smr_img_id=%s branch=normal status=http_%d latency_ms=%.0f",
+                            smr_img_id, resp.status_code, (time.time() - _t_img) * 1000)
                 return {
                     "error": {"message": resp.text[:500], "type": f"http_{resp.status_code}"},
                     "_router": {"provider": route.provider_name, "model": route.model_id,
@@ -1161,8 +1193,12 @@ async def proxy_images_generations(
                 "model": route.model_id,
                 "latency_ms": round(elapsed * 1000, 1),
             }
+            LOG.info("span_end=engine_images smr_img_id=%s branch=normal status=ok latency_ms=%.0f",
+                     smr_img_id, (time.time() - _t_img) * 1000)
             return result
         except Exception as e:
+            LOG.warning("span_end=engine_images smr_img_id=%s branch=normal status=exception latency_ms=%.0f err=%s",
+                        smr_img_id, (time.time() - _t_img) * 1000, str(e)[:100])
             return {"error": {"message": str(e), "type": "proxy_error"}}
 
 

@@ -19,6 +19,7 @@ services:
     - ./supermodel_router/admin_ui_guide.py:/app/supermodel_router/admin_ui_guide.py:ro
     - ./supermodel_router/version.py:/app/supermodel_router/version.py:ro
     - ./supermodel_router/engine.py:/app/supermodel_router/engine.py:ro
+    - ./supermodel_router/openai_routes.py:/app/supermodel_router/openai_routes.py:ro
     - ./supermodel_router/admin_api.py:/app/supermodel_router/admin_api.py:ro
     - ./supermodel_router/app.py:/app/supermodel_router/app.py:ro
     - ./supermodel_router/free_models.py:/app/supermodel_router/free_models.py:ro
