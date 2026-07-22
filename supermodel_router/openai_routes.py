@@ -417,7 +417,7 @@ async def chat_completions(request: Request):
                 # v3.32.0 span: proxy 成功结束 + api_entry 全链路结束
                 LOG.info("span_end=proxy_call smr_request_id=%s path=%s status=ok latency_ms=%.0f",
                          smr_request_id, route.full_model_path, latency * 1000)
-                LOG.info("span_end=api_entry smr_request_id=%s total_ms=%.0f chain_pos=%d/%d",
+                LOG.info("span_end=api_entry smr_request_id=%s status=ok total_ms=%.0f chain_pos=%d/%d",
                          smr_request_id, (time.time() - request_start_time) * 1000, chain_idx + 1, len(chain))
                 router_meta = {
                     "smr_request_id": smr_request_id,  # v3.5.0: 错配检测
