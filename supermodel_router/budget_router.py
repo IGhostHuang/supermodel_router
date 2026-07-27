@@ -213,3 +213,211 @@ def auto_select(
         est_input_tokens=est_tokens, est_output_tokens=est_tokens // 2,
     )
     return filtered[0] if filtered else None
+
+
+# ═══════════════════════════════════════════════════════════════════
+# v4.0.0: 8 路由策略调度器 (RoutingStrategyDispatcher)
+# 老大 §P0-1 钦定: priority / weighted / round-robin / cost-optimized
+#                  lkgp / least-used / p2c / reset-aware
+# 与现有 BudgetAwareRouter 并存, 不改旧路径 (backward compat)
+# ═══════════════════════════════════════════════════════════════════
+
+import random
+import time
+import json
+import os
+from pathlib import Path
+
+STRATEGIES = [
+    "priority",         # 按 score 全局降序 (等价于 flat)
+    "weighted",         # 按 score 加权随机
+    "round-robin",      # 严格轮询 (跨 candidate)
+    "cost-optimized",   # 按成本升序 (免费在前, 付费按 $/1M)
+    "lkgp",             # Last Known Good Provider (黏上次成功)
+    "least-used",       # 选负载最低 (same_provider_active 最小)
+    "p2c",              # Power-of-Two-Choices: 随机抽 2 挑负载小的
+    "reset-aware",      # 配额重置窗口临近优先
+]
+
+
+class RoutingStrategyDispatcher:
+    """
+    v4 8 路由策略调度器
+
+    输入: scored: List[(combined_score, ModelInfo, penalty, path)]
+    输出: ordered: List[(combined_score, ModelInfo, penalty, path)]
+
+    调用点: engine.py pick_chain() 在 group 级 _order_by_strategy 之后
+    """
+
+    def __init__(self, state_dir: Optional[Path] = None):
+        # LKGP 持久化: state/lkgp.json { "model_id": "provider/model/ki", ... }
+        self.state_dir = Path(state_dir) if state_dir else Path(os.environ.get("STATE_DIR", "/app/state"))
+        self.lkgp_file = self.state_dir / "lkgp.json"
+        self.rr_file = self.state_dir / "rr.json"
+        self._lkgp: Dict[str, str] = {}
+        self._rr_cursor: Dict[str, int] = {}   # key = requested_model, val = 上次选到第几个
+        self._load_state()
+
+    def _load_state(self):
+        try:
+            if self.lkgp_file.exists():
+                self._lkgp = json.loads(self.lkgp_file.read_text())
+        except Exception as e:
+            LOG.warning("dispatcher: load lkgp failed: %s", e)
+            self._lkgp = {}
+        try:
+            if self.rr_file.exists():
+                self._rr_cursor = json.loads(self.rr_file.read_text())
+        except Exception as e:
+            LOG.warning("dispatcher: load rr failed: %s", e)
+            self._rr_cursor = {}
+
+    def _save_lkgp(self):
+        try:
+            self.state_dir.mkdir(parents=True, exist_ok=True)
+            self.lkgp_file.write_text(json.dumps(self._lkgp, ensure_ascii=False, indent=2))
+        except Exception as e:
+            LOG.warning("dispatcher: save lkgp failed: %s", e)
+
+    def _save_rr(self):
+        try:
+            self.state_dir.mkdir(parents=True, exist_ok=True)
+            self.rr_file.write_text(json.dumps(self._rr_cursor, ensure_ascii=False, indent=2))
+        except Exception as e:
+            LOG.warning("dispatcher: save rr failed: %s", e)
+
+    def record_success(self, requested_model: str, full_path: str):
+        """LKGP: 记录该 requested_model 上次成功的 full_path"""
+        self._lkgp[requested_model] = full_path
+        self._save_lkgp()
+
+    def apply_strategy(
+        self,
+        scored: List[tuple],           # [(score, m, penalty, path), ...]
+        strategy: str = "priority",
+        requested_model: str = "",
+        cost_table: Optional[CostTable] = None,
+        provider_active: Optional[Dict[str, int]] = None,
+        provider_capacity: Optional[Dict[str, int]] = None,
+        quota_reset_map: Optional[Dict[str, float]] = None,
+    ) -> List[tuple]:
+        """
+        应用 model 级路由策略
+
+        provider_active: {provider: 当前并发数}
+        provider_capacity: {provider: 总并发槽}
+        quota_reset_map: {full_path: seconds_until_reset}
+        """
+        if not scored:
+            return scored
+        if strategy not in STRATEGIES:
+            LOG.warning("dispatcher: unknown strategy '%s', fallback to priority", strategy)
+            strategy = "priority"
+
+        if strategy == "priority":
+            return sorted(scored, key=lambda x: -x[0])
+
+        if strategy == "weighted":
+            # 按 score 加权采样 (score 越高抽中概率越大), 输出为一次性抽样序列
+            pool = list(scored)
+            result = []
+            while pool:
+                weights = [max(0.001, s[0]) for s in pool]
+                idx = random.choices(range(len(pool)), weights=weights, k=1)[0]
+                result.append(pool.pop(idx))
+            return result
+
+        if strategy == "round-robin":
+            # 严格轮询: 用 rr_cursor 记录上次选到第几个
+            ordered_by_score = sorted(scored, key=lambda x: -x[0])
+            n = len(ordered_by_score)
+            key = requested_model or "__default__"
+            start = self._rr_cursor.get(key, 0) % n
+            rotated = ordered_by_score[start:] + ordered_by_score[:start]
+            self._rr_cursor[key] = (start + 1) % n
+            self._save_rr()
+            return rotated
+
+        if strategy == "cost-optimized":
+            # 按成本升序 (免费在前)
+            def cost_key(item):
+                _score, m, _penalty, path = item
+                if cost_table is not None:
+                    est = cost_table.estimate(m.provider, m.id)
+                    if est.is_free:
+                        return 0.0
+                    return est.cost_per_1k_input + est.cost_per_1k_output
+                # fallback: 无 cost_table → 用 is_free 属性
+                return 0.0 if getattr(m, 'is_free', False) else 1.0
+            return sorted(scored, key=cost_key)
+
+        if strategy == "lkgp":
+            # Last Known Good Provider: 上次成功的 path 排第一, 其他按 score 降序
+            key = requested_model or "__default__"
+            last_good = self._lkgp.get(key)
+            if not last_good:
+                return sorted(scored, key=lambda x: -x[0])
+            preferred = []
+            others = []
+            for item in scored:
+                _score, _m, _penalty, path = item
+                if path == last_good:
+                    preferred.append(item)
+                else:
+                    others.append(item)
+            others.sort(key=lambda x: -x[0])
+            return preferred + others
+
+        if strategy == "least-used":
+            # 选负载最低: same_provider_active / capacity 比率最小
+            active = provider_active or {}
+            capacity = provider_capacity or {}
+            def load_key(item):
+                _score, m, _penalty, _path = item
+                a = active.get(m.provider, 0)
+                c = max(1, capacity.get(m.provider, 1))
+                return (a / c, -_score)  # 负载升序, score 降序
+            return sorted(scored, key=load_key)
+
+        if strategy == "p2c":
+            # Power-of-Two-Choices: 随机抽 2 挑负载小的作为第 1, 剩下 shuffle
+            active = provider_active or {}
+            capacity = provider_capacity or {}
+            def load(m):
+                a = active.get(m.provider, 0)
+                c = max(1, capacity.get(m.provider, 1))
+                return a / c
+            pool = list(scored)
+            result = []
+            while len(pool) >= 2:
+                # 随机抽 2 个
+                a, b = random.sample(pool, 2)
+                winner = a if load(a[1]) <= load(b[1]) else b
+                result.append(winner)
+                pool.remove(winner)
+            result.extend(pool)  # 剩余 0 或 1 个
+            return result
+
+        if strategy == "reset-aware":
+            # 配额重置窗口临近优先: quota_reset_in_seconds 越小越优先
+            reset_map = quota_reset_map or {}
+            def reset_key(item):
+                _score, _m, _penalty, path = item
+                reset_in = reset_map.get(path, 9999999.0)
+                return (reset_in, -_score)  # 重置越快越优先, 平手时 score 降序
+            return sorted(scored, key=reset_key)
+
+        # 兜底
+        return sorted(scored, key=lambda x: -x[0])
+
+
+# 单例
+_dispatcher: Optional[RoutingStrategyDispatcher] = None
+
+
+def get_dispatcher(state_dir: Optional[Path] = None) -> RoutingStrategyDispatcher:
+    global _dispatcher
+    if _dispatcher is None:
+        _dispatcher = RoutingStrategyDispatcher(state_dir=state_dir)
+    return _dispatcher

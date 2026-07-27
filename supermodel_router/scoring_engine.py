@@ -1,21 +1,22 @@
 """
-supermodel_router/scoring_engine.py — Auto-Combo 多因子评分引擎 (v1.0.0)
+supermodel_router/scoring_engine.py — Auto-Combo 12 因子评分引擎 (v4.0.0)
 
-对标 OmniRoute 12 因子, SMR 版本 9 因子加权评分。
-从 engine.py compute_combined_score() 的简单 2 因子 (60/40) 升级到多因子。
+老大 2026-07-27 钦定:
+  12 因子权重 (总和 1.0):
+    health             0.20  — model_health 健康度
+    quota              0.15  — 剩余配额比率
+    costInv            0.15  — 价格 (越低越好, inverse)
+    latencyInv         0.12  — P95 延迟 (越低越好, inverse)
+    taskFit            0.08  — 任务匹配度 (coding/chat/reasoning)
+    stability          0.05  — 失败率/标准差
+    tierPriority       0.05  — tier 加分
+    tierAffinity       0.05  — 请求 tier 与 model tier 匹配度 (NEW)
+    specificityMatch   0.05  — 模型专精度 (通用<专精) (NEW)
+    contextAffinity    0.05  — 上下文窗口匹配
+    connectionDensity  0.05  — 同 provider 负载分散
+    resetWindowAffinity 0.00 — 配额重置窗口临近度 (预留, P1 激活)
 
-因子权重 (9 因子, 总和 1.0):
-  health_score     0.25  — model_health 健康度
-  quota_remaining  0.15  — 剩余配额比率
-  cost_per_token   0.15  — 价格 (越低越好)
-  latency_p95      0.12  — P95 延迟
-  task_fit         0.10  — 任务匹配度 (coding/chat/reasoning)
-  stability        0.08  — 失败率/标准差
-  tier_priority    0.08  — tier 加分
-  context_affinity 0.05  — 上下文窗口匹配
-  connection_density 0.02 — 同 provider 负载分散
-
-集成点: engine.py select_candidates() 的排序逻辑替换为 scoring_engine.score()
+集成点: engine.py pick_chain() 的排序逻辑替换为 scoring_engine.score()
 """
 
 from __future__ import annotations
@@ -26,17 +27,20 @@ from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 LOG = logging.getLogger("scoring_engine")
 
-# ── 默认权重 ─────────────────────────────────────────────────
+# ── 默认权重 (12 因子, 老大 §4.2 钦定) ────────────────────────
 DEFAULT_WEIGHTS: Dict[str, float] = {
-    "health_score": 0.25,
+    "health_score": 0.20,
     "quota_remaining": 0.15,
     "cost_per_token": 0.15,
     "latency_p95": 0.12,
-    "task_fit": 0.10,
-    "stability": 0.08,
-    "tier_priority": 0.08,
+    "task_fit": 0.08,
+    "stability": 0.05,
+    "tier_priority": 0.05,
+    "tier_affinity": 0.05,
+    "specificity_match": 0.05,
     "context_affinity": 0.05,
-    "connection_density": 0.02,
+    "connection_density": 0.05,
+    "reset_window_affinity": 0.00,
 }
 
 # 权重总和校验 (1.0)
@@ -117,10 +121,15 @@ class ScoringContext:
     # 请求特征
     request_tokens: int = 0                # 请求的 token 数
     task_type: str = "chat"               # coding/chat/reasoning/translation/creative
+    request_tier: str = "standard"        # v4: standard/premium/budget  (tier_affinity)
+    request_specialty: str = ""           # v4: 请求专精领域 (specificity_match)
 
     # 同 provider 负载 (用于负载分散)
     same_provider_active: int = 0          # 同 provider 正在处理的并发数
     same_provider_capacity: int = 1        # provider 总并发槽
+
+    # v4 新增: 配额重置窗口 (reset_window_affinity)
+    quota_reset_in_seconds: float = 0.0    # 距离下次重置的秒数
 
 
 @dataclass
@@ -142,7 +151,7 @@ class ScoringResult:
 
 
 class AutoComboScorer:
-    """Auto-Combo 9 因子评分器 (对标 OmniRoute 12 因子版)"""
+    """Auto-Combo 12 因子评分器 (v4.0.0, 老大 §4.2 钦定权重)"""
 
     def __init__(self, weights: Optional[Dict[str, float]] = None):
         self.weights = dict(weights or DEFAULT_WEIGHTS)
@@ -155,7 +164,7 @@ class AutoComboScorer:
             factor = 1.0 / total
             self.weights = {k: v * factor for k, v in self.weights.items()}
 
-    # ── 9 个因子计算函数 ──────────────────────────────────────
+    # ── 12 个因子计算函数 ────────────────────────────────────
 
     def _health_score(self, ctx: ScoringContext) -> float:
         """健康度: SKIP=0, DEGRADED=40, HALF_OPEN=55, HEALTHY=rolling_success_rate"""
@@ -165,21 +174,19 @@ class AutoComboScorer:
             return 40.0
         if ctx.health_state == "half_open":
             return 55.0
-        # HEALTHY: 直接用滚动成功率
         return ctx.rolling_success_rate
 
     def _quota_score(self, ctx: ScoringContext) -> float:
         """配额剩余: 无限制=100, 用完=0"""
         if ctx.quota_total <= 0:
-            return 100.0  # 无限制
+            return 100.0
         if ctx.quota_used >= ctx.quota_total:
             return 0.0
         remaining_ratio = 1.0 - (ctx.quota_used / ctx.quota_total)
-        # 指数映射: 剩余 50% → 70 分, 剩余 10% → 30 分
         return remaining_ratio * 100.0
 
     def _cost_score(self, ctx: ScoringContext) -> float:
-        """成本分: 免费=100, $15+/1M=0"""
+        """成本分 (inverse): 免费=100, $15+/1M=0"""
         if ctx.is_free or (ctx.cost_per_1m_input + ctx.cost_per_1m_output) == 0:
             return 100.0
         avg_cost = (ctx.cost_per_1m_input + ctx.cost_per_1m_output) / 2
@@ -188,14 +195,13 @@ class AutoComboScorer:
         return max(0.0, 100.0 * (1.0 - avg_cost / COST_SCORE_MAX))
 
     def _latency_score(self, ctx: ScoringContext) -> float:
-        """延迟分: P95 < 500ms=100, > 10s=0"""
+        """延迟分 (inverse): P95 < 500ms=100, > 10s=0"""
         if ctx.latency_p95_ms <= 0:
-            return 70.0  # 无数据 → 中位
+            return 70.0
         if ctx.latency_p95_ms < 500:
             return 100.0
         if ctx.latency_p95_ms > 10000:
             return 0.0
-        # 线性映射 500ms→100, 10000ms→0
         return max(0.0, 100.0 - (ctx.latency_p95_ms - 500) / 95.0)
 
     def _task_fit_score(self, ctx: ScoringContext) -> float:
@@ -203,8 +209,6 @@ class AutoComboScorer:
         task_baselines = TASK_FIT_DEFAULTS.get(ctx.task_type, TASK_FIT_DEFAULTS.get("chat", {}))
         model_lower = ctx.model_id.lower()
         provider_lower = ctx.provider.lower()
-
-        # 精确匹配 provider
         for key, score in task_baselines.items():
             if key in provider_lower or key in model_lower:
                 return score
@@ -219,7 +223,6 @@ class AutoComboScorer:
             score -= 30.0
         elif ctx.consecutive_fails == 1:
             score -= 10.0
-        # 延迟标准差: std > 5000ms → 扣分
         if ctx.latency_std_ms > 5000:
             score -= 20.0
         elif ctx.latency_std_ms > 2000:
@@ -229,37 +232,99 @@ class AutoComboScorer:
     def _tier_score(self, ctx: ScoringContext) -> float:
         """Tier 优先级: capability_score + tier_bonus 归一化到 0-100"""
         raw = ctx.capability_score + ctx.tier_bonus
-        # capability_score 通常 30-100, tier_bonus -25..+25
-        # 映射到 0-100 范围
         return max(0.0, min(100.0, raw))
 
+    def _tier_affinity_score(self, ctx: ScoringContext) -> float:
+        """v4: 请求 tier 与 model tier 匹配度
+        - 相同 tier → 100
+        - premium 请求用 standard 模型 → 70 (仍可用)
+        - premium 请求用 budget 模型 → 30 (降级)
+        - budget 请求用 premium 模型 → 60 (浪费但可用)
+        """
+        req_tier = ctx.request_tier.lower()
+        # 根据 capability_score 推断 model tier
+        cap = ctx.capability_score
+        if cap >= 80:
+            model_tier = "premium"
+        elif cap >= 60:
+            model_tier = "standard"
+        else:
+            model_tier = "budget"
+
+        if req_tier == model_tier:
+            return 100.0
+        if req_tier == "premium" and model_tier == "standard":
+            return 70.0
+        if req_tier == "premium" and model_tier == "budget":
+            return 30.0
+        if req_tier == "budget" and model_tier == "premium":
+            return 60.0
+        # fallback: standard 请求用 premium 或 budget
+        if model_tier == "premium":
+            return 80.0
+        if model_tier == "budget":
+            return 60.0
+        return 80.0
+
+    def _specificity_match_score(self, ctx: ScoringContext) -> float:
+        """v4: 模型专精度匹配
+        - 请求有专精领域 + 模型名匹配该领域 → 100 (coder 模型跑 coding 任务)
+        - 请求无专精领域 + 通用模型 → 80
+        - 请求有专精领域 + 通用模型 → 70 (能用但不专)
+        - 请求有专精领域 + 模型专精其他领域 → 30 (错配)
+        """
+        specialty = ctx.request_specialty.lower().strip()
+        if not specialty:
+            return 80.0  # 无专精要求 → 通用匹配
+
+        model_lower = ctx.model_id.lower()
+        provider_lower = ctx.provider.lower()
+
+        # 检查模型名/provider 是否包含专精关键词
+        keywords = {
+            "coding": ["coder", "code", "deepseek", "qwen-coder"],
+            "math": ["math", "reasoning", "deepseek"],
+            "creative": ["creative", "claude", "sonnet"],
+            "chat": ["chat", "gpt", "instruct"],
+        }
+        matches = keywords.get(specialty, [])
+        if matches:
+            for kw in matches:
+                if kw in model_lower or kw in provider_lower:
+                    return 100.0  # 精确匹配
+            return 70.0  # 有专精但模型不匹配
+        return 80.0
+
     def _context_affinity_score(self, ctx: ScoringContext) -> float:
-        """上下文亲和: request_tokens 接近 context_window → 低分 (浪费), 刚好 → 高分"""
+        """上下文亲和: request_tokens 接近 context_window → 低分, 刚好 → 高分"""
         if ctx.context_window <= 0 or ctx.request_tokens <= 0:
-            return 70.0  # 无数据
+            return 70.0
         ratio = ctx.request_tokens / ctx.context_window
         if ratio > 0.95:
-            return 10.0   # 快满了, 不安全
+            return 10.0
         if ratio > 0.7:
-            return 50.0   # 偏紧
+            return 50.0
         if ratio < 0.05:
-            return 60.0   # 太浪费 (100K 窗口只用了 5K)
-        # 最佳范围: 5%-70%
+            return 60.0
         return 100.0
 
     def _density_score(self, ctx: ScoringContext) -> float:
-        """连接密度: 同 provider 空闲越多分越高 (负载分散)"""
+        """连接密度: 同 provider 空闲越多分越高"""
         if ctx.same_provider_capacity <= 0:
             return 50.0
         active_ratio = ctx.same_provider_active / ctx.same_provider_capacity
         if active_ratio >= 1.0:
-            return 10.0   # 满了
+            return 10.0
         return 100.0 * (1.0 - active_ratio)
+
+    def _reset_window_affinity_score(self, ctx: ScoringContext) -> float:
+        """v4: 配额重置窗口临近度 (P1 激活, 当前占位 50.0)"""
+        return 50.0
 
     # ── 主评分函数 ────────────────────────────────────────────
 
     def score(self, ctx: ScoringContext) -> ScoringResult:
-        """计算综合评分 0-100"""
+        """计算综合评分 0-100 (12 因子)"""
         factor_computers = [
             ("health_score", self._health_score),
             ("quota_remaining", self._quota_score),
@@ -268,8 +333,11 @@ class AutoComboScorer:
             ("task_fit", self._task_fit_score),
             ("stability", self._stability_score),
             ("tier_priority", self._tier_score),
+            ("tier_affinity", self._tier_affinity_score),
+            ("specificity_match", self._specificity_match_score),
             ("context_affinity", self._context_affinity_score),
             ("connection_density", self._density_score),
+            ("reset_window_affinity", self._reset_window_affinity_score),
         ]
 
         factors = []
@@ -295,7 +363,6 @@ class AutoComboScorer:
 
     def _summarize(self, factors: List[FactorResult], total: float) -> str:
         """生成简短摘要"""
-        # 找最低分的 2 个因子
         sorted_factors = sorted(factors, key=lambda f: f.raw_score)
         weak = sorted_factors[:2]
         weak_desc = ", ".join(f"{f.name}={f.raw_score:.0f}" for f in weak)
@@ -322,15 +389,15 @@ class AutoComboScorer:
 
 # ── 便捷工厂函数 ──────────────────────────────────────────────
 
-_default_scorer: Optional[AutoComboScorer] = None
+_scorer_cache: Dict[str, AutoComboScorer] = {}
 
 
 def get_scorer(weights: Optional[Dict[str, float]] = None) -> AutoComboScorer:
-    """获取全局评分器单例"""
-    global _default_scorer
-    if _default_scorer is None or weights is not None:
-        _default_scorer = AutoComboScorer(weights)
-    return _default_scorer
+    """获取全局评分器单例 (带缓存)"""
+    key = str(sorted(weights.items())) if weights else "default"
+    if key not in _scorer_cache:
+        _scorer_cache[key] = AutoComboScorer(weights)
+    return _scorer_cache[key]
 
 
 def build_context(
@@ -355,8 +422,11 @@ def build_context(
     latency_std_ms: float = 0.0,
     request_tokens: int = 0,
     task_type: str = "chat",
+    request_tier: str = "standard",
+    request_specialty: str = "",
     same_provider_active: int = 0,
     same_provider_capacity: int = 1,
+    quota_reset_in_seconds: float = 0.0,
 ) -> ScoringContext:
     """快捷构建 ScoringContext"""
     return ScoringContext(
@@ -380,8 +450,11 @@ def build_context(
         latency_std_ms=latency_std_ms,
         request_tokens=request_tokens,
         task_type=task_type,
+        request_tier=request_tier,
+        request_specialty=request_specialty,
         same_provider_active=same_provider_active,
         same_provider_capacity=same_provider_capacity,
+        quota_reset_in_seconds=quota_reset_in_seconds,
     )
 
 
@@ -411,6 +484,8 @@ def compute_auto_combo_score(
     # 请求特征
     request_tokens: int = 0,
     task_type: str = "chat",
+    request_tier: str = "standard",
+    request_specialty: str = "",
     # 配额
     quota_used: int = 0,
     quota_total: int = 0,
@@ -419,19 +494,13 @@ def compute_auto_combo_score(
     same_provider_capacity: int = 1,
     # 权重覆盖
     weights: Optional[Dict[str, float]] = None,
+    # v4 新增
+    quota_reset_in_seconds: float = 0.0,
 ) -> float:
     """
+    v4: 12 因子评分 (老大 §4.2 钦定权重)
     对标 engine.py 现有 compute_combined_score() 的直接替换。
     返回 0-100 综合分。
-
-    用法 (在 engine.py select_candidates 中):
-        from .scoring_engine import compute_auto_combo_score
-        score = compute_auto_combo_score(
-            model_id=m.id, provider=m.provider,
-            capability_score=m.capability_score or 0,
-            health_state=mh.state if mh else "healthy",
-            ...
-        )
     """
     scorer = get_scorer(weights)
     ctx = build_context(
@@ -452,10 +521,13 @@ def compute_auto_combo_score(
         latency_std_ms=latency_std_ms,
         request_tokens=request_tokens,
         task_type=task_type,
+        request_tier=request_tier,
+        request_specialty=request_specialty,
         quota_used=quota_used,
         quota_total=quota_total,
         same_provider_active=same_provider_active,
         same_provider_capacity=same_provider_capacity,
+        quota_reset_in_seconds=quota_reset_in_seconds,
     )
     result = scorer.score(ctx)
     return result.total_score

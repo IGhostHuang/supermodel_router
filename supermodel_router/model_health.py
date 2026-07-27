@@ -787,3 +787,191 @@ def get_model_health_manager() -> "ModelHealthManager":
 def init_model_health_manager(state_dir, config: Optional[dict] = None) -> "ModelHealthManager":
     """初始化全局 ModelHealthManager 单例 (幂等)"""
     return ModelHealthManager.init_manager(state_dir=Path(state_dir), config=config)
+
+
+# ═══════════════════════════════════════════════════════════════════
+# v4.0.0: 可用性三件套 (AvailabilityGuard)
+# 老大 §P1 钦定:
+#   1. 惊群防护 (SingleflightGuard): 同 path HALF_OPEN probe 只放 1 个真流量
+#   2. 配额信号量 (QuotaSemaphore): per-provider 并发上限 + acquire/release
+#   3. 成功衰减 (SuccessDecay): 只成功 1 次不撤 penalty, 需要连续 N 次
+# 与 ModelHealthManager 并存, 不改旧路径 (backward compat)
+# ═══════════════════════════════════════════════════════════════════
+
+class SingleflightGuard:
+    """
+    惊群防护 (thundering herd protection).
+
+    场景: N 个并发请求同时命中 HALF_OPEN 状态 model,
+          若都放行 → 若 model 真的不健康, 就是 N 次雪崩.
+    修法: 同 path 同一时刻只放 1 个真流量, 其他排队等结果.
+    """
+
+    def __init__(self):
+        self._locks: Dict[str, threading.Lock] = {}
+        self._probe_results: Dict[str, tuple[float, bool]] = {}  # path → (timestamp, success)
+        self._result_ttl_sec = 5.0
+        self._global_lock = threading.Lock()
+
+    def _get_lock(self, path: str) -> threading.Lock:
+        with self._global_lock:
+            if path not in self._locks:
+                self._locks[path] = threading.Lock()
+            return self._locks[path]
+
+    def try_acquire(self, path: str, timeout: float = 0.0) -> bool:
+        """
+        尝试获取 path 的 singleflight lock.
+        - timeout=0: 非阻塞. 拿到 → True; 已被别人拿 → False.
+        - timeout>0: 阻塞等 timeout 秒. 超时 False.
+        """
+        lock = self._get_lock(path)
+        return lock.acquire(blocking=(timeout > 0), timeout=timeout if timeout > 0 else -1)
+
+    def release(self, path: str, success: bool):
+        """释放 lock, 同时把结果缓存 5s 给排队请求参考"""
+        with self._global_lock:
+            self._probe_results[path] = (time.time(), success)
+        lock = self._locks.get(path)
+        if lock:
+            try:
+                lock.release()
+            except RuntimeError:
+                pass  # 未持有 → 忽略
+
+    def get_recent_result(self, path: str) -> Optional[bool]:
+        """获取最近 5s 内的 probe 结果 (None = 无缓存)"""
+        with self._global_lock:
+            entry = self._probe_results.get(path)
+            if not entry:
+                return None
+            ts, ok = entry
+            if time.time() - ts > self._result_ttl_sec:
+                return None
+            return ok
+
+
+class QuotaSemaphore:
+    """
+    Per-provider 配额信号量.
+
+    场景: 某 provider 有 5 并发上限, 但流量涌进 100 个并发.
+    修法: 每 provider 一个 Semaphore, acquire() 拿槽, release() 归还.
+          槽满 → acquire() 返 False, 上游走 fallback.
+    """
+
+    def __init__(self, defaults: Optional[Dict[str, int]] = None):
+        self._sems: Dict[str, threading.Semaphore] = {}
+        self._capacities: Dict[str, int] = {}
+        self._in_use: Dict[str, int] = {}
+        self._lock = threading.Lock()
+        self._defaults = defaults or {}
+
+    def set_capacity(self, provider: str, capacity: int):
+        """(重)设置某 provider 的并发上限. 必须在流量前调用."""
+        if capacity < 1:
+            capacity = 1
+        with self._lock:
+            self._sems[provider] = threading.Semaphore(capacity)
+            self._capacities[provider] = capacity
+            self._in_use[provider] = 0
+
+    def _ensure_sem(self, provider: str) -> threading.Semaphore:
+        with self._lock:
+            if provider not in self._sems:
+                cap = self._defaults.get(provider, 10)
+                self._sems[provider] = threading.Semaphore(cap)
+                self._capacities[provider] = cap
+                self._in_use[provider] = 0
+            return self._sems[provider]
+
+    def acquire(self, provider: str, timeout: float = 0.0) -> bool:
+        """获取一个 slot. timeout=0 非阻塞. 成功 → True, 满 → False."""
+        sem = self._ensure_sem(provider)
+        got = sem.acquire(blocking=(timeout > 0), timeout=timeout if timeout > 0 else None)
+        if got:
+            with self._lock:
+                self._in_use[provider] = self._in_use.get(provider, 0) + 1
+        return got
+
+    def release(self, provider: str):
+        """归还一个 slot"""
+        with self._lock:
+            if provider in self._sems:
+                self._sems[provider].release()
+                self._in_use[provider] = max(0, self._in_use.get(provider, 0) - 1)
+
+    def stats(self) -> dict:
+        with self._lock:
+            return {
+                p: {"capacity": self._capacities.get(p, 0), "in_use": self._in_use.get(p, 0)}
+                for p in self._capacities
+            }
+
+
+class SuccessDecay:
+    """
+    成功衰减 (success decay for penalty).
+
+    场景: 一个模型连续挂 20 次, penalty 满. 突然 1 次成功 → 立刻清 0 = 危险.
+    修法: 成功 1 次 penalty 减 30%, 连续 N (默认 3) 次成功才清 0.
+          失败中断 counter 重置.
+    """
+
+    def __init__(self, threshold: int = 3, decay_per_success: float = 0.30):
+        self.threshold = threshold
+        self.decay = decay_per_success
+        self._consecutive_ok: Dict[str, int] = {}
+        self._lock = threading.Lock()
+
+    def record_success(self, path: str, current_penalty: float) -> float:
+        """
+        记录一次成功, 返回衰减后的 penalty.
+        - 达到 threshold → penalty = 0
+        - 未达到 → penalty *= (1 - decay)
+        """
+        with self._lock:
+            n = self._consecutive_ok.get(path, 0) + 1
+            self._consecutive_ok[path] = n
+            if n >= self.threshold:
+                self._consecutive_ok[path] = 0  # 重置计数, 避免溢出
+                return 0.0
+            return current_penalty * (1.0 - self.decay)
+
+    def record_failure(self, path: str):
+        """一次失败 → 清空连续成功计数"""
+        with self._lock:
+            self._consecutive_ok[path] = 0
+
+    def stats(self) -> dict:
+        with self._lock:
+            return {"consecutive_ok": dict(self._consecutive_ok), "threshold": self.threshold}
+
+
+class AvailabilityGuard:
+    """三件套聚合门面: 惊群 + 配额 + 衰减"""
+
+    def __init__(self,
+                 singleflight: Optional[SingleflightGuard] = None,
+                 quota: Optional[QuotaSemaphore] = None,
+                 decay: Optional[SuccessDecay] = None):
+        self.singleflight = singleflight or SingleflightGuard()
+        self.quota = quota or QuotaSemaphore()
+        self.decay = decay or SuccessDecay()
+
+    def stats(self) -> dict:
+        return {
+            "quota": self.quota.stats(),
+            "decay": self.decay.stats(),
+        }
+
+
+# 单例 (可选注入)
+_availability_guard: Optional[AvailabilityGuard] = None
+
+
+def get_availability_guard() -> AvailabilityGuard:
+    global _availability_guard
+    if _availability_guard is None:
+        _availability_guard = AvailabilityGuard()
+    return _availability_guard

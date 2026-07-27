@@ -54,7 +54,7 @@ NAME_PATTERNS = [
     (re.compile(r":free$", re.IGNORECASE),                "openrouter_free",     100),
     (re.compile(r"free[-_]", re.IGNORECASE),              "openrouter_free",      90),
     (re.compile(r"[-_]free$", re.IGNORECASE),             "openrouter_free",      90),
-    (re.compile(r":0$", re.IGNORECASE),                   "tier0_trial",          70),  # doubao-seed-2-0-pro:0
+    # (re.compile(r":0$"), "tier0_trial") — Step 13 删: 误伤 doubao-seed-2-0-pro:0 版本号
     (re.compile(r"trial", re.IGNORECASE),                 "tier0_trial",          70),
     (re.compile(r"experimental|preview|alpha", re.IGNORECASE), "experimental_free", 60),
 ]
@@ -71,7 +71,11 @@ class FreeModelInfo:
     modality: List[str] = field(default_factory=list)  # ["text", "image", "audio"]
     context_window: int = 0
     priority_weight: float = 0.0         # 0-1, TIER_PRIORITY 派生
-    
+
+    # Pricing (Step 13: 硬校验闸门)
+    price_prompt: Optional[float] = None      # per 1M tokens; None = 未知
+    price_completion: Optional[float] = None
+
     # Quota tracking (实时)
     daily_quota_known: Optional[int] = None   # None = 未知
     daily_used: int = 0
@@ -115,7 +119,7 @@ class FreeModelRegistry:
     STATE_FILE = Path("/app/state/free_models.json")  # docker container
     
     def __init__(self, providers: Dict[str, dict], refresh_interval: int = 3600,
-                 state_dir: str = "/app/state"):
+                 state_dir: str = "/app/state", pricing_db: Optional[Any] = None):
         self.providers = providers
         self.refresh_interval = refresh_interval
         self._state_dir = Path(state_dir)
@@ -123,6 +127,7 @@ class FreeModelRegistry:
         self._models: Dict[str, FreeModelInfo] = {}
         self._last_refresh: float = 0.0
         self._lock = asyncio.Lock()
+        self._pricing = pricing_db  # Step 13: 硬校验闸门; None = 无 pricing.json
         self._load_state()
     
     def _state_path(self) -> Path:
@@ -207,34 +212,75 @@ class FreeModelRegistry:
             return []
         return []
     
-    def _classify_model(self, provider: str, model_id: str, 
+    def _classify_model(self, provider: str, model_id: str,
                         provider_policy_tier: str) -> Optional[FreeModelInfo]:
-        """多信号识别 1 个 model 是否 free"""
-        signals = []
-        
+        """多信号识别 1 个 model 是否 free (Step 13: 加定价硬校验闸门)"""
+        signals: List[str] = []
+
+        # ── 信号 0 (Step 13): pricing 硬校验闸门 (最强否决权) ────
+        price_signal: Optional[str] = None
+        price_prompt: Optional[float] = None
+        price_completion: Optional[float] = None
+        if self._pricing is not None:
+            try:
+                in_c, out_c, _pdb_free = self._pricing.lookup(model_id, provider)
+            except Exception:
+                in_c, out_c = 0.0, 0.0
+            full_key = f"{provider}/{model_id}"
+            pdb_models = getattr(self._pricing, "_models", {}) or {}
+            pdb_patterns = getattr(self._pricing, "_patterns", []) or []
+            pdb_providers = getattr(self._pricing, "_providers", {}) or {}
+            hit = (
+                full_key in pdb_models
+                or model_id in pdb_models
+                or provider in pdb_providers
+                or any(
+                    p.get("match") and re.search(p["match"], full_key)
+                    for p in pdb_patterns
+                )
+            )
+            if hit:
+                if (in_c or 0.0) + (out_c or 0.0) > 0:
+                    # ★ 硬否决: 有明确正价 → 绝不标 free (无视 name/policy)
+                    return None
+                price_signal = "price:zero"
+                price_prompt = in_c
+                price_completion = out_c
+                signals.append(price_signal)
+            # 未命中: 不采信 _default_free (陷阱), price_signal 保持 None
+
         # 信号 1: name pattern
+        name_tier: Optional[str] = None
         for pattern, tier, confidence in NAME_PATTERNS:
             if pattern.search(model_id):
                 signals.append(f"name:{tier}")
+                name_tier = tier
                 break
-        
+
         # 信号 2: provider policy (默认免费)
+        policy_tier: Optional[str] = None
         if provider_policy_tier in TIER_PRIORITY:
             signals.append(f"policy:{provider_policy_tier}")
-        
+            policy_tier = provider_policy_tier
+
         # 没信号 → 不是 free
         if not signals:
             return None
-        
+
         # 决定最终 tier (取优先级最高的)
         tier = provider_policy_tier
-        if any("openrouter_free" in s for s in signals):
+        if name_tier == "openrouter_free" or policy_tier == "openrouter_free":
             tier = "openrouter_free"
-        elif any("experimental" in s for s in signals) and tier not in ("openrouter_free",):
+        elif name_tier == "experimental_free" and tier not in ("openrouter_free",):
             tier = "experimental_free"
-        
+
+        # ── Step 13 tier 降级: 无定价证据 (仅 name/policy) → unknown_free ──
+        if price_signal is None and self._pricing is not None:
+            tier = "unknown_free"
+        # pricing_db 为 None 时保留原行为 (向后兼容, 无 pricing.json 时不强降级)
+
         priority = TIER_PRIORITY.get(tier, 0.5)
-        
+
         return FreeModelInfo(
             provider=provider,
             model_id=model_id,
@@ -242,6 +288,8 @@ class FreeModelRegistry:
             tier=tier,
             detection_signals=signals,
             priority_weight=priority,
+            price_prompt=price_prompt,
+            price_completion=price_completion,
         )
     
     # ─── Public API ──────────────────────────────────────────────────
@@ -385,11 +433,13 @@ class FreeModelRegistry:
 # ─── Singleton accessor (跟现有 loop_engine 一致) ──────────────────
 _registry: Optional[FreeModelRegistry] = None
 
-def init_free_model_registry(providers: Dict[str, dict], 
-                             state_dir: str = "/app/state") -> FreeModelRegistry:
+def init_free_model_registry(providers: Dict[str, dict],
+                             state_dir: str = "/app/state",
+                             pricing_db: Optional[Any] = None) -> FreeModelRegistry:
     global _registry
     if _registry is None:
-        _registry = FreeModelRegistry(providers, state_dir=state_dir)
+        _registry = FreeModelRegistry(providers, state_dir=state_dir,
+                                       pricing_db=pricing_db)
     return _registry
 
 def get_free_model_registry() -> Optional[FreeModelRegistry]:

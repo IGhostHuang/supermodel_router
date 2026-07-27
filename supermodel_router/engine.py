@@ -268,6 +268,12 @@ class RouteEngine:
         self._stats_dir = state_dir
         self._load_stats()
 
+        # v4.0.0: 可选组件 (默认 None, 不影响现有行为; 由 app.py 或 test 注入)
+        self._scorer = None                # AutoComboScorer (scoring_engine.py, 12 因子)
+        self._dispatcher = None            # RoutingStrategyDispatcher (budget_router.py, 8 路由)
+        self._ability_index = None         # AbilityIndex (ability_index.py, O(1) 查询)
+        self._availability_guard = None    # AvailabilityGuard (model_health.py, 三件套)
+
     # ── 配置辅助 ────────────────────────────────────────
 
     def _get_routing_cfg(self, key: str, default=None):
@@ -316,7 +322,13 @@ class RouteEngine:
                    max_candidates: int = 20,
                    strategy: str = "flat",
                    groups: Optional[Dict[str, str]] = None,
-                   group_weights: Optional[Dict[str, float]] = None) -> list[CandidateResult]:
+                   group_weights: Optional[Dict[str, float]] = None,
+                   *,
+                   model_strategy: str = "priority",
+                   task_type: str = "chat",
+                   request_tier: str = "standard",
+                   request_specialty: str = "",
+                   budget_usd: float = 0.0) -> list[CandidateResult]:
         """
         v4: 新轮询机制 (老大 09:48 拍):
         - 高分模型第一个 key 不通 → 换下一个 key
@@ -355,6 +367,37 @@ class RouteEngine:
 
             combined = (base_capability * 0.5 + base_quality * 0.5) * (1.0 - penalty)
             combined += modality_boost
+
+            # v4.0.0: 若 scorer 已注入 → 跑 12 因子, 与 combined 做 max 融合 (保守取高)
+            if self._scorer is not None:
+                try:
+                    from .scoring_engine import build_context
+                    mh_state = "healthy"
+                    if self.model_health is not None:
+                        mh = getattr(self.model_health, '_health', {}).get(path)
+                        if mh is not None:
+                            mh_state = getattr(mh, 'state', 'healthy')
+                    stats = self._get_stats(m.provider)
+                    ewma_ms = stats.ewma_latency * 1000 if stats.ewma_latency > 0 else 0
+                    ctx = build_context(
+                        model_id=m.id, provider=m.provider,
+                        modality=m.modality or "text_only",
+                        health_state=mh_state,
+                        rolling_success_rate=max(0.0, min(100.0, base_quality)),
+                        ewma_latency_ms=ewma_ms,
+                        latency_p95_ms=ewma_ms * 1.5,  # 粗估
+                        is_free=getattr(m, 'is_free', True),
+                        capability_score=base_capability,
+                        context_window=m.context_window or 8192,
+                        task_type=task_type,
+                        request_tier=request_tier,
+                        request_specialty=request_specialty,
+                    )
+                    alt = self._scorer.score(ctx).total_score
+                    combined = max(combined, alt * (1.0 - penalty)) + modality_boost * 0.0
+                except Exception as _e:
+                    LOG.debug("v4 scorer error, fallback to legacy: %s", _e)
+
             scored.append((combined, m, penalty, path))
 
         # v3.20.0 (SMR 周天循环): 应用当前星期的权重配置
@@ -376,6 +419,21 @@ class RouteEngine:
         ordered = self._order_by_strategy(scored, strategy=strategy,
                                           groups=groups or {},
                                           group_weights=group_weights or {})
+
+        # v4.0.0: 若 dispatcher 已注入 且 model_strategy != priority → 应用 8 路由
+        if self._dispatcher is not None and model_strategy != "priority":
+            try:
+                provider_active = {p: s.get('used', 0) for p, s in self._slots.items()}
+                provider_capacity = {p: s.get('max', 1) for p, s in self._slots.items()}
+                ordered = self._dispatcher.apply_strategy(
+                    ordered,
+                    strategy=model_strategy,
+                    requested_model=requested_model,
+                    provider_active=provider_active,
+                    provider_capacity=provider_capacity,
+                )
+            except Exception as _e:
+                LOG.debug("v4 dispatcher error, keep legacy order: %s", _e)
 
         # v3.15.0: 健康度过滤 — 跳过 SKIP 模型, DEGRADED 降权
         if self.model_health is not None:
@@ -716,6 +774,33 @@ class RouteEngine:
         return self._score_for_model_obj(model.provider, model.id)
 
     def _score_for_model_obj(self, provider: str, model_id: str) -> float:
+        # v4.0.0: 若 scorer 已注入 → 优先走 12 因子 (回退到旧路径)
+        if self._scorer is not None:
+            try:
+                from .scoring_engine import build_context
+                stats = self._get_stats(provider)
+                ewma_ms = stats.ewma_latency * 1000 if stats.ewma_latency > 0 else 0
+                sr = 100.0
+                if stats.total_calls > 0:
+                    sr = (stats.success_calls / stats.total_calls) * 100.0
+                path = f"{provider}/{model_id}"
+                mh_state = "healthy"
+                if self.model_health is not None:
+                    mh = getattr(self.model_health, '_health', {}).get(path)
+                    if mh is not None:
+                        mh_state = getattr(mh, 'state', 'healthy')
+                ctx = build_context(
+                    model_id=model_id, provider=provider,
+                    health_state=mh_state,
+                    rolling_success_rate=sr,
+                    ewma_latency_ms=ewma_ms,
+                    latency_p95_ms=ewma_ms * 1.5,
+                    capability_score=50.0,  # _score_for_model_obj 无 model 对象上下文
+                )
+                return self._scorer.score(ctx).total_score
+            except Exception as _e:
+                LOG.debug("v4 _score_for_model_obj scorer error, fallback: %s", _e)
+        # 旧路径 (v3): success_rate + latency 简单加权
         stats = self._get_stats(provider)
         if stats.total_calls == 0:
             return 50.0

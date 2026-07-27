@@ -4,7 +4,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: supermodel_router:v3.29.0
+    image: supermodel_router:v4.0.0-dev
     container_name: supermodel_router
     restart: unless-stopped
     network_mode: bridge
@@ -31,6 +31,8 @@ services:
     - ./supermodel_router/model_health.py:/app/supermodel_router/model_health.py:ro
     - ./supermodel_router/scoring_engine.py:/app/supermodel_router/scoring_engine.py:ro
     - ./supermodel_router/pricing.py:/app/supermodel_router/pricing.py:ro
+    - ./supermodel_router/ability_index.py:/app/supermodel_router/ability_index.py:ro
+    - ./supermodel_router/context_compressor.py:/app/supermodel_router/context_compressor.py:ro
     - ./pricing.json:/app/pricing.json:rw
     - ./supermodel_router/loop_engine.py:/app/supermodel_router/loop_engine.py:ro
     - ./supermodel_router/memory_bus.py:/app/supermodel_router/memory_bus.py:ro
