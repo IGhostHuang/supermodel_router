@@ -291,6 +291,20 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             LOG.warning("FreeAutoDiscovery first run failed: %s", e)
     asyncio.create_task(_first_run(), name="free-auto-discovery-first-run")
+
+    # === Step 20: fusion router (any-to-any model fusion) ===
+    # Registered as engine.fusion_router; activated by openai_routes when
+    # body.model starts with "fusion:". Plans live under config.server.aliases.fusion.plans.
+    from .fusion_router import init_fusion_router
+    fusion_cfg = (config.data.get("server", {}) or {}).get("aliases", {}) or {}
+    fusion_section = fusion_cfg.get("fusion", {}) if isinstance(fusion_cfg, dict) else {}
+    fusion_plans = (fusion_section.get("plans") if isinstance(fusion_section, dict) else None) or {}
+    fusion_router = init_fusion_router(plans=fusion_plans)
+    engine.fusion_router = fusion_router
+    LOG.info("FusionRouter: %d plan(s) registered (%s)", fusion_router.list_plans().__len__(),
+             ", ".join(fusion_router.list_plans()) or "(none)")
+    # === end Step 20 ===
+
     # === end Step 19 ===
 
     # v3.22.0: loop engine

@@ -106,6 +106,51 @@ async def chat_completions(request: Request):
     body = await request.json()
     requested_model = body.get("model", "auto")
     stream = detect_streaming(body)
+    # Step 20 fusion dispatch: if user asked for fusion:<plan_id> short-circuit
+    # through FusionRouter (registered by app.py). Body must have messages[].
+    if isinstance(requested_model, str) and requested_model.startswith("fusion:"):
+        plan_id = requested_model.split(":", 1)[1].strip()
+        try:
+            from .fusion_router import get_fusion_router
+            from starlette.responses import JSONResponse as _JSONResp
+            fr = get_fusion_router()
+            if fr is None:
+                raise RuntimeError("FusionRouter not initialized")
+            if not fr.has_plan(plan_id):
+                raise KeyError(f"unknown fusion plan '{plan_id}'. available: {fr.list_plans()}")
+            msgs = body.get("messages") or []
+            last_user = next((m["content"] for m in reversed(msgs) if m.get("role") == "user"), "")
+            history = [m for m in msgs if m.get("role") in ("system", "user", "assistant")][:-1] if msgs else []
+            t0 = _t = __import__("time").time()
+            LOG.info("span_start=fusion smr_request_id=%s plan=%s", smr_request_id, plan_id)
+            import asyncio as _aio
+            result = _aio.run_coroutine_threadsafe(fr.run_plan(plan_id, last_user, history), _aio.get_event_loop()).result() if False else None
+            # Just await in-place: chat_completions is async
+            result = await fr.run_plan(plan_id, last_user, history)
+            LOG.info("span_end=fusion smr_request_id=%s plan=%s elapsed=%.2fs trace_steps=%d",
+                     smr_request_id, plan_id, result.elapsed_seconds, len(result.trace))
+            return _JSONResp({
+                "id": f"fusion-{smr_request_id[:8]}",
+                "object": "chat.completion",
+                "created": int(__import__("time").time()),
+                "model": requested_model,
+                "choices": [
+                    {"index": 0,
+                     "message": {"role": "assistant", "content": result.answer},
+                     "finish_reason": "stop"}
+                ],
+                "usage": {"prompt_tokens": result.total_tokens_in,
+                           "completion_tokens": result.total_tokens_out,
+                           "total_tokens": result.total_tokens_in + result.total_tokens_out},
+                "fusion_trace": result.trace,
+            })
+        except KeyError as e:
+            return _JSONResp({"error": {"message": str(e), "type": "fusion_plan_error"}}, status_code=400)
+        except Exception as e:
+            LOG.exception("fusion_dispatch_failed")
+            return _JSONResp({"error": {"message": f"fusion failed: {e!r}", "type": "fusion_error"}}, status_code=500)
+
+
 
     # ── v3.5.0: smr_request_id + chain_id (防 race condition 错配) ──
     # 透传优先: mainbot 发的请求已经有 _smr_request_id, 用它的; 否则生成
