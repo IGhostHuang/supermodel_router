@@ -106,8 +106,11 @@ async def chat_completions(request: Request):
     body = await request.json()
     requested_model = body.get("model", "auto")
     stream = detect_streaming(body)
-    # Step 20 fusion dispatch: if user asked for fusion:<plan_id> short-circuit
-    # through FusionRouter (registered by app.py). Body must have messages[].
+    smr_request_id = body.get("_smr_request_id") or str(uuid.uuid4())
+    chain_id = body.get("_smr_chain_id") or smr_request_id
+    request_start_time = time.time()
+
+    # Step 20: fusion dispatch. body.model starts with "fusion:<plan_id>" -> use FusionRouter
     if isinstance(requested_model, str) and requested_model.startswith("fusion:"):
         plan_id = requested_model.split(":", 1)[1].strip()
         try:
@@ -120,44 +123,40 @@ async def chat_completions(request: Request):
                 raise KeyError(f"unknown fusion plan '{plan_id}'. available: {fr.list_plans()}")
             msgs = body.get("messages") or []
             last_user = next((m["content"] for m in reversed(msgs) if m.get("role") == "user"), "")
-            history = [m for m in msgs if m.get("role") in ("system", "user", "assistant")][:-1] if msgs else []
-            t0 = _t = __import__("time").time()
-            LOG.info("span_start=fusion smr_request_id=%s plan=%s", smr_request_id, plan_id)
-            import asyncio as _aio
-            result = _aio.run_coroutine_threadsafe(fr.run_plan(plan_id, last_user, history), _aio.get_event_loop()).result() if False else None
-            # Just await in-place: chat_completions is async
+            history_msgs = [m for m in msgs if m.get("role") in ("system", "user", "assistant")]
+            history = history_msgs[:-1] if history_msgs else []
+            LOG.info("span_start=fusion smr_request_id=%s plan=%s chars=%d",
+                     smr_request_id, plan_id, len(last_user))
+            import time as _time
+            _t0 = _time.time()
             result = await fr.run_plan(plan_id, last_user, history)
             LOG.info("span_end=fusion smr_request_id=%s plan=%s elapsed=%.2fs trace_steps=%d",
                      smr_request_id, plan_id, result.elapsed_seconds, len(result.trace))
             return _JSONResp({
                 "id": f"fusion-{smr_request_id[:8]}",
                 "object": "chat.completion",
-                "created": int(__import__("time").time()),
+                "created": int(_time.time()),
                 "model": requested_model,
-                "choices": [
-                    {"index": 0,
-                     "message": {"role": "assistant", "content": result.answer},
-                     "finish_reason": "stop"}
-                ],
-                "usage": {"prompt_tokens": result.total_tokens_in,
-                           "completion_tokens": result.total_tokens_out,
-                           "total_tokens": result.total_tokens_in + result.total_tokens_out},
+                "choices": [{
+                    "index": 0,
+                    "message": {"role": "assistant", "content": result.answer},
+                    "finish_reason": "stop",
+                }],
+                "usage": {
+                    "prompt_tokens": result.total_tokens_in,
+                    "completion_tokens": result.total_tokens_out,
+                    "total_tokens": result.total_tokens_in + result.total_tokens_out,
+                },
                 "fusion_trace": result.trace,
             })
         except KeyError as e:
+            from starlette.responses import JSONResponse as _JSONResp
             return _JSONResp({"error": {"message": str(e), "type": "fusion_plan_error"}}, status_code=400)
         except Exception as e:
+            from starlette.responses import JSONResponse as _JSONResp
             LOG.exception("fusion_dispatch_failed")
             return _JSONResp({"error": {"message": f"fusion failed: {e!r}", "type": "fusion_error"}}, status_code=500)
 
-
-
-    # ── v3.5.0: smr_request_id + chain_id (防 race condition 错配) ──
-    # 透传优先: mainbot 发的请求已经有 _smr_request_id, 用它的; 否则生成
-    # chain_id 默认 = smr_request_id (单一请求一个 chain, 跨 candidate 不变)
-    smr_request_id = body.get("_smr_request_id") or str(uuid.uuid4())
-    chain_id = body.get("_smr_chain_id") or smr_request_id
-    request_start_time = time.time()
 
     # v3.32.0 九字真言'行' span 追踪 (跨模块 grep 目标: span_start=api_entry / span_end=api_entry)
     LOG.info("span_start=api_entry smr_request_id=%s chain=%s model=%s stream=%s",
