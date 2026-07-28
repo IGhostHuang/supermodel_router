@@ -113,7 +113,7 @@ def _get_registry():
     return None
 
 
-def _pick_models(rule: Dict[str, Any]) -> List[str]:
+def _pick_models(rule: Dict[str, Any], exclude: Optional[List[str]] = None) -> List[str]:
     """按单条 rule 从 registry 挑 model, 返回 provider/id path 列表.
 
     优雅降级 (free 模型普遍无 quality/speed 评分, 硬阈值会全空):
@@ -121,6 +121,7 @@ def _pick_models(rule: Dict[str, Any]) -> List[str]:
       2. 去掉分数类阈值 (quality/speed/reasoning), 只保留 modality/tags/context → 若仍 0
       3. 全量模型 (免费优先 + capability 降序) 兜底
     prefer_free=True 时免费模型排前面.
+    exclude: 已被其它角色选走的 path, 优先避开以保证多样性 (不足时才复用).
     """
     from .model_filter import ModelFilter, apply_filter, model_to_dict
     registry = _get_registry()
@@ -136,6 +137,7 @@ def _pick_models(rule: Dict[str, Any]) -> List[str]:
     filt_dict = dict(rule.get("filter") or {})
     count = int(rule.get("count", 1))
     prefer_free = bool(rule.get("prefer_free", True))
+    exclude = set(exclude or [])
 
     def _apply(fd: Dict[str, Any]):
         try:
@@ -166,8 +168,13 @@ def _pick_models(rule: Dict[str, Any]) -> List[str]:
         -(d.get("capability_score") or 0),
         -(d.get("quality_score") or 0),
     ))
-    paths = [d["path"] for d in dicts if d.get("path")]
-    return paths[:count]
+    ordered = [d["path"] for d in dicts if d.get("path")]
+    # 多样性: 先取未被排除的, 不足再用被排除的补齐
+    fresh = [p for p in ordered if p not in exclude]
+    result = fresh[:count]
+    if len(result) < count:
+        result += [p for p in ordered if p not in result][:count - len(result)]
+    return result
 
 
 def resolve_plan(preset_id: str, plan_id: Optional[str] = None) -> Dict[str, Any]:
@@ -189,7 +196,7 @@ def resolve_plan(preset_id: str, plan_id: Optional[str] = None) -> Dict[str, Any
 
     if op == "vote":
         members = _pick_models(sel.get("members", {}))
-        judge = _pick_models(sel.get("judge", {}))
+        judge = _pick_models(sel.get("judge", {}), exclude=members)
         plan = {
             "plan_id": pid, "type": "vote",
             "model_ids": members,
@@ -201,16 +208,21 @@ def resolve_plan(preset_id: str, plan_id: Optional[str] = None) -> Dict[str, Any
 
     elif op == "expert":
         experts: Dict[str, str] = {}
+        used: List[str] = []
         for tag, rule in sel.items():
-            picked = _pick_models(rule)
+            picked = _pick_models(rule, exclude=used)
             if picked:
                 experts[tag] = picked[0]
+                used.append(picked[0])
         plan = {"plan_id": pid, "type": "expert", "params": {"experts": experts}}
 
     elif op == "pipeline":
-        planner = _pick_models(sel.get("planner", {}))
-        drafter = _pick_models(sel.get("drafter", {}))
-        refiner = _pick_models(sel.get("refiner", {}))
+        used: List[str] = []
+        planner = _pick_models(sel.get("planner", {}), exclude=used)
+        used += planner
+        drafter = _pick_models(sel.get("drafter", {}), exclude=used)
+        used += drafter
+        refiner = _pick_models(sel.get("refiner", {}), exclude=used)
         steps: List[Dict[str, Any]] = []
         # 规划 (expert 单模型) → 起草 (expert 单模型) → 精修 (refine judge)
         if planner:
