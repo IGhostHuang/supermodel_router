@@ -27,6 +27,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -165,37 +166,46 @@ class FreeAutoDiscovery:
         try:
             LOG.info("FreeAutoDiscovery: run_once starting (force_full_scan=%s)", force_full_scan)
 
-            # L1: poll known platforms (model_discovery)
-            models: List[DiscoveredModel] = await self._pipeline.run_l1(force_full=force_full_scan)
+            # L1: poll known platforms via ModelDiscovery.probe_all()
+            from .model_discovery import ModelDiscovery
+            md = ModelDiscovery()
+            models: List[DiscoveredModel] = await md.probe_all()
             result.l1_count = len(models)
             LOG.info("FreeAutoDiscovery: L1 returned %d candidate models", result.l1_count)
 
-            # L2: scan communities (platform_scanner) for new platforms
-            new_platforms = await self._pipeline.run_l2()
+            # L2: scan GitHub / community README for new platforms via PlatformScanner.scan_all()
+            from .platform_scanner import PlatformScanner
+            scanner = PlatformScanner(state_dir=self.state_dir)
+            gh_token = os.environ.get("GITHUB_TOKEN", "")
+            scan_stats: Dict[str, int] = await scanner.scan_all(gh_token=gh_token)
+            new_platforms = scanner.get_candidates(verified_only=True)
             result.l2_count = len(new_platforms)
-            LOG.info("FreeAutoDiscovery: L2 surfaced %d new platforms", result.l2_count)
+            LOG.info("FreeAutoDiscovery: L2 surfaced %d new platforms (stats=%s)", result.l2_count, scan_stats)
 
-            # L3: verify + integrate
-            integrated = await self._pipeline.run_l3(models, new_platforms)
-            result.l3_verified = len(integrated)
+            # L3: verify via DiscoveryPipeline.verify_batch() and integrate via integrate()
+            verified_models: List[DiscoveredModel] = []
+            if models:
+                verified_models = await self._pipeline.verify_batch(models)
+            result.l3_verified = len(verified_models)
             LOG.info("FreeAutoDiscovery: L3 verified %d models", result.l3_verified)
 
-            # Merge into runtime registry
+            # Merge into runtime registry via refresh(); pass the newly-discovered
+            # free models grouped by provider so existing models are untouched.
             registry = get_free_model_registry()
             new_in_reg = 0
             if registry is not None:
-                before = registry.count()
-                for entry in integrated:
-                    # entry is a dict {provider, model_id, tier, ...}
-                    full_path = f"{entry['provider']}/{entry['model_id']}"
-                    if registry.get(full_path) is None:
-                        # cheap register via public API (uses same schema as initial scan)
-                        registry._register_runtime_discovered(entry)
-                        new_in_reg += 1
-                after = registry.count()
-                new_in_reg = max(0, after - before)
-                if new_in_reg:
-                    registry.save_state()
+                # group L3-verified free models by provider
+                by_prov: Dict[str, List[str]] = {}
+                for m in verified_models:
+                    prov = getattr(m, "provider", None) or (m.to_dict().get("provider") if hasattr(m, "to_dict") else None)
+                    mid = getattr(m, "model_id", None) or (m.to_dict().get("model_id") if hasattr(m, "to_dict") else None)
+                    if prov and mid:
+                        by_prov.setdefault(prov, []).append(mid)
+                if by_prov:
+                    before = registry.count()
+                    registry.refresh(models_by_provider=by_prov)
+                    after = registry.count()
+                    new_in_reg = max(0, after - before)
             result.l3_new_in_registry = new_in_reg
 
             result.success = True
