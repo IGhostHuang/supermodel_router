@@ -114,7 +114,7 @@ async def chat_completions(request: Request):
     if isinstance(requested_model, str) and requested_model.startswith("fusion:"):
         plan_id = requested_model.split(":", 1)[1].strip()
         try:
-            from .fusion_router import get_fusion_router
+            from .fusion_router import get_fusion_router, run_plan_streaming
             from starlette.responses import JSONResponse as _JSONResp
             fr = get_fusion_router()
             if fr is None:
@@ -125,6 +125,17 @@ async def chat_completions(request: Request):
             last_user = next((m["content"] for m in reversed(msgs) if m.get("role") == "user"), "")
             history_msgs = [m for m in msgs if m.get("role") in ("system", "user", "assistant")]
             history = history_msgs[:-1] if history_msgs else []
+
+            # v4-stream: SSE streaming mode
+            if stream:
+                LOG.info("span_start=fusion_stream smr_request_id=%s plan=%s chars=%d",
+                         smr_request_id, plan_id, len(last_user))
+                return StreamingResponse(
+                    run_plan_streaming(fr, plan_id, last_user, history, smr_request_id),
+                    media_type="text/event-stream",
+                )
+
+            # non-streaming mode (original)
             LOG.info("span_start=fusion smr_request_id=%s plan=%s chars=%d",
                      smr_request_id, plan_id, len(last_user))
             import time as _time
