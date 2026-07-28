@@ -269,7 +269,31 @@ async def lifespan(app: FastAPI):
     # 注入到 engine
     engine.free_registry = free_reg
 
-    # ── v3.22.0: 周天循环系统 ──────────────────────────────────────────
+    # === Step 19: in-process daily free-model auto-discovery ===
+    # Runs L1 (known platforms) + L2 (community scanning) + L3 (verify + integrate)
+    # on boot, then once every free_discovery_interval_seconds (default 86400).
+    # No external cron -- everything lives inside the SMR process so weights and
+    # routes update without restart. Ad-hoc triggers go through the admin API.
+    from .free_auto_discovery import init_free_auto_discovery
+    discovery_interval = config.data.get("free_discovery", {}).get("interval_seconds", 86400)
+    auto_disc = init_free_auto_discovery(
+        state_dir=state_dir, interval_seconds=discovery_interval
+    )
+    engine.free_auto_discovery = auto_disc
+    app.state.free_auto_discovery = auto_disc
+    asyncio.create_task(auto_disc.start(), name="free-auto-discovery-start")
+    LOG.info("FreeAutoDiscovery: scheduled (interval=%ds)", auto_disc.interval_seconds)
+
+    async def _first_run():
+        await asyncio.sleep(5)
+        try:
+            await auto_disc.run_once()
+        except Exception as e:
+            LOG.warning("FreeAutoDiscovery first run failed: %s", e)
+    asyncio.create_task(_first_run(), name="free-auto-discovery-first-run")
+    # === end Step 19 ===
+
+    # v3.22.0: loop engine
     memory_bus = MemoryBus(state_dir=state_dir)
     LOG.info("MemoryBus v3.22.0 initialized (state_dir=%s)", state_dir)
 
