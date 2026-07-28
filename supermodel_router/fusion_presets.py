@@ -60,13 +60,14 @@ FUSION_PRESETS: Dict[str, Dict[str, Any]] = {
         },
         "build": {"type": "pipeline"},
     },
-    # 4) REFINE — 单模型草稿 + judge 二次精修
+    # 4) REFINE — 单模型草稿 + judge 二次精修 (以 pipeline 承载, 保证可独立执行)
     "default_refine": {
         "name": "✨ 二次精修 (Refine)",
         "icon": "✨",
         "operator": "refine",
-        "description": "先用高质量模型出草稿, 再由 judge 模型润色改进",
+        "description": "先用高质量模型出草稿, 再由 judge 模型润色改进 (draft → refine)",
         "select": {
+            "drafter": {"filter": {"quality_min": 75}, "count": 1, "prefer_free": True},
             "judge": {"filter": {"quality_min": 80}, "count": 1, "prefer_free": True},
         },
         "build": {"type": "refine",
@@ -234,11 +235,17 @@ def resolve_plan(preset_id: str, plan_id: Optional[str] = None) -> Dict[str, Any
         plan = {"plan_id": pid, "type": "pipeline", "params": {"steps": steps}}
 
     elif op == "refine":
-        judge = _pick_models(sel.get("judge", {}))
-        params: Dict[str, Any] = {"instruction": build.get("instruction", "")}
+        # refine 算子需要上游草稿, 单独执行会报错, 故用 pipeline 承载: draft(expert) → refine(judge)
+        drafter = _pick_models(sel.get("drafter", {}))
+        judge = _pick_models(sel.get("judge", {}), exclude=drafter)
+        steps: List[Dict[str, Any]] = []
+        if drafter:
+            steps.append({"type": "expert", "params": {"experts": {"default": drafter[0]}}})
+        refine_params: Dict[str, Any] = {"instruction": build.get("instruction", "")}
         if judge:
-            params["judge_model"] = judge[0]
-        plan = {"plan_id": pid, "type": "refine", "params": params}
+            refine_params["judge_model"] = judge[0]
+        steps.append({"type": "refine", "params": refine_params})
+        plan = {"plan_id": pid, "type": "pipeline", "params": {"steps": steps}}
 
     else:
         raise ValueError(f"unknown fusion operator '{op}'")
