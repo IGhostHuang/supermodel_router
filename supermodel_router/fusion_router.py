@@ -96,6 +96,23 @@ class FusionResult:
 # ----------------------------------------------------------------------
 # helper: invoke one leaf model via SMR's existing infrastructure
 # ----------------------------------------------------------------------
+def _get_runtime_engine():
+    """Resolve the runtime RouteEngine singleton (set on openai_routes/admin_api at startup)."""
+    try:
+        from . import openai_routes
+        if getattr(openai_routes, "engine", None) is not None:
+            return openai_routes.engine
+    except Exception:
+        pass
+    try:
+        from . import admin_api
+        if getattr(admin_api, "engine", None) is not None:
+            return admin_api.engine
+    except Exception:
+        pass
+    return None
+
+
 async def _invoke_leaf(
     model_path: str,
     messages: List[Dict[str, str]],
@@ -108,8 +125,10 @@ async def _invoke_leaf(
     Returns the OpenAI-shaped response dict. Raises on hard error so caller
     can decide whether to retry or skip.
     """
-    from .engine import engine  # late import to avoid circular
     from .engine import proxy_chat_request
+    engine = _get_runtime_engine()
+    if engine is None:
+        raise RuntimeError("FusionRouter: runtime engine unavailable")
 
     if "/" not in model_path:
         raise ValueError(f"FusionRouter: leaf '{model_path}' must be provider/model_id")
