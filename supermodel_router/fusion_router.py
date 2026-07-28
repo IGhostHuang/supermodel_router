@@ -381,6 +381,30 @@ def init_fusion_router(plans: Optional[Dict[str, Dict[str, Any]]] = None) -> Fus
 def get_fusion_router() -> Optional[FusionRouter]:
     return _router
 
+
+def save_plans_to_config() -> bool:
+    """Persist current fusion plans to config.yaml (server.aliases.fusion.plans).
+
+    Called by admin_api after register/delete so plans survive restarts.
+    """
+    try:
+        from .config import config
+        router = get_fusion_router()
+        if router is None:
+            LOG.warning("save_plans_to_config: FusionRouter not initialized")
+            return False
+        # Ensure nested structure exists in config.data
+        server = config.data.setdefault("server", {})
+        aliases = server.setdefault("aliases", {})
+        fusion = aliases.setdefault("fusion", {})
+        fusion["plans"] = dict(router.plans)
+        config._save_yaml()
+        LOG.info("FusionRouter: %d plan(s) persisted to config.yaml", len(router.plans))
+        return True
+    except Exception as e:
+        LOG.error("FusionRouter: failed to persist plans: %s", e)
+        return False
+
 # ----------------------------------------------------------------------
 # v4-streaming: SSE streaming support for fusion plans
 # ----------------------------------------------------------------------

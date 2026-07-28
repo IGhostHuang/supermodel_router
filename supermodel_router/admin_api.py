@@ -255,7 +255,13 @@ async def admin_models(provider: str | None = None, pricing: str | None = None):
     """v3.6: 详细模型列表 (含 pricing_type, capability_score, modality)
     query: ?provider=openrouter 过滤 provider
            ?pricing=free       过滤收费类型
+    v4.1: 空字符串参数当作 None (兼容 UI 发送 ?provider=&pricing=)
     """
+    # v4.1: empty string = None (UI sends empty params)
+    if provider == "":
+        provider = None
+    if pricing == "":
+        pricing = None
     from .classifier import classify_pricing, pricing_detail, PRICING_FREE, PRICING_LIMITED_FREE
     out = []
     for ps in registry._providers.values():
@@ -2561,118 +2567,244 @@ async def admin_cost_lookup(model: str = "", provider: str = ""):
 
 
 
-# ==================================================================
-# v4-fusion: Fusion Router Admin API
+
+
+
 # ==================================================================
 
+# v4-fusion: Fusion Router Admin API
+
+# ==================================================================
+
+
+
 @router.get("/v1/admin/fusion/plans")
+
 async def admin_fusion_plans_list():
+
     """List all registered fusion plans."""
+
     from .fusion_router import get_fusion_router
+
     fr = get_fusion_router()
+
     if fr is None:
+
         return JSONResponse({"error": "FusionRouter not initialized"}, status_code=503)
+
     plans = {}
+
     for pid in fr.list_plans():
+
         cfg = fr.plans[pid]
+
         plans[pid] = {
+
             "type": cfg.get("type"),
+
             "has_steps": bool(cfg.get("steps") or cfg.get("params")),
+
             "raw": cfg,
+
         }
+
     return JSONResponse({
+
         "total": len(plans),
+
         "plans": plans,
+
     })
+
+
+
 
 
 @router.post("/v1/admin/fusion/plans")
+
 async def admin_fusion_plans_register(payload: dict):
+
     """Register or update a fusion plan.
 
+
+
     Body: {"plan_id": "my_vote", "plan": {"type": "vote", "model_ids": [...], ...}}
+
     """
+
     from .fusion_router import get_fusion_router
+
     fr = get_fusion_router()
+
     if fr is None:
+
         return JSONResponse({"error": "FusionRouter not initialized"}, status_code=503)
+
     plan_id = payload.get("plan_id")
+
     plan_cfg = payload.get("plan")
+
     if not plan_id or not isinstance(plan_cfg, dict):
+
         return JSONResponse({"error": "requires plan_id (str) + plan (dict)"}, status_code=400)
+
     fr.register(plan_id, plan_cfg)
-    LOG.info("fusion plan registered: %s (type=%s)", plan_id, plan_cfg.get("type"))
-    return JSONResponse({"ok": True, "plan_id": plan_id, "total_plans": len(fr.list_plans())})
+
+    from .fusion_router import save_plans_to_config
+
+    saved = save_plans_to_config()
+
+    LOG.info("fusion plan registered: %s (type=%s) persisted=%s", plan_id, plan_cfg.get("type"), saved)
+
+    return JSONResponse({"ok": True, "plan_id": plan_id, "total_plans": len(fr.list_plans()), "persisted": saved})
+
+
+
 
 
 @router.delete("/v1/admin/fusion/plans/{plan_id}")
+
 async def admin_fusion_plans_delete(plan_id: str):
+
     """Delete a fusion plan."""
+
     from .fusion_router import get_fusion_router
+
     fr = get_fusion_router()
+
     if fr is None:
+
         return JSONResponse({"error": "FusionRouter not initialized"}, status_code=503)
+
     if plan_id not in fr.plans:
+
         return JSONResponse({"error": f"plan '{plan_id}' not found"}, status_code=404)
+
     del fr.plans[plan_id]
-    LOG.info("fusion plan deleted: %s", plan_id)
-    return JSONResponse({"ok": True, "deleted": plan_id, "remaining": fr.list_plans()})
+
+    from .fusion_router import save_plans_to_config
+
+    saved = save_plans_to_config()
+
+    LOG.info("fusion plan deleted: %s persisted=%s", plan_id, saved)
+
+    return JSONResponse({"ok": True, "deleted": plan_id, "remaining": fr.list_plans(), "persisted": saved})
+
+
+
 
 
 @router.post("/v1/admin/fusion/run")
+
 async def admin_fusion_run(payload: dict):
+
     """Ad-hoc run a fusion plan for testing.
 
+
+
     Body: {"plan_id": "quick_vote", "prompt": "Hello", "history": [...]}
+
     """
+
     from .fusion_router import get_fusion_router
+
     fr = get_fusion_router()
+
     if fr is None:
+
         return JSONResponse({"error": "FusionRouter not initialized"}, status_code=503)
+
     plan_id = payload.get("plan_id")
+
     prompt = payload.get("prompt", "")
+
     history = payload.get("history") or []
+
     if not plan_id:
+
         return JSONResponse({"error": "requires plan_id"}, status_code=400)
+
     if not fr.has_plan(plan_id):
+
         return JSONResponse({"error": f"unknown plan '{plan_id}'. available: {fr.list_plans()}"}, status_code=404)
+
     import time as _time
+
     _t0 = _time.time()
+
     result = await fr.run_plan(plan_id, prompt, history)
+
     return JSONResponse({
+
         "plan_id": plan_id,
+
         "answer": result.answer,
+
         "trace": result.trace,
+
         "elapsed_seconds": result.elapsed_seconds,
+
         "tokens_in": result.total_tokens_in,
+
         "tokens_out": result.total_tokens_out,
+
     })
+
+
+
 
 
 @router.get("/v1/admin/fusion/status")
+
 async def admin_fusion_status():
+
     """Get fusion router status and plan summary."""
+
     from .fusion_router import get_fusion_router
+
     fr = get_fusion_router()
+
     if fr is None:
+
         return JSONResponse({"initialized": False, "plans": []})
+
     plan_summaries = []
+
     for pid in fr.list_plans():
+
         cfg = fr.plans[pid]
+
         ptype = cfg.get("type", "?")
+
         if ptype == "vote":
+
             detail = {"models": cfg.get("model_ids", []), "strategy": cfg.get("strategy", "best_pick")}
+
         elif ptype == "expert":
+
             detail = {"experts": list(cfg.get("experts", {}).keys())}
+
         elif ptype == "pipeline":
+
             detail = {"steps": len(cfg.get("steps", []))}
+
         elif ptype == "refine":
+
             detail = {"judge": cfg.get("judge_model", "?")}
+
         else:
+
             detail = {}
+
         plan_summaries.append({"plan_id": pid, "type": ptype, "detail": detail})
+
     return JSONResponse({
+
         "initialized": True,
+
         "total_plans": len(plan_summaries),
+
         "plans": plan_summaries,
+
     })
+
