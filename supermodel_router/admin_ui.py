@@ -473,32 +473,14 @@ body{padding:var(--space-5);min-height:100vh}
   <div class="section">
     <div class="section-title">&#128203; Plan 模板</div>
   </div>
-  <div class="fusion-templates">
-    <div class="fusion-template-btn" onclick="fillFusionTemplate('quick_vote')">
-      <div class="fusion-template-icon">&#9889;</div>
-      <div class="fusion-template-name">Quick Vote</div>
-      <div class="fusion-template-desc">快速投票 &middot; 前3个免费模型 &middot; concat</div>
-    </div>
-    <div class="fusion-template-btn" onclick="fillFusionTemplate('deep_plan')">
-      <div class="fusion-template-icon">&#129504;</div>
-      <div class="fusion-template-name">Deep Plan</div>
-      <div class="fusion-template-desc">深度规划 &middot; pipeline &middot; expert&rarr;vote&rarr;refine</div>
-    </div>
-    <div class="fusion-template-btn" onclick="fillFusionTemplate('best_pick')">
-      <div class="fusion-template-icon">&#127942;</div>
-      <div class="fusion-template-name">Best Pick</div>
-      <div class="fusion-template-desc">最佳选择 &middot; vote &middot; judge: llama-3.2-3b</div>
-    </div>
-    <div class="fusion-template-btn" onclick="fillFusionTemplate('custom')">
-      <div class="fusion-template-icon">&#9999;&#65039;</div>
-      <div class="fusion-template-name">Custom</div>
-      <div class="fusion-template-desc">自定义 &middot; 空白 JSON 编辑器</div>
-    </div>
+  <div class="fusion-templates" id="fusionPresetGrid">
+    <div class="empty-state" style="grid-column:1/-1">⏳ 加载预设中...</div>
   </div>
 
   <div class="section">
     <div class="section-title">&#128221; Plan 编辑器</div>
     <div class="section-actions">
+      <button class="btn ghost sm" onclick="seedFusionDefaults()" title="一键初始化 4 个默认组合">&#9889; 一键初始化</button>
       <button class="btn primary sm" onclick="registerFusionPlan()">&#10003; 注册 Plan</button>
     </div>
   </div>
@@ -896,13 +878,36 @@ async function loadFusion() {
   var results = await Promise.all([
     fetchJSON('/v1/admin/fusion/status'),
     fetchJSON('/v1/admin/fusion/plans'),
+    fetchJSON('/v1/admin/fusion/presets'),
   ]);
-  var status = results[0], plans = results[1];
+  var status = results[0], plans = results[1], presets = results[2];
   if (status) renderFusionStatus(status);
   if (plans) renderFusionPlans(plans);
-  // Load free models for Quick Vote template
-  var freeModels = await fetchJSON('/v1/admin/free-models');
-  window._freeModels = (freeModels && (freeModels.models || freeModels)) || [];
+  window._fusionPresets = (presets && presets.presets) || [];
+  renderFusionPresets(window._fusionPresets);
+}
+
+function renderFusionPresets(presets) {
+  var grid = document.getElementById('fusionPresetGrid');
+  if (!grid) return;
+  if (!presets || !presets.length) {
+    grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1">\u65e0\u9884\u8bbe</div>';
+    return;
+  }
+  var cards = presets.map(function(p){
+    return '<div class="fusion-template-btn" onclick="fillFusionPreset(\'' + escapeHtml(p.id) + '\')" title="' + escapeHtml(p.description) + '">' +
+      '<div class="fusion-template-icon">' + escapeHtml(p.icon || '\u2728') + '</div>' +
+      '<div class="fusion-template-name">' + escapeHtml(p.name || p.id) + '</div>' +
+      '<div class="fusion-template-desc">' + escapeHtml(p.description || '') + '</div>' +
+    '</div>';
+  });
+  // Custom (blank editor) card always last
+  cards.push('<div class="fusion-template-btn" onclick="fillFusionPreset(\'custom\')">' +
+    '<div class="fusion-template-icon">\u270f\ufe0f</div>' +
+    '<div class="fusion-template-name">\u81ea\u5b9a\u4e49 Custom</div>' +
+    '<div class="fusion-template-desc">\u7a7a\u767d JSON \u7f16\u8f91\u5668</div>' +
+  '</div>');
+  grid.innerHTML = cards.join('');
 }
 
 async function loadAccess() {
@@ -1277,22 +1282,40 @@ function renderFusionPlans(plans) {
 }
 
 // ===== Fusion 操作 (v4.1 新增) =====
-function fillFusionTemplate(type) {
+async function fillFusionPreset(presetId) {
   var editor = document.getElementById('fusionEditor');
-  var plan;
-  if (type === 'quick_vote') {
-    var freeModels = window._freeModels || [];
-    var modelIds = freeModels.slice(0, 3).map(function(m){ return m.id || m.model_id || m; });
-    plan = { plan_id: 'quick_vote', type: 'vote', model_ids: modelIds, strategy: 'concat' };
-  } else if (type === 'deep_plan') {
-    plan = { plan_id: 'deep_plan', type: 'pipeline', steps: ['expert', 'vote', 'refine'] };
-  } else if (type === 'best_pick') {
-    plan = { plan_id: 'best_pick', type: 'vote', strategy: 'best_pick', judge_model: 'openrouter/meta-llama/llama-3.2-3b-instruct:free' };
-  } else {
-    plan = { plan_id: 'custom_plan', type: 'vote', model_ids: [] };
+  if (presetId === 'custom') {
+    editor.value = JSON.stringify({ plan_id: 'custom_plan', type: 'vote', model_ids: [], strategy: 'best_pick' }, null, 2);
+    toast('info', '\u7a7a\u767d\u6a21\u677f', 'custom');
+    return;
   }
-  editor.value = JSON.stringify(plan, null, 2);
-  toast('info', '模板已填充', type);
+  toast('info', '\u89e3\u6790\u4e2d...', presetId);
+  try {
+    var r = await fetch(BASE + '/v1/admin/fusion/presets/' + encodeURIComponent(presetId) + '/resolve', { method: 'POST' });
+    var data = await r.json();
+    if (data.error) { toast('error', '\u89e3\u6790\u5931\u8d25', data.error); return; }
+    editor.value = JSON.stringify(data.plan, null, 2);
+    toast('success', '\u9884\u8bbe\u5df2\u586b\u5145 (\u5df2\u6309\u5f53\u524d\u53ef\u7528\u6a21\u578b\u9009\u578b)', presetId);
+  } catch(e) {
+    toast('error', '\u7f51\u7edc\u9519\u8bef', e.message);
+  }
+}
+
+async function seedFusionDefaults() {
+  if (!confirm('\u4e00\u952e\u6ce8\u518c 4 \u4e2a\u9ed8\u8ba4\u7ec4\u5408 (vote/expert/pipeline/refine) \u5e76\u56fa\u5316\u5230 config.yaml\uff1f\n\u5df2\u5b58\u5728\u540c\u540d plan \u4f1a\u8df3\u8fc7\u3002')) return;
+  toast('info', '\u521d\u59cb\u5316\u4e2d...', '\u89e3\u6790\u6a21\u578b + \u6ce8\u518c');
+  try {
+    var r = await fetch(BASE + '/v1/admin/fusion/seed', {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({persist: true})
+    });
+    var data = await r.json();
+    if (data.error) { toast('error', '\u521d\u59cb\u5316\u5931\u8d25', data.error); return; }
+    var seeded = (data.seeded || []).length, skipped = (data.skipped || []).length;
+    toast('success', '\u521d\u59cb\u5316\u5b8c\u6210', '\u65b0\u589e ' + seeded + ' \u4e2a, \u8df3\u8fc7 ' + skipped + ' \u4e2a');
+    loadFusion();
+  } catch(e) {
+    toast('error', '\u7f51\u7edc\u9519\u8bef', e.message);
+  }
 }
 
 async function registerFusionPlan() {

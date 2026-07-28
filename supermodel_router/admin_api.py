@@ -2808,3 +2808,69 @@ async def admin_fusion_status():
 
     })
 
+
+# v4.2: fusion presets (每种算子默认组合, 一键 seed)
+
+@router.get("/v1/admin/fusion/presets")
+
+async def admin_fusion_presets():
+
+    """List built-in fusion presets (one default per operator type)."""
+
+    from .fusion_presets import list_presets
+
+    return JSONResponse({"presets": list_presets()})
+
+
+@router.post("/v1/admin/fusion/presets/{preset_id}/resolve")
+
+async def admin_fusion_preset_resolve(preset_id: str):
+
+    """Resolve a preset's selection rules into a concrete plan (preview, no register)."""
+
+    from .fusion_presets import resolve_plan
+
+    try:
+
+        plan = resolve_plan(preset_id)
+
+    except KeyError as e:
+
+        return JSONResponse({"error": str(e)}, status_code=404)
+
+    except Exception as e:
+
+        LOG.exception("fusion_preset_resolve_failed")
+
+        return JSONResponse({"error": repr(e)}, status_code=500)
+
+    return JSONResponse({"preset_id": preset_id, "plan": plan})
+
+
+@router.post("/v1/admin/fusion/seed")
+
+async def admin_fusion_seed(payload: dict | None = None):
+
+    """One-click seed all 4 default fusion plans + persist to config.yaml.
+
+    body(optional): {"persist": true}
+    """
+
+    from .fusion_presets import seed_all
+
+    persist = True
+
+    if isinstance(payload, dict) and "persist" in payload:
+
+        persist = bool(payload["persist"])
+
+    result = seed_all(persist=persist)
+
+    if result.get("error"):
+
+        return JSONResponse(result, status_code=503)
+
+    LOG.info("fusion seed: seeded=%s skipped=%s", result.get("seeded"), result.get("skipped"))
+
+    return JSONResponse(result)
+

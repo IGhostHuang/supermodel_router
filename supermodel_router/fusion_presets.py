@@ -1,0 +1,230 @@
+"""
+supermodel_router/fusion_presets.py — Fusion 默认组合预设 (v4.2.0)
+
+设计对齐 group_wizard.py 的 PRESETS 模式:
+- 每种融合算子 (vote / expert / pipeline / refine) 各一个"开箱即用"默认组合
+- 模型不写死 ID, 而是用 selection rule (ModelFilter + 数量) 在注册时动态挑选
+- 一键 seed: 把 4 个默认 plan 全部注册进 FusionRouter 并固化到 config.yaml
+
+R42 兼容: 老 fusion plan CRUD 不动; seed 出来的 plan 跟手写 plan 等价.
+"""
+import logging
+from typing import Any, Dict, List, Optional
+
+LOG = logging.getLogger("fusion_presets")
+
+
+# ------------------------------------------------------------------
+# 动态选型规则: 每个 preset 声明"要什么样的模型 + 要几个",
+# 注册时用 registry + model_filter 实时挑选, 避免写死已下线的模型 ID.
+# rule = {"filter": {ModelFilter dict}, "count": N, "prefer_free": bool}
+# ------------------------------------------------------------------
+
+FUSION_PRESETS: Dict[str, Dict[str, Any]] = {
+    # 1) VOTE — 并行采样投票, 同一 prompt 发给 N 个模型, judge 选最佳
+    "default_vote": {
+        "name": "🗳️ 并行投票 (Vote)",
+        "icon": "🗳️",
+        "operator": "vote",
+        "description": "同一问题发给 3 个高质量模型并行采样, 由 judge 选最佳答案",
+        "select": {
+            "members": {"filter": {"quality_min": 70}, "count": 3, "prefer_free": True},
+            "judge": {"filter": {"quality_min": 80, "reasoning_min": 70}, "count": 1, "prefer_free": True},
+        },
+        "build": {"type": "vote", "strategy": "best_pick", "max_tokens": 1024},
+    },
+    # 2) EXPERT — MoE 思路, 按意图 tag 路由到不同专家
+    "default_expert": {
+        "name": "🧭 专家路由 (Expert)",
+        "icon": "🧭",
+        "operator": "expert",
+        "description": "按问题意图 (代码/数学/总结/通用) 动态选择对口专家模型",
+        "select": {
+            "code": {"filter": {"tags_any": ["coding"], "quality_min": 70}, "count": 1, "prefer_free": True},
+            "math": {"filter": {"reasoning_min": 75}, "count": 1, "prefer_free": True},
+            "summary": {"filter": {"speed_min": 70, "quality_min": 70}, "count": 1, "prefer_free": True},
+            "default": {"filter": {"quality_min": 75}, "count": 1, "prefer_free": True},
+        },
+        "build": {"type": "expert"},
+    },
+    # 3) PIPELINE — 角色流水线: 规划 → 起草 → 精修
+    "default_pipeline": {
+        "name": "🔗 角色流水线 (Pipeline)",
+        "icon": "🔗",
+        "operator": "pipeline",
+        "description": "规划(强推理) → 起草(高质量) → 精修(高质量 judge) 三段式流水线",
+        "select": {
+            "planner": {"filter": {"reasoning_min": 75}, "count": 1, "prefer_free": True},
+            "drafter": {"filter": {"quality_min": 75}, "count": 1, "prefer_free": True},
+            "refiner": {"filter": {"quality_min": 80}, "count": 1, "prefer_free": True},
+        },
+        "build": {"type": "pipeline"},
+    },
+    # 4) REFINE — 单模型草稿 + judge 二次精修
+    "default_refine": {
+        "name": "✨ 二次精修 (Refine)",
+        "icon": "✨",
+        "operator": "refine",
+        "description": "先用高质量模型出草稿, 再由 judge 模型润色改进",
+        "select": {
+            "judge": {"filter": {"quality_min": 80}, "count": 1, "prefer_free": True},
+        },
+        "build": {"type": "refine",
+                  "instruction": "Refine and improve the draft answer for clarity, correctness and completeness. Return only the improved answer."},
+    },
+}
+
+
+def list_presets() -> List[Dict[str, Any]]:
+    """列出所有 fusion preset (供 UI 渲染卡片, 不含解析后的模型)."""
+    return [
+        {"id": pid, "name": p["name"], "icon": p["icon"],
+         "operator": p["operator"], "description": p["description"]}
+        for pid, p in FUSION_PRESETS.items()
+    ]
+
+
+def get_preset(preset_id: str) -> Dict[str, Any]:
+    if preset_id not in FUSION_PRESETS:
+        raise KeyError(f"fusion preset '{preset_id}' not found. available: {list(FUSION_PRESETS.keys())}")
+    return FUSION_PRESETS[preset_id]
+
+
+# ------------------------------------------------------------------
+# 动态选型: 用 live registry + model_filter 把 select rule 解析成真实 model path
+# ------------------------------------------------------------------
+
+def _pick_models(rule: Dict[str, Any]) -> List[str]:
+    """按单条 rule 从 registry 挑 model, 返回 provider/id path 列表.
+
+    fail-soft: registry 不可用或匹配为空 → 返回 []; 调用方兜底.
+    prefer_free=True 时优先免费模型, 不足再补收费.
+    """
+    from .model_filter import ModelFilter, apply_filter, model_to_dict
+    try:
+        from .engine import engine
+        registry = engine.registry
+        all_models = registry.get_models()
+    except Exception as e:  # pragma: no cover
+        LOG.warning("_pick_models: registry unavailable: %s", e)
+        return []
+
+    filt_dict = dict(rule.get("filter") or {})
+    count = int(rule.get("count", 1))
+    prefer_free = bool(rule.get("prefer_free", True))
+
+    try:
+        f = ModelFilter.from_dict(filt_dict)
+        matched = apply_filter(f, all_models)
+    except Exception as e:
+        LOG.warning("_pick_models: filter failed (%s): %s", filt_dict, e)
+        matched = list(all_models)
+
+    dicts = [model_to_dict(m) for m in matched]
+
+    def _is_free(d: Dict[str, Any]) -> bool:
+        p = str(d.get("pricing") or d.get("pricing_type") or "").lower()
+        return p in ("free", "limited_free") or ":free" in str(d.get("id", ""))
+
+    # 排序: 免费优先(可选) → capability_score 降序
+    dicts.sort(key=lambda d: (
+        0 if (prefer_free and _is_free(d)) else 1,
+        -(d.get("capability_score") or 0),
+        -(d.get("quality_score") or 0),
+    ))
+    paths = [d["path"] for d in dicts if d.get("path")]
+    return paths[:count]
+
+
+def resolve_plan(preset_id: str, plan_id: Optional[str] = None) -> Dict[str, Any]:
+    """把 preset 的 select rule 解析成一个可直接注册的 fusion plan dict.
+
+    产出的 plan 结构严格对齐 fusion_router.py 各算子的 params schema:
+      vote     → {type:vote, model_ids:[...], judge_model, strategy, max_tokens}
+      expert   → {type:expert, params:{experts:{tag:model_id}}}
+      pipeline → {type:pipeline, params:{steps:[{type,params}]}}
+      refine   → {type:refine, params:{judge_model, instruction}}
+    """
+    preset = get_preset(preset_id)
+    op = preset["operator"]
+    sel = preset.get("select", {})
+    build = dict(preset.get("build", {}))
+    pid = plan_id or preset_id
+
+    plan: Dict[str, Any]
+
+    if op == "vote":
+        members = _pick_models(sel.get("members", {}))
+        judge = _pick_models(sel.get("judge", {}))
+        plan = {
+            "plan_id": pid, "type": "vote",
+            "model_ids": members,
+            "strategy": build.get("strategy", "best_pick"),
+            "max_tokens": build.get("max_tokens", 1024),
+        }
+        if judge:
+            plan["judge_model"] = judge[0]
+
+    elif op == "expert":
+        experts: Dict[str, str] = {}
+        for tag, rule in sel.items():
+            picked = _pick_models(rule)
+            if picked:
+                experts[tag] = picked[0]
+        plan = {"plan_id": pid, "type": "expert", "params": {"experts": experts}}
+
+    elif op == "pipeline":
+        planner = _pick_models(sel.get("planner", {}))
+        drafter = _pick_models(sel.get("drafter", {}))
+        refiner = _pick_models(sel.get("refiner", {}))
+        steps: List[Dict[str, Any]] = []
+        # 规划 (expert 单模型) → 起草 (expert 单模型) → 精修 (refine judge)
+        if planner:
+            steps.append({"type": "expert", "params": {"experts": {"default": planner[0]}}})
+        if drafter:
+            steps.append({"type": "expert", "params": {"experts": {"default": drafter[0]}}})
+        if refiner:
+            steps.append({"type": "refine", "params": {"judge_model": refiner[0]}})
+        plan = {"plan_id": pid, "type": "pipeline", "params": {"steps": steps}}
+
+    elif op == "refine":
+        judge = _pick_models(sel.get("judge", {}))
+        params: Dict[str, Any] = {"instruction": build.get("instruction", "")}
+        if judge:
+            params["judge_model"] = judge[0]
+        plan = {"plan_id": pid, "type": "refine", "params": params}
+
+    else:
+        raise ValueError(f"unknown fusion operator '{op}'")
+
+    return plan
+
+
+def seed_all(persist: bool = True) -> Dict[str, Any]:
+    """一键初始化: 解析全部 4 个默认 preset → 注册进 FusionRouter → 固化 config.yaml.
+
+    返回 {seeded:[...], skipped:[...], errors:{...}}.
+    已存在同名 plan 默认跳过 (不覆盖用户手改).
+    """
+    from .fusion_router import get_fusion_router, save_plans_to_config
+    fr = get_fusion_router()
+    if fr is None:
+        return {"error": "FusionRouter not initialized"}
+
+    seeded, skipped, errors = [], [], {}
+    for pid in FUSION_PRESETS:
+        try:
+            if fr.has_plan(pid):
+                skipped.append(pid)
+                continue
+            plan = resolve_plan(pid)
+            fr.register(pid, plan)
+            seeded.append(pid)
+        except Exception as e:  # pragma: no cover
+            LOG.exception("seed_all: failed on %s", pid)
+            errors[pid] = repr(e)
+
+    if persist and seeded:
+        save_plans_to_config()
+    return {"seeded": seeded, "skipped": skipped, "errors": errors,
+            "total_plans": len(fr.list_plans())}
