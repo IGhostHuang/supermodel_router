@@ -94,30 +94,65 @@ def get_preset(preset_id: str) -> Dict[str, Any]:
 # 动态选型: 用 live registry + model_filter 把 select rule 解析成真实 model path
 # ------------------------------------------------------------------
 
+def _get_registry():
+    """Get the live model registry. admin_api.registry is set at app startup
+    and is the canonical source; fall back to engine.registry if present."""
+    try:
+        from . import admin_api
+        if getattr(admin_api, "registry", None) is not None:
+            return admin_api.registry
+    except Exception:
+        pass
+    try:
+        from . import engine as _eng_mod
+        eng = getattr(_eng_mod, "engine", None)
+        if eng is not None and getattr(eng, "registry", None) is not None:
+            return eng.registry
+    except Exception:
+        pass
+    return None
+
+
 def _pick_models(rule: Dict[str, Any]) -> List[str]:
     """按单条 rule 从 registry 挑 model, 返回 provider/id path 列表.
 
-    fail-soft: registry 不可用或匹配为空 → 返回 []; 调用方兜底.
-    prefer_free=True 时优先免费模型, 不足再补收费.
+    优雅降级 (free 模型普遍无 quality/speed 评分, 硬阈值会全空):
+      1. 严格 filter → 若命中 == 0
+      2. 去掉分数类阈值 (quality/speed/reasoning), 只保留 modality/tags/context → 若仍 0
+      3. 全量模型 (免费优先 + capability 降序) 兜底
+    prefer_free=True 时免费模型排前面.
     """
     from .model_filter import ModelFilter, apply_filter, model_to_dict
+    registry = _get_registry()
+    if registry is None:
+        LOG.warning("_pick_models: registry unavailable")
+        return []
     try:
-        from .engine import engine
-        registry = engine.registry
         all_models = registry.get_models()
     except Exception as e:  # pragma: no cover
-        LOG.warning("_pick_models: registry unavailable: %s", e)
+        LOG.warning("_pick_models: get_models failed: %s", e)
         return []
 
     filt_dict = dict(rule.get("filter") or {})
     count = int(rule.get("count", 1))
     prefer_free = bool(rule.get("prefer_free", True))
 
-    try:
-        f = ModelFilter.from_dict(filt_dict)
-        matched = apply_filter(f, all_models)
-    except Exception as e:
-        LOG.warning("_pick_models: filter failed (%s): %s", filt_dict, e)
+    def _apply(fd: Dict[str, Any]):
+        try:
+            return apply_filter(ModelFilter.from_dict(fd), all_models)
+        except Exception as e:
+            LOG.warning("_pick_models: filter failed (%s): %s", fd, e)
+            return []
+
+    matched = _apply(filt_dict) if filt_dict else list(all_models)
+    if not matched:
+        # 降级 2: 去掉分数阈值
+        relaxed = {k: v for k, v in filt_dict.items()
+                   if k not in ("quality_min", "speed_min", "reasoning_min",
+                                "capability_min", "size_min", "size_max")}
+        matched = _apply(relaxed) if relaxed else []
+    if not matched:
+        # 降级 3: 全量兜底
         matched = list(all_models)
 
     dicts = [model_to_dict(m) for m in matched]
@@ -126,7 +161,6 @@ def _pick_models(rule: Dict[str, Any]) -> List[str]:
         p = str(d.get("pricing") or d.get("pricing_type") or "").lower()
         return p in ("free", "limited_free") or ":free" in str(d.get("id", ""))
 
-    # 排序: 免费优先(可选) → capability_score 降序
     dicts.sort(key=lambda d: (
         0 if (prefer_free and _is_free(d)) else 1,
         -(d.get("capability_score") or 0),
