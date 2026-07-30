@@ -77,31 +77,32 @@ FUSION_PRESETS: Dict[str, Dict[str, Any]] = {
     # 5) N+1 ROBUST FUSION — 主模型统御 + N 路并行 + 多层 fallback + 健康替换 (R43 新增)
     #    流程: Refine-Task → Fan-out → Refine-Answers → Final-Fuse
     #    每个角色 (primary / fanout[i] / refiner) 都附 2 个独立 fallback
+    # v4.3.2: 加入 health_tier 过滤 (默认 yellow), 质量门槛下调以适配免费模型池
     "default_n1": {
         "name": "🛡️ N+1 稳健融合 (N+1 Robust)",
         "icon": "🛡️",
         "operator": "n1_fusion",
-        "description": "主模型先提炼任务, N 路并行采样, 主模型二次融合. 每路 fan-out 与主模型各自挂 2 个 fallback, 自动替换失败率高模型. 一步到位的混合专家.",
+        "description": "主模型先提炼任务, N 路并行采样, 主模型二次融合. 每路 fan-out 与主模型各自挂 fallback, 自动替换失败率高模型. 一步到位的混合专家.",
         "select": {
-            # primary 主模型: 高质量 + 超大上下文, 优先 ≥128k
-            "primary": {"filter": {"quality_min": 80, "context_min": 128000}, "count": 1, "prefer_free": True},
-            # primary fallback 主模型备用: 不强求 128k 但要 ≥64k
-            "primary_fb": {"filter": {"quality_min": 78, "context_min": 64000}, "count": 2, "prefer_free": True},
-            # fan-out 通用: 3 路, 高质量 + 64k 上下文
-            "fanout_general": {"filter": {"quality_min": 75, "context_min": 64000}, "count": 3, "prefer_free": True},
+            # primary 主模型: 高质量 + 大上下文, 优先免费
+            "primary": {"filter": {"quality_min": 60, "context_min": 32000}, "count": 1, "prefer_free": True, "min_health_tier": "yellow"},
+            # primary fallback 主模型备用
+            "primary_fb": {"filter": {"quality_min": 55, "context_min": 16000}, "count": 2, "prefer_free": True, "min_health_tier": "yellow"},
+            # fan-out 通用: 3 路
+            "fanout_general": {"filter": {"quality_min": 55, "context_min": 16000}, "count": 3, "prefer_free": True, "min_health_tier": "yellow"},
             # fan-out 代码: 1 路 (覆盖代码类问题)
-            "fanout_code": {"filter": {"tags_any": ["coding"], "quality_min": 70}, "count": 1, "prefer_free": True},
+            "fanout_code": {"filter": {"tags_any": ["coding"], "quality_min": 50}, "count": 1, "prefer_free": True, "min_health_tier": "yellow"},
             # fan-out 推理: 1 路 (覆盖数学/逻辑)
-            "fanout_reasoning": {"filter": {"reasoning_min": 75}, "count": 1, "prefer_free": True},
-            # refiner (融合节点) 备用: 1 个 fallback
-            "refiner_fb": {"filter": {"quality_min": 75, "context_min": 32000}, "count": 2, "prefer_free": True},
+            "fanout_reasoning": {"filter": {"reasoning_min": 60}, "count": 1, "prefer_free": True, "min_health_tier": "yellow"},
+            # refiner (融合节点) 备用
+            "refiner_fb": {"filter": {"quality_min": 55, "context_min": 16000}, "count": 2, "prefer_free": True, "min_health_tier": "yellow"},
         },
         "build": {
             "type": "n1_fusion",
             "fanout_count": 3,
             "min_success_count": 2,
             "max_retries_per_leaf": 3,
-            "context_policy": {"min_context_floor": 65536, "headroom_ratio": 0.8},
+            "context_policy": {"min_context_floor": 16384, "headroom_ratio": 0.8},
             "fallback_pool": {"use_dynamic_discovery": True, "min_health_tier": "yellow"},
             "stream_policy": {"late_merge": True},
         },
@@ -164,6 +165,15 @@ def _model_context(m) -> int:
     return 32768
 
 
+def _get_health_manager():
+    """Get ModelHealthManager singleton if available. Returns None if not initialized."""
+    try:
+        from .model_health import ModelHealthManager
+        return ModelHealthManager.get_instance()
+    except Exception:
+        return None
+
+
 def _pick_models(rule: Dict[str, Any], exclude: Optional[List[str]] = None) -> List[str]:
     """按单条 rule 从 registry 挑 model, 返回 provider/id path 列表.
 
@@ -173,6 +183,10 @@ def _pick_models(rule: Dict[str, Any], exclude: Optional[List[str]] = None) -> L
       3. 全量模型 (免费优先 + capability 降序) 兜底
     prefer_free=True 时免费模型排前面.
     exclude: 已被其它角色选走的 path, 优先避开以保证多样性 (不足时才复用).
+
+    v4.3.2 health_tier 过滤:
+      - 默认排除 red tier 模型 (防止选到已下线/高失败率的模型)
+      - 可通过 rule.min_health_tier 覆盖: "green" / "yellow" / "red" / None(不过滤)
     """
     from .model_filter import ModelFilter, apply_filter, model_to_dict
     registry = _get_registry()
@@ -188,6 +202,7 @@ def _pick_models(rule: Dict[str, Any], exclude: Optional[List[str]] = None) -> L
     filt_dict = dict(rule.get("filter") or {})
     count = int(rule.get("count", 1))
     prefer_free = bool(rule.get("prefer_free", True))
+    min_health_tier = rule.get("min_health_tier", "yellow")  # v4.3.2: 默认排除 red
     exclude = set(exclude or [])
 
     def _apply(fd: Dict[str, Any]):
@@ -208,11 +223,35 @@ def _pick_models(rule: Dict[str, Any], exclude: Optional[List[str]] = None) -> L
         # 降级 3: 全量兜底
         matched = list(all_models)
 
-    dicts = [model_to_dict(m) for m in matched]
+    dicts_all = [model_to_dict(m) for m in matched]
 
     def _is_free(d: Dict[str, Any]) -> bool:
         p = str(d.get("pricing") or d.get("pricing_type") or "").lower()
         return p in ("free", "limited_free") or ":free" in str(d.get("id", ""))
+
+    # v4.3.2: health_tier 过滤
+    dicts = dicts_all
+    if min_health_tier and min_health_tier != "red":
+        mh = _get_health_manager()
+        if mh is not None:
+            tier_order = {"green": 3, "yellow": 2, "red": 1}
+            min_val = tier_order.get(min_health_tier, 2)
+            before = len(dicts)
+            dicts = [d for d in dicts
+                     if tier_order.get(mh.health_tier(d.get("path", "")), 3) >= min_val]
+            after = len(dicts)
+            if before != after:
+                LOG.info("_pick_models: health_tier filter removed %d/%d models (min=%s)",
+                         before - after, before, min_health_tier)
+            # 如果过滤后不够 count, 降级: green -> yellow (仍排除 red) -> 全量
+            if len(dicts) < count:
+                if min_health_tier == "green":
+                    dicts = [d for d in dicts_all
+                             if tier_order.get(mh.health_tier(d.get("path", "")), 3) >= 2]
+                    LOG.info("_pick_models: health_tier relaxed green->yellow, now %d models", len(dicts))
+                if len(dicts) < count:
+                    dicts = dicts_all
+                    LOG.info("_pick_models: health_tier fully relaxed (not enough models), using all %d", len(dicts))
 
     dicts.sort(key=lambda d: (
         0 if (prefer_free and _is_free(d)) else 1,
