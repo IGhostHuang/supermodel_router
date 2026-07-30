@@ -1723,3 +1723,14 @@ async def _proxy_stream(url, headers, payload, timeout) -> AsyncGenerator[str, N
         except httpx.TimeoutException:
             # timeout 也抛, 让 app.py chain rotation 切链
             raise httpx.TimeoutException("Upstream stream timeout")
+
+
+# === v4.3.3: Global engine reference for fusion_router and other modules
+_global_engine = None
+
+def set_global_engine(eng):
+    global _global_engine
+    _global_engine = eng
+
+def get_global_engine():
+    return _global_engine

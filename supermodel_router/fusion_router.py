@@ -115,8 +115,10 @@ async def _invoke_leaf(
     Returns the OpenAI-shaped response dict. Raises on hard error so caller
     can decide whether to retry or skip.
     """
-    from .engine import engine  # late import to avoid circular
-    from .engine import proxy_chat_request
+    from .engine import get_global_engine, proxy_chat_request  # late import to avoid circular
+    engine = get_global_engine()
+    if engine is None:
+        raise RuntimeError("FusionRouter: global engine not initialized")
 
     if "/" not in model_path:
         raise ValueError(f"FusionRouter: leaf '{model_path}' must be provider/model_id")
@@ -681,8 +683,10 @@ def get_fusion_router() -> Optional[FusionRouter]:
 
 async def _invoke_leaf_stream(model_path, messages, *, timeout=180.0, max_tokens=1024):
     """Streaming版 _invoke_leaf — returns async generator yielding text deltas (str)."""
-    from .engine import engine
-    from .engine import proxy_chat_request
+    from .engine import get_global_engine, proxy_chat_request
+    engine = get_global_engine()
+    if engine is None:
+        raise RuntimeError("FusionRouter: global engine not initialized")
     if "/" not in model_path:
         raise ValueError("FusionRouter: leaf must be provider/model_id")
     chain = engine.pick_chain(requested_model=model_path, preferred_modalities=None, max_candidates=8)

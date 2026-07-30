@@ -83,6 +83,8 @@ async def lifespan(app: FastAPI):
         merged = _mms.merge_bulk(all_models)
         LOG.info("Phase I: merged metadata into %d models (BUG-005 fallback active)", merged)
     engine = RouteEngine(config, registry)
+    from .engine import set_global_engine
+    set_global_engine(engine)
 
     # v3.4.0: ContextBridge — 上下文桥接 + 过期标记 (老大 22:00 拍)
     bridge_cfg = config.data.get("context_bridge", {}) or {}
