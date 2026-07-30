@@ -400,6 +400,32 @@ class RouteEngine:
 
             scored.append((combined, m, penalty, path))
 
+        # v4.3: health_tier demotion — red tier 大幅降权, yellow 略降, green 不变
+        try:
+            from .model_health import ModelHealthManager
+            _mh = ModelHealthManager.get_instance() if hasattr(ModelHealthManager, 'get_instance') else self.model_health
+            if _mh is not None:
+                _demoted = 0
+                _new_scored = []
+                for _sc, _m, _p, _path in scored:
+                    try:
+                        _tier = _mh.health_tier(_path)
+                    except Exception:
+                        _tier = "green"
+                    if _tier == "red":
+                        _sc -= 200.0  # red tier 几乎被推到末尾
+                        _p = max(_p, 0.95)
+                        _demoted += 1
+                    elif _tier == "yellow":
+                        _sc -= 30.0   # yellow 略降权, 优先选 green
+                    _new_scored.append((_sc, _m, _p, _path))
+                scored = _new_scored
+                if _demoted > 0:
+                    LOG.info("v4.3 health_tier demoted %d red-tier candidates", _demoted)
+        except Exception as _e:
+            LOG.debug("v4.3 health_tier demotion failed (non-fatal): %s", _e)
+
+
         # v3.20.0 (SMR 周天循环): 应用当前星期的权重配置
         scored = self._apply_weekly_weights(scored)
 

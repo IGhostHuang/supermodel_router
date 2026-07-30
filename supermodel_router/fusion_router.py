@@ -738,6 +738,18 @@ async def _stream_with_fallback(primary, fallbacks, messages, *, max_retries=3, 
 
 
 async def op_n1_fusion_stream(step, prompt, history, trace):
+    """v4.3.1 流式版 op_n1_fusion with proper late_merge.
+
+    Late-merge: 当 fanout 已累计 ≥ min_success 份可用答案时, 立即开始 final_fuse
+    而不再等待所有 fanout 完成. 后续 fanout 的答案以"late" 形式进入候选池,
+    若在 final_fuse 完成前到达且有用则并入, 否则丢弃. 这样可显著降低首 token 时间 (TTFT).
+
+    Event protocol (text/event-stream):
+      stage.start / stage.token / stage.done
+      fanout.partial / fanout.done
+      fuse.start / fuse.token / fuse.done
+      done
+    """
     p = step.params
     primary = p.get("primary")
     primary_fb = list(p.get("primary_fallbacks") or [])
@@ -751,6 +763,7 @@ async def op_n1_fusion_stream(step, prompt, history, trace):
     ctx_policy = p.get("context_policy") or {}
     stream_policy = p.get("stream_policy") or {}
     late_merge = bool(stream_policy.get("late_merge", False))
+    late_min = int(stream_policy.get("late_merge_min_count", min_success))
     max_answer_chars = int(ctx_policy.get("min_context_floor", 65536)) * 4 // 10
 
     task_brief = prompt
@@ -779,8 +792,13 @@ async def op_n1_fusion_stream(step, prompt, history, trace):
         return
 
     queues = {w: asyncio.Queue() for w in workers}
-    candidates = []
+    candidates = []  # shared, mutated by fanout tasks
+    finished_workers = set()  # workers whose fanout task is done
+    late_fuse_started = False
+    late_fuse_done = False
+    late_fuse_result = {"text": "", "model_used": refiner}
     t_start = time.time()
+    ttft_at = None  # time-to-first-token marker
 
     async def _fanout_one(idx, model):
         out = {"worker": f"w{idx}", "model": model, "text": "", "elapsed_ms": 0, "ok": False}
@@ -789,7 +807,8 @@ async def op_n1_fusion_stream(step, prompt, history, trace):
         used = None
         try:
             async for delta, used_model in _stream_with_fallback(
-                model, [fb] if fb else primary_fb,
+                model,
+                [fb] if fb else primary_fb,
                 history + [{"role": "user", "content": (
                     f"Task brief:\n{task_brief}\n\n"
                     f"Original user request:\n{prompt}\n\n"
@@ -809,43 +828,120 @@ async def op_n1_fusion_stream(step, prompt, history, trace):
         await queues[model].put(("event: fanout.done\ndata: " + json.dumps({
             "worker": out["worker"], "tokens": len(out["text"]), "model_used": used,
         }) + "\n\n", out["worker"]))
+        # Only add to candidates if not already late-fused (avoid wasted work)
         if out["ok"] and out["text"]:
             candidates.append({"model": used or model, "text": out["text"],
                                 "elapsed_ms": out["elapsed_ms"], "worker": out["worker"]})
 
     tasks_ = [asyncio.create_task(_fanout_one(i, w)) for i, w in enumerate(workers)]
-    finished = 0
-    while finished < len(workers):
-        for w in workers:
+
+    async def _do_late_fuse():
+        """Run final_fuse with whatever candidates we have right now."""
+        nonlocal late_fuse_done
+        # Build prompt from current candidates
+        dedup = []
+        seen = set()
+        for c in list(candidates):
+            key = c["text"][:200].strip()
+            if key in seen: continue
+            seen.add(key); dedup.append(c)
+        dedup.sort(key=lambda c: len(c["text"]), reverse=True)
+        kept = dedup[:max(8, min_success)]
+        if len(kept) < min_success or not refiner:
+            late_fuse_done = True
+            return
+        bundle = "\n\n".join(f"--- Answer {i+1} (from {c['model']}) ---\n{c['text']}" for i, c in enumerate(kept))
+        fuse_prompt = (
+            f"You are a senior editor. The user asked:\n{prompt}\n\n"
+            f"Here is the structured task brief you should keep in mind:\n{task_brief}\n\n"
+            f"Below are {len(kept)} candidate answers from independent models. "
+            "Synthesize them into ONE final answer that is accurate, complete, well-structured, "
+            "and free of redundancy. Resolve any conflicts by reasoning. Return ONLY the final answer.\n\n"
+            f"{bundle}"
+        )
+        buf = []
+        used = refiner
+        try:
+            async for delta, um in _stream_with_fallback(
+                refiner, refiner_fb, [{"role": "user", "content": fuse_prompt}],
+                max_retries=max_retries, max_tokens=1500,
+            ):
+                buf.append(delta)
+                used = um
+                await queues[workers[0]].put(("event: fuse.token\ndata: " + json.dumps({"stage": "final_fuse", "delta": delta}) + "\n\n", "fuse"))
+        except Exception as e:
+            LOG.warning("n1_stream_late_fuse_fail err=%s", repr(e)[:200])
+        late_fuse_result["text"] = "".join(buf).strip()
+        late_fuse_result["model_used"] = used
+        late_fuse_done = True
+        await queues[workers[0]].put(("event: fuse.done\ndata: " + json.dumps({"stage": "final_fuse", "model_used": used}) + "\n\n", "fuse"))
+
+    fuse_task = None
+    while len(finished_workers) < len(workers):
+        # Drain queues (timeboxed)
+        any_event = False
+        for w in list(workers):
+            if w in finished_workers and queues[w].empty():
+                continue
             try:
                 evt = queues[w].get_nowait()
-                yield evt
+                any_event = True
                 if evt[0].startswith("event: fanout.done"):
-                    finished += 1
+                    finished_workers.add(w)
+                    # record ttft
+                    if ttft_at is None:
+                        ttft_at = time.time()
+                # Forward fanout/fuse events until fuse has started emitting
+                if not (late_fuse_started and late_fuse_done):
+                    yield evt
             except asyncio.QueueEmpty:
                 pass
-        finished = sum(1 for t in tasks_ if t.done())
-        await asyncio.sleep(0.02)
+        # Recompute finished set from tasks
+        for i, t in enumerate(tasks_):
+            if t.done() and workers[i] not in finished_workers:
+                finished_workers.add(workers[i])
+        # Trigger late_merge?
+        if late_merge and not late_fuse_started and len(candidates) >= late_min:
+            late_fuse_started = True
+            fuse_task = asyncio.create_task(_do_late_fuse())
+            yield ("event: fuse.start\ndata: " + json.dumps({"stage": "final_fuse", "refiner": refiner, "early": True}) + "\n\n", "_meta")
+        # Early exit if late_fuse done + no more in-flight
+        if late_fuse_done:
+            # wait for fuse_task cleanup
+            if fuse_task is not None and not fuse_task.done():
+                await fuse_task
+            # Cancel any remaining fanout
+            for t in tasks_:
+                if not t.done():
+                    t.cancel()
+            break
+        if not any_event:
+            await asyncio.sleep(0.02)
+
+    # Drain residuals
     for w in workers:
         while not queues[w].empty():
             try:
                 yield queues[w].get_nowait()
             except asyncio.QueueEmpty:
                 break
+
+    # Wait for all to complete
     await asyncio.gather(*tasks_, return_exceptions=True)
 
     trace.append({"stage": "fanout", "workers": len(workers),
                   "succeeded": len(candidates), "late_merge": late_merge,
+                  "late_fused": late_fuse_started,
+                  "ttft_ms": int((ttft_at - t_start) * 1000) if ttft_at else None,
                   "elapsed_ms": int((time.time() - t_start) * 1000)})
 
+    # Build final candidates list (post-collection)
     dedup = []
     seen = set()
     for c in candidates:
         key = c["text"][:200].strip()
-        if key in seen:
-            continue
-        seen.add(key)
-        dedup.append(c)
+        if key in seen: continue
+        seen.add(key); dedup.append(c)
     dedup.sort(key=lambda c: len(c["text"]), reverse=True)
     kept = dedup[:max(8, min_success)]
     yield ("event: stage.done\ndata: " + json.dumps({
@@ -853,6 +949,16 @@ async def op_n1_fusion_stream(step, prompt, history, trace):
         "after_dedup": len(dedup), "kept_for_fuse": len(kept),
     }) + "\n\n", "_meta")
 
+    # If late_fuse produced something usable, emit done
+    fused_text = late_fuse_result.get("text", "")
+    if fused_text and not _looks_low_quality(fused_text):
+        yield ("event: done\ndata: " + json.dumps({
+            "total_tokens": len(fused_text),
+            "late_fused": late_fuse_started,
+        }) + "\n\n", "_meta")
+        return
+
+    # Fallback path: not enough for fuse or fused text was bad
     if len(kept) < min_success:
         if not candidates:
             yield ("event: done\ndata: " + json.dumps({"error": "fanout insufficient"}) + "\n\n", "_meta")
@@ -873,6 +979,7 @@ async def op_n1_fusion_stream(step, prompt, history, trace):
         yield ("event: done\ndata: " + json.dumps({"mode": "no-refiner"}) + "\n\n", "_meta")
         return
 
+    # Full fuse (non-late or late failed) — run synchronously
     bundle = "\n\n".join(f"--- Answer {i+1} (from {c['model']}) ---\n{c['text']}" for i, c in enumerate(kept))
     fuse_prompt = (
         f"You are a senior editor. The user asked:\n{prompt}\n\n"
@@ -882,7 +989,7 @@ async def op_n1_fusion_stream(step, prompt, history, trace):
         "and free of redundancy. Resolve any conflicts by reasoning. Return ONLY the final answer.\n\n"
         f"{bundle}"
     )
-    yield ("event: fuse.start\ndata: " + json.dumps({"stage": "final_fuse", "refiner": refiner}) + "\n\n", "_meta")
+    yield ("event: fuse.start\ndata: " + json.dumps({"stage": "final_fuse", "refiner": refiner, "early": False}) + "\n\n", "_meta")
     fuse_buf = []
     used_model = refiner
     try:
@@ -905,7 +1012,6 @@ async def op_n1_fusion_stream(step, prompt, history, trace):
         for i in range(0, len(out_text), 50):
             yield ("event: fuse.token\ndata: " + json.dumps({"stage": "final_fuse", "delta": out_text[i:i+50], "degraded": True}) + "\n\n", "_meta")
         yield ("event: done\ndata: " + json.dumps({"mode": "best-of-candidates"}) + "\n\n", "_meta")
-
 
 async def run_plan_streaming(fr, plan_id, prompt, history=None, smr_request_id=""):
     history = history or []

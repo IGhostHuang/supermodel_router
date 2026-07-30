@@ -36,6 +36,86 @@ ADMIN_HTML = r"""<!DOCTYPE html>
         : t;
     }
   })();
+
+// v4.3 N+1 Metrics
+async function loadN1Metrics() {
+  try {
+    const data = await fetchJSON('/v1/admin/fusion/n1/metrics');
+    renderN1Metrics(data);
+  } catch (e) {
+    console.error('loadN1Metrics failed:', e);
+  }
+}
+async function resetN1Metrics() {
+  if (!confirm('确认重置所有 N+1 指标? 历史数据将清空.')) return;
+  try {
+    await fetch(BASE + '/v1/admin/fusion/n1/metrics/reset', {method:'POST'});
+    loadN1Metrics();
+  } catch (e) { console.error('resetN1Metrics failed:', e); }
+}
+function renderN1Metrics(data) {
+  const panel = document.getElementById('n1MetricsPanel');
+  const global = data.global || {calls:0, success:0, fail:0, success_rate:0};
+  const plans = data.plans || {};
+  const planKeys = Object.keys(plans);
+  document.getElementById('n1MetricsGlobalCount').textContent =
+    global.calls + ' calls';
+  if (global.calls === 0) {
+    panel.innerHTML = '<div class="n1-empty">&#9201; 等待数据... 调用 <code>fusion:default_n1</code> 后此处自动填充</div>';
+    return;
+  }
+  const sr = global.success_rate;
+  const srClass = sr >= 0.9 ? 'green' : (sr >= 0.7 ? 'yellow' : 'red');
+  let html = '';
+  html += '<div class="n1-global-grid">';
+  html += '<div class="n1-global-cell"><div class="n1-global-label">总调用</div><div class="n1-global-value">' + global.calls + '</div></div>';
+  html += '<div class="n1-global-cell"><div class="n1-global-label">成功</div><div class="n1-global-value green">' + global.success + '</div></div>';
+  html += '<div class="n1-global-cell"><div class="n1-global-label">失败</div><div class="n1-global-value ' + (global.fail>0?'red':'green') + '">' + global.fail + '</div></div>';
+  html += '<div class="n1-global-cell"><div class="n1-global-label">成功率</div><div class="n1-global-value ' + srClass + '">' + (sr*100).toFixed(1) + '%</div></div>';
+  html += '</div>';
+  planKeys.forEach(function(planId) {
+    const p = plans[planId];
+    const psr = p.success_rate;
+    const psrClass = psr >= 0.9 ? 'green' : (psr >= 0.7 ? 'yellow' : 'red');
+    html += '<div class="n1-plan-card">';
+    html += '<div class="n1-plan-header">';
+    html += '<div class="n1-plan-id"><span class="n1-pulse-dot"></span>' + planId + '</div>';
+    html += '<div class="n1-plan-badge ' + psrClass + '">' + (psr*100).toFixed(1) + '%</div>';
+    html += '</div>';
+    html += '<div class="n1-plan-stats">';
+    html += '<div class="n1-plan-stat"><div class="n1-plan-stat-label">Calls</div><div class="n1-plan-stat-value">' + p.calls + '</div></div>';
+    html += '<div class="n1-plan-stat"><div class="n1-plan-stat-label">Fallback 使用</div><div class="n1-plan-stat-value">' + p.fallback_uses + '</div></div>';
+    html += '<div class="n1-plan-stat"><div class="n1-plan-stat-label">Fanout 兜底</div><div class="n1-plan-stat-value">' + p.fanout_used_fallback + '</div></div>';
+    html += '<div class="n1-plan-stat"><div class="n1-plan-stat-label">Refiner 兜底</div><div class="n1-plan-stat-value">' + p.refiner_used_fallback + '</div></div>';
+    html += '<div class="n1-plan-stat"><div class="n1-plan-stat-label">Tokens Out</div><div class="n1-plan-stat-value">' + p.total_tokens_out + '</div></div>';
+    html += '</div>';
+    const stages = p.stage_latencies_ms || {};
+    const stageNames = ['refine_task', 'fanout', 'final_fuse'];
+    html += '<div class="n1-stage-bars">';
+    stageNames.forEach(function(sn) {
+      const s = stages[sn];
+      if (!s) {
+        html += '<div class="n1-stage-row"><div class="n1-stage-name">' + sn + '</div><div class="n1-stage-bar"></div><div class="n1-stage-meta">n=0</div></div>';
+      } else {
+        const max = Math.max(s.p95, 1);
+        const w = Math.min(100, (s.p95 / max) * 100);
+        html += '<div class="n1-stage-row">';
+        html += '<div class="n1-stage-name">' + sn + '</div>';
+        html += '<div class="n1-stage-bar"><div class="n1-stage-bar-fill" style="width:' + w.toFixed(1) + '%"></div></div>';
+        html += '<div class="n1-stage-meta">p95=' + s.p95 + 'ms n=' + s.n + '</div>';
+        html += '</div>';
+      }
+    });
+    html += '</div>';
+    html += '</div>';
+  });
+  panel.innerHTML = html;
+}
+setInterval(function() {
+  if (document.getElementById('tab-fusion').classList.contains('active')) {
+    loadN1Metrics();
+  }
+}, 3000);
 </script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -298,6 +378,35 @@ body{padding:var(--space-5);min-height:100vh}
 .footer{text-align:center;padding:var(--space-5);color:var(--text-3);font-size:11px}
 
 /* ===== 响应式 ===== */
+
+.n1-empty{padding:var(--space-5);text-align:center;color:var(--text-2);background:var(--bg-1);border:1px dashed var(--border);border-radius:var(--radius-lg)}
+.n1-empty code{background:var(--bg-2);padding:2px 6px;border-radius:4px;font-family:var(--mono);font-size:12px}
+.n1-global-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:var(--space-3);margin-bottom:var(--space-4)}
+.n1-global-cell{background:var(--bg-1);border:1px solid var(--border);border-radius:var(--radius);padding:var(--space-3);display:flex;flex-direction:column;gap:4px}
+.n1-global-label{font-size:10px;text-transform:uppercase;color:var(--text-2);letter-spacing:.5px;font-weight:600}
+.n1-global-value{font-size:22px;font-weight:700;font-family:var(--mono);color:var(--text-0)}
+.n1-global-value.green{color:#22c55e}
+.n1-global-value.yellow{color:#eab308}
+.n1-global-value.red{color:#ef4444}
+.n1-plan-card{background:var(--bg-1);border:1px solid var(--border);border-radius:var(--radius-lg);padding:var(--space-4);margin-bottom:var(--space-3)}
+.n1-plan-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--space-3)}
+.n1-plan-id{font-size:14px;font-weight:700;color:var(--text-0);font-family:var(--mono)}
+.n1-plan-badge{font-size:11px;padding:3px 8px;border-radius:999px;font-weight:600}
+.n1-plan-badge.green{background:#22c55e22;color:#22c55e}
+.n1-plan-badge.yellow{background:#eab30822;color:#eab308}
+.n1-plan-badge.red{background:#ef444422;color:#ef4444}
+.n1-plan-stats{display:grid;grid-template-columns:repeat(5,1fr);gap:var(--space-3);margin-bottom:var(--space-3)}
+.n1-plan-stat{display:flex;flex-direction:column;gap:2px}
+.n1-plan-stat-label{font-size:10px;color:var(--text-2);text-transform:uppercase;letter-spacing:.5px}
+.n1-plan-stat-value{font-size:16px;font-weight:600;font-family:var(--mono);color:var(--text-0)}
+.n1-stage-bars{display:flex;flex-direction:column;gap:6px}
+.n1-stage-row{display:grid;grid-template-columns:120px 1fr 80px;align-items:center;gap:var(--space-3);font-size:12px}
+.n1-stage-name{color:var(--text-2);font-family:var(--mono)}
+.n1-stage-bar{height:8px;background:var(--bg-2);border-radius:999px;overflow:hidden;position:relative}
+.n1-stage-bar-fill{height:100%;background:linear-gradient(90deg,var(--primary),#a855f7);border-radius:999px;transition:width .3s}
+.n1-stage-meta{font-size:11px;color:var(--text-2);font-family:var(--mono);text-align:right}
+.n1-pulse-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#22c55e;margin-right:6px;animation:n1-pulse 1.5s infinite}
+@keyframes n1-pulse{0%,100%{opacity:1}50%{opacity:.3}}
 @media (max-width:1024px){
   .kpi-grid{grid-template-columns:repeat(2,1fr)}
   .provider-grid{grid-template-columns:repeat(2,1fr)}
@@ -502,6 +611,22 @@ body{padding:var(--space-5);min-height:100vh}
   </div>
 </div>
 
+
+  <!-- v4.3 N+1 Monitor Panel -->
+  <div class="section" style="margin-top:var(--space-5)">
+    <div class="section-title">
+      &#128202; N+1 实时监控 (v4.3)
+      <span class="count" id="n1MetricsGlobalCount">&mdash;</span>
+    </div>
+    <div class="section-actions">
+      <button class="btn ghost sm" onclick="loadN1Metrics()" title="手动刷新">&#8635; 刷新</button>
+      <button class="btn danger sm" onclick="resetN1Metrics()" title="清空所有指标">&#128465; Reset</button>
+      <span class="n1-auto-refresh" id="n1AutoRefreshLabel" style="font-size:11px;color:var(--text-2);margin-left:8px">&#9201; 自动 3s</span>
+    </div>
+  </div>
+  <div id="n1MetricsPanel">
+    <div class="n1-empty">&#9201; 等待数据... 调用 <code>fusion:default_n1</code> 后此处自动填充</div>
+  </div>
 <!-- ===== Tab Panel: Access (v4.1 新增) ===== -->
 <div class="tab-panel" id="tab-access">
   <div class="section">
