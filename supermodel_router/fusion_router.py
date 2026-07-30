@@ -1025,22 +1025,67 @@ async def run_plan_streaming(fr, plan_id, prompt, history=None, smr_request_id="
     ptype = cfg.get("type", "expert")
     trace = []
     t0 = time.time()
-    yield "event: plan.start\ndata: " + json.dumps({"plan_id": plan_id, "type": ptype, "smr_id": smr_request_id}) + "\n\n"
+    _chunk_id = f"chatcmpl-{smr_request_id[:12] if smr_request_id else 'fusion'}"
+    _created = int(time.time())
+    # Emit initial OpenAI chunk (role)
+    _init_chunk = {
+        "id": _chunk_id, "object": "chat.completion.chunk", "created": _created,
+        "model": f"fusion:{plan_id}", "choices": [{"index": 0, "delta": {"role": "assistant"}, "finish_reason": None}],
+    }
+    yield "data: " + json.dumps(_init_chunk, ensure_ascii=False) + "\n\n"
     try:
         if ptype == "n1_fusion":
             step = FusionStep(type="n1_fusion", params=cfg.get("params", cfg))
             async for evt_pair in op_n1_fusion_stream(step, prompt, history, trace):
-                yield evt_pair[0]
+                raw = evt_pair[0]
+                yield raw
+                # Intercept fuse.token to also emit OpenAI-format chunks
+                if "fuse.token" in raw:
+                    try:
+                        data_line = [l for l in raw.split("\n") if l.startswith("data: ")][0]
+                        d = json.loads(data_line[6:])
+                        delta_text = d.get("delta", "")
+                        if delta_text:
+                            oai_chunk = {
+                                "id": _chunk_id, "object": "chat.completion.chunk", "created": _created,
+                                "model": f"fusion:{plan_id}",
+                                "choices": [{"index": 0, "delta": {"content": delta_text}, "finish_reason": None}],
+                            }
+                            yield "data: " + json.dumps(oai_chunk, ensure_ascii=False) + "\n\n"
+                    except Exception:
+                        pass
         else:
             result = await fr.run_plan(plan_id, prompt, history)
             ans = result.answer
             for i in range(0, len(ans), 50):
-                yield ("event: fuse.token\ndata: " + json.dumps({"stage": "final", "delta": ans[i:i+50]}) + "\n\n")
+                _delta = ans[i:i+50]
+                yield ("event: fuse.token\ndata: " + json.dumps({"stage": "final", "delta": _delta}) + "\n\n")
+                oai_chunk = {
+                    "id": _chunk_id, "object": "chat.completion.chunk", "created": _created,
+                    "model": f"fusion:{plan_id}",
+                    "choices": [{"index": 0, "delta": {"content": _delta}, "finish_reason": None}],
+                }
+                yield "data: " + json.dumps(oai_chunk, ensure_ascii=False) + "\n\n"
             yield ("event: done\ndata: " + json.dumps({"mode": "non-stream-fallback"}) + "\n\n")
+        # Emit final OpenAI chunk (finish_reason)
+        _final_chunk = {
+            "id": _chunk_id, "object": "chat.completion.chunk", "created": _created,
+            "model": f"fusion:{plan_id}",
+            "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+        }
+        yield "data: " + json.dumps(_final_chunk, ensure_ascii=False) + "\n\n"
+        yield "data: [DONE]\n\n"
         elapsed = time.time() - t0
         LOG.info("fusion_stream_done plan=%s elapsed=%.2fs", plan_id, elapsed)
     except Exception as e:
         LOG.exception("run_plan_streaming_failed plan=%s", plan_id)
+        _err_chunk = {
+            "id": _chunk_id, "object": "chat.completion.chunk", "created": _created,
+            "model": f"fusion:{plan_id}",
+            "choices": [{"index": 0, "delta": {"content": f"[fusion error: {e!r}]"}, "finish_reason": "stop"}],
+        }
+        yield "data: " + json.dumps(_err_chunk, ensure_ascii=False) + "\n\n"
+        yield "data: [DONE]\n\n"
         yield ("event: done\ndata: " + json.dumps({"error": repr(e)}) + "\n\n")
 def _fm_record_n1(plan_id, success, trace, elapsed):
     """Fire-and-forget metrics recorder for n1_fusion. Called from FusionRouter.run_plan."""
