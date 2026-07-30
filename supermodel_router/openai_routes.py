@@ -672,23 +672,47 @@ async def list_models(provider: str | None = None, modality: str | None = None):
     if modality:
         models = [m for m in models if m.modality == modality]
 
-    return JSONResponse({
-        "object": "list",
-        "data": [
-            {
-                "id": m.id,
-                "object": m.object,
-                "created": m.created,
-                "owned_by": m.owned_by,
-                "provider": m.provider,
-                "modality": m.modality,
-                "modality_display": m.modality_display,
-                "capability_score": m.capability_score,
-                **m.extra,
-            }
-            for m in models
-        ],
-    })
+    data_list = [
+        {
+            "id": m.id,
+            "object": m.object,
+            "created": m.created,
+            "owned_by": m.owned_by,
+            "provider": m.provider,
+            "modality": m.modality,
+            "modality_display": m.modality_display,
+            "capability_score": m.capability_score,
+            **m.extra,
+        }
+        for m in models
+    ]
+
+    # v4.3.5: Add fusion plans to model list (for TRAE Work / OpenAI client compatibility)
+    try:
+        from .fusion_router import get_fusion_router as _gfr
+        _fr = _gfr()
+        if _fr and _fr.plans:
+            import time as _t
+            _now = int(_t.time())
+            for _pid, _pcfg in _fr.plans.items():
+                _model_id = f"fusion:{_pid}"
+                if any(d["id"] == _model_id for d in data_list):
+                    continue
+                data_list.append({
+                    "id": _model_id,
+                    "object": "model",
+                    "created": _now,
+                    "owned_by": "fusion",
+                    "provider": "fusion",
+                    "modality": "text-only",
+                    "modality_display": "Fusion",
+                    "capability_score": 90,
+                    "description": _pcfg.get("name", _pid),
+                })
+    except Exception:
+        pass
+
+    return JSONResponse({"object": "list", "data": data_list})
 
 
 @router.get("/v1/models/{model_id:path}")
