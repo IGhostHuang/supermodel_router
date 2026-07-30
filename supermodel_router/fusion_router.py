@@ -3,7 +3,8 @@ fusion_router.py -- the unified "any-to-any fusion model" layer for SMR.
 
 The user said "做就做最好": don't pick one of the four fusion patterns
 (professional routing / pipeline / parallel-vote / model-pool). Combine them
-into a single plan DSL with four composable operators:
+into a single plan DSL with composable operators, plus a new N+1 Robust Fusion
+that adds per-role fallback chains + health-driven auto replacement.
 
     Operator           Purpose
     -------            -------
@@ -19,6 +20,9 @@ into a single plan DSL with four composable operators:
                        (concat / best_pick / majority / self_consistency).
     Refine             One model (the "judge") receives the previous stage's
                        candidates and produces the final answer.
+    N1Fusion (R43)     4-stage robust: Refine-Task (primary) -> Fan-out
+                       (N + per-leaf fallback) -> Refine-Answers (local
+                       cleanup) -> Final-Fuse (primary refiner + fallback).
 
 A plan is a nested structure; the executor evaluates depth-first and returns
 a single string result plus a trace. Every leaf invokes SMR's own
@@ -39,23 +43,22 @@ To enable, register a virtual model alias under `aliases` in config.yaml:
               judge_model: anthropic/claude-sonnet-4.6
             deep_plan:
               type: pipeline
-              steps:
-                - type: expert
-                  experts:
-                    code: openai/gpt-4o-mini
-                    math: anthropic/claude-haiku
-                    summary: openrouter/free
-                - type: vote
-                  model_ids: [openai/o1, google/gemini-2.5-pro]
-                  strategy: concat
-                - type: refine
-                  judge_model: anthropic/claude-sonnet-4.6
+              steps: [...]
+            default_n1:
+              type: n1_fusion
+              params:
+                primary: openrouter/nvidia/nemotron-3-ultra:free
+                primary_fallbacks: [...]
+                fanout: [...]
+                fanout_fallbacks: {...}
+                refiner: openrouter/nvidia/nemotron-3-ultra:free
+                refiner_fallbacks: [...]
+                fanout_count: 3
+                min_success_count: 2
+                max_retries_per_leaf: 3
 
 Request body:
-    {"model": "fusion:deep_plan", "messages": [...]}
-
-The HTTP layer in openai_routes detects `fusion:` prefix and dispatches to
-FusionRouter.run_plan() instead of the regular single-model chain.
+    {"model": "fusion:default_n1", "messages": [...]}
 
 Design constraints:
 - 100% inside the project (no external scheduler/cron, no external tasks).
@@ -68,8 +71,10 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import time
 import uuid
+from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
@@ -80,7 +85,7 @@ LOG = logging.getLogger(__name__)
 class FusionStep:
     """Recursive plan node; exactly one of {leaf operator} per step."""
 
-    type: str  # 'expert' | 'pipeline' | 'vote' | 'refine'
+    type: str  # 'expert' | 'pipeline' | 'vote' | 'refine' | 'n1_fusion'
     params: Dict[str, Any] = field(default_factory=dict)
 
 
@@ -96,23 +101,6 @@ class FusionResult:
 # ----------------------------------------------------------------------
 # helper: invoke one leaf model via SMR's existing infrastructure
 # ----------------------------------------------------------------------
-def _get_runtime_engine():
-    """Resolve the runtime RouteEngine singleton (set on openai_routes/admin_api at startup)."""
-    try:
-        from . import openai_routes
-        if getattr(openai_routes, "engine", None) is not None:
-            return openai_routes.engine
-    except Exception:
-        pass
-    try:
-        from . import admin_api
-        if getattr(admin_api, "engine", None) is not None:
-            return admin_api.engine
-    except Exception:
-        pass
-    return None
-
-
 async def _invoke_leaf(
     model_path: str,
     messages: List[Dict[str, str]],
@@ -125,10 +113,8 @@ async def _invoke_leaf(
     Returns the OpenAI-shaped response dict. Raises on hard error so caller
     can decide whether to retry or skip.
     """
+    from .engine import engine  # late import to avoid circular
     from .engine import proxy_chat_request
-    engine = _get_runtime_engine()
-    if engine is None:
-        raise RuntimeError("FusionRouter: runtime engine unavailable")
 
     if "/" not in model_path:
         raise ValueError(f"FusionRouter: leaf '{model_path}' must be provider/model_id")
@@ -158,6 +144,69 @@ async def _invoke_leaf(
     return out
 
 
+async def _invoke_with_fallback(
+    primary: Optional[str],
+    fallbacks: List[str],
+    messages: List[Dict[str, str]],
+    *,
+    max_retries: int = 3,
+    timeout: float = 60.0,
+    max_tokens: int = 1024,
+    health_filter: bool = True,
+) -> Dict[str, Any]:
+    """Try primary first, then each fallback in order, up to max_retries total.
+
+    Returns the OpenAI-shaped response dict. Returns last error dict if all
+    fail (does NOT raise). Caller checks out.get("error") to detect failure.
+
+    health_filter: if True, skip fallbacks whose health_tier is "red"
+    (only consulted if SMR exposes a model_health module).
+    """
+    # Build ordered candidate list; never include None
+    chain: List[str] = [m for m in [primary] + list(fallbacks or []) if m]
+    # Dedup but preserve order
+    seen = set()
+    chain = [m for m in chain if not (m in seen or seen.add(m))]
+
+    last_err: Optional[str] = None
+    attempts = 0
+    for idx, model_path in enumerate(chain):
+        if attempts >= max_retries:
+            break
+        attempts += 1
+        # Optional: health tier filter
+        if health_filter and idx > 0:
+            tier = _quick_health_tier(model_path)
+            if tier == "red":
+                LOG.warning("fusion_fallback_skip model=%s tier=red", model_path)
+                continue
+        try:
+            return await _invoke_leaf(model_path, messages, timeout=timeout, max_tokens=max_tokens)
+        except Exception as e:
+            LOG.warning("fusion_leaf_fail model=%s attempt=%d err=%s",
+                        model_path, attempts, repr(e)[:200])
+            last_err = repr(e)
+            # Tiny backoff between attempts
+            await asyncio.sleep(min(0.3 * attempts, 1.5))
+
+    return {"error": f"all_fallbacks_exhausted: {last_err}", "model_attempts": attempts}
+
+
+def _quick_health_tier(model_path: str) -> str:
+    """Best-effort health tier lookup. Returns 'green'|'yellow'|'red'|'unknown'.
+
+    Uses optional model_health module if available; never raises.
+    """
+    try:
+        from . import model_health as _mh
+        fn = getattr(_mh, "health_tier", None)
+        if callable(fn):
+            return str(fn(model_path))
+    except Exception:
+        pass
+    return "unknown"
+
+
 def _extract_text(out: Dict[str, Any]) -> str:
     try:
         return out["choices"][0]["message"]["content"]
@@ -171,6 +220,32 @@ def _usage(out: Dict[str, Any]) -> Dict[str, int]:
         "in": int(u.get("prompt_tokens", 0) or 0),
         "out": int(u.get("completion_tokens", 0) or 0),
     }
+
+
+def _truncate(text: str, max_chars: int) -> str:
+    """Hard truncate by char count to avoid blowing past model context."""
+    if not text:
+        return ""
+    if len(text) <= max_chars:
+        return text
+    return text[:max_chars] + "\n\n[...]"
+
+
+def _looks_low_quality(text: str) -> bool:
+    """Cheap heuristic: detect severely degraded model output (乱码/重复)."""
+    if not text or not text.strip():
+        return True
+    # ratio of non-ASCII printable characters
+    if len(text) < 20:
+        return False
+    # detect excessive repetition of 3+ char runs
+    if re.search(r"(.)\1{15,}", text):
+        return True
+    # detect "啊" / "呃" filler storms
+    filler = len(re.findall(r"(啊|呃|哦|嗯|噢)[ ]{0,2}(啊|呃|哦|嗯|噢)", text))
+    if filler > 8 and len(text) < 400:
+        return True
+    return False
 
 
 # ----------------------------------------------------------------------
@@ -196,7 +271,7 @@ async def op_vote(step: FusionStep, prompt: str, history: List[Dict[str, str]], 
         raise ValueError("vote.step requires params.model_ids: list of provider/model_id")
     strategy: str = step.params.get("strategy", "best_pick")
     judge_model: Optional[str] = step.params.get("judge_model")
-    max_tokens: int = int(step.params.get("max_tokens", 1024))
+    max_tokens: int = int(step.get("max_tokens", 1024) if hasattr(step, "get") else step.params.get("max_tokens", 1024))
 
     # fan out
     tasks: List[Awaitable[Optional[Dict[str, Any]]]] = []
@@ -224,7 +299,6 @@ async def op_vote(step: FusionStep, prompt: str, history: List[Dict[str, str]], 
     if strategy == "concat":
         return "\n\n---\n\n".join(f"[{c['model']}]\n{c['text']}" for c in candidates)
     if strategy == "majority":
-        from collections import Counter
         cnt = Counter(c["text"] for c in candidates)
         text, _ = cnt.most_common(1)[0]
         return text
@@ -289,11 +363,198 @@ async def op_pipeline(step: FusionStep, prompt: str, history: List[Dict[str, str
     return accumulated
 
 
+# ----------------------------------------------------------------------
+# N+1 Robust Fusion (R43)
+# 4 阶段: Refine-Task → Fan-out → Refine-Answers (local) → Final-Fuse
+# 每个角色 (primary / fanout[i] / refiner) 都有独立 fallback 链
+# ----------------------------------------------------------------------
+_TASK_REFINE_SYSTEM = (
+    "You are a senior task analyst. Convert the user's request into a "
+    "concise, well-structured task brief that other AI models can act on "
+    "in parallel. Output ONLY the brief — no preamble."
+)
+
+
+async def op_n1_fusion(step: FusionStep, prompt: str, history: List[Dict[str, str]], trace: List[Dict[str, Any]]) -> str:
+    p = step.params
+    primary: Optional[str] = p.get("primary")
+    primary_fb: List[str] = list(p.get("primary_fallbacks") or [])
+    fanout: List[str] = list(p.get("fanout") or [])
+    fanout_fb: Dict[str, str] = dict(p.get("fanout_fallbacks") or {})
+    refiner: Optional[str] = p.get("refiner") or primary
+    refiner_fb: List[str] = list(p.get("refiner_fallbacks") or primary_fb)
+    fanout_count: int = int(p.get("fanout_count", len(fanout) or 3))
+    min_success: int = int(p.get("min_success_count", 2))
+    max_retries: int = int(p.get("max_retries_per_leaf", 3))
+    ctx_policy: Dict[str, Any] = p.get("context_policy") or {}
+    # 每个 answer 上限 = effective_context × 0.6
+    max_answer_chars = int(ctx_policy.get("min_context_floor", 65536)) * 4 // 10  # 1 token ≈ 4 chars
+
+    # --- Stage 1: Refine-Task ---
+    task_brief = prompt
+    if primary:
+        refine_msg = [
+            {"role": "system", "content": _TASK_REFINE_SYSTEM},
+            {"role": "user", "content": prompt},
+        ]
+        out = await _invoke_with_fallback(
+            primary, primary_fb, refine_msg,
+            max_retries=max_retries, max_tokens=512,
+        )
+        refined = _extract_text(out) if not out.get("error") else ""
+        if refined and not _looks_low_quality(refined):
+            task_brief = refined
+            trace.append({
+                "stage": "refine_task", "primary": primary,
+                "attempts": out.get("model_attempts", 1),
+                "used_fallback": out.get("model_attempts", 1) > 1,
+                "bytes": len(task_brief),
+            })
+        else:
+            trace.append({"stage": "refine_task", "skipped": True, "reason": "primary_failed"})
+
+    # --- Stage 2: Fan-out ---
+    # 取 fanout_count 个 worker；只取前 N 个避免用户没控制 count
+    workers = fanout[:fanout_count] if fanout_count > 0 else fanout
+    if not workers:
+        trace.append({"stage": "fanout", "skipped": True, "reason": "no_workers"})
+        return "[n1_fusion: no fanout workers available]"
+
+    async def _fanout_one(model: str) -> Dict[str, Any]:
+        fb = fanout_fb.get(model)
+        # 每个 worker 用自己的 fallback 链
+        return await _invoke_with_fallback(
+            model,
+            [fb] if fb else primary_fb,
+            history + [{"role": "user", "content": (
+                f"Task brief:\n{task_brief}\n\n"
+                f"Original user request:\n{prompt}\n\n"
+                f"Provide your direct answer. Keep your response under {max_answer_chars} characters."
+            )}],
+            max_retries=max_retries,
+            max_tokens=1500,
+        )
+
+    started = time.time()
+    fanout_tasks = [_fanout_one(w) for w in workers]
+    raw_results = await asyncio.gather(*fanout_tasks, return_exceptions=False)
+    elapsed_fanout = time.time() - started
+
+    # 收集 candidate: {model, text, used_fallback}
+    candidates: List[Dict[str, Any]] = []
+    used_fallbacks: List[str] = []
+    for w, r in zip(workers, raw_results):
+        if not r.get("error"):
+            text = _extract_text(r)
+            if text and not _looks_low_quality(text):
+                candidates.append({
+                    "model": w,
+                    "text": _truncate(text, max_answer_chars),
+                    "elapsed_ms": int(elapsed_fanout * 1000),
+                    "attempts": r.get("model_attempts", 1),
+                    "used_fallback": r.get("model_attempts", 1) > 1,
+                    "usage": _usage(r),
+                })
+        else:
+            used_fallbacks.append(w)
+    trace.append({
+        "stage": "fanout",
+        "workers": workers,
+        "succeeded": len(candidates),
+        "failed": len(workers) - len(candidates),
+        "min_success_required": min_success,
+        "elapsed_ms": int(elapsed_fanout * 1000),
+    })
+
+    if len(candidates) < min_success:
+        # 没达到最低成功数, 强退化: 返回现有 candidate 中最长且非低质的
+        salvage = [c for c in candidates if not _looks_low_quality(c["text"])]
+        if not salvage:
+            return f"[n1_fusion: fanout insufficient] {len(candidates)}/{min_success} succeeded"
+        salvage.sort(key=lambda c: len(c["text"]), reverse=True)
+        trace.append({
+            "stage": "fanout", "degraded": True,
+            "reason": f"only {len(candidates)}/{min_success} candidates succeeded",
+            "mode": "best-of-failed-fanout",
+        })
+        return salvage[0]["text"]
+
+    # --- Stage 3: Refine-Answers (local) ---
+    # 去重: 完全相同的 text 只保留一份
+    dedup: List[Dict[str, Any]] = []
+    seen_text: set = set()
+    for c in candidates:
+        key = c["text"][:200].strip()
+        if key in seen_text:
+            continue
+        seen_text.add(key)
+        dedup.append(c)
+    # 按长度从大到小再选前 min(8, len) 个, 避免融合 prompt 撑爆
+    dedup.sort(key=lambda c: len(c["text"]), reverse=True)
+    candidates = dedup[:max(8, min_success)]
+    trace.append({
+        "stage": "refine_answers",
+        "input": len(raw_results),
+        "after_dedup": len(dedup),
+        "kept_for_fuse": len(candidates),
+    })
+
+    # --- Stage 4: Final-Fuse ---
+    if not refiner:
+        # 没有 refiner, 取最长且质量尚可的 candidate
+        candidates.sort(key=lambda c: len(c["text"]), reverse=True)
+        return candidates[0]["text"]
+
+    bundle = "\n\n".join(
+        f"--- Answer {i+1} (from {c['model']}) ---\n{c['text']}"
+        for i, c in enumerate(candidates)
+    )
+    fuse_prompt = (
+        f"You are a senior editor. The user asked:\n{prompt}\n\n"
+        f"Here is the structured task brief you should keep in mind:\n{task_brief}\n\n"
+        f"Below are {len(candidates)} candidate answers from independent models. "
+        "Synthesize them into ONE final answer that is accurate, complete, well-structured, "
+        "and free of redundancy. Resolve any conflicts by reasoning. Return ONLY the final answer.\n\n"
+        f"{bundle}"
+    )
+    fuse_out = await _invoke_with_fallback(
+        refiner, refiner_fb,
+        [{"role": "user", "content": fuse_prompt}],
+        max_retries=max_retries,
+        max_tokens=1500,
+    )
+    fused_text = _extract_text(fuse_out) if not fuse_out.get("error") else ""
+
+    if fused_text and not _looks_low_quality(fused_text):
+        trace.append({
+            "stage": "final_fuse",
+            "refiner": refiner,
+            "attempts": fuse_out.get("model_attempts", 1),
+            "used_fallback": fuse_out.get("model_attempts", 1) > 1,
+            "usage": _usage(fuse_out),
+        })
+        return fused_text
+
+    # Final fuse 全部 fallback 也挂了, 退化为 candidate 打分排序
+    candidates.sort(key=lambda c: (
+        -len(c["text"]),                # 偏长一些
+        -int(c.get("used_fallback", False)),  # 主路径优先
+    ))
+    trace.append({
+        "stage": "final_fuse",
+        "degraded": True,
+        "reason": "refiner_and_fallbacks_failed",
+        "mode": "best-of-candidates",
+    })
+    return candidates[0]["text"]
+
+
 _OP_DISPATCH: Dict[str, Callable] = {
     "expert": op_expert,
     "vote": op_vote,
     "refine": op_refine,
     "pipeline": op_pipeline,
+    "n1_fusion": op_n1_fusion,
 }
 
 
@@ -343,11 +604,17 @@ class FusionRouter:
     def register(self, plan_id: str, plan_cfg: Dict[str, Any]) -> None:
         self.plans[plan_id] = plan_cfg
 
+    def unregister(self, plan_id: str) -> bool:
+        return self.plans.pop(plan_id, None) is not None
+
     def has_plan(self, plan_id: str) -> bool:
         return plan_id in self.plans
 
     def list_plans(self) -> List[str]:
         return sorted(self.plans.keys())
+
+    def get_plan(self, plan_id: str) -> Optional[Dict[str, Any]]:
+        return self.plans.get(plan_id)
 
     async def run_plan(
         self,
@@ -373,14 +640,21 @@ class FusionRouter:
             error = repr(e)
         elapsed = time.time() - t0
         # aggregate usage
-        tot_in = sum(item.get("usage", {}).get("in", 0) for item in trace if isinstance(item.get("usage"), dict))
-        tot_out = sum(item.get("usage", {}).get("out", 0) for item in trace if isinstance(item.get("usage"), dict))
+        tot_in = 0
+        tot_out = 0
+        for item in trace:
+            u = item.get("usage")
+            if isinstance(u, dict):
+                tot_in += int(u.get("in", 0))
+                tot_out += int(u.get("out", 0))
         return FusionResult(
             answer=answer,
             trace=trace,
             total_tokens_in=tot_in,
             total_tokens_out=tot_out,
             elapsed_seconds=elapsed,
+            success=success,
+            error=error,
         )
 
 
@@ -405,6 +679,7 @@ def save_plans_to_config() -> bool:
     """Persist current fusion plans to config.yaml (server.aliases.fusion.plans).
 
     Called by admin_api after register/delete so plans survive restarts.
+    Also called by fusion_presets.seed_all after bulk registration.
     """
     try:
         from .config import config
@@ -412,7 +687,6 @@ def save_plans_to_config() -> bool:
         if router is None:
             LOG.warning("save_plans_to_config: FusionRouter not initialized")
             return False
-        # Ensure nested structure exists in config.data
         server = config.data.setdefault("server", {})
         aliases = server.setdefault("aliases", {})
         fusion = aliases.setdefault("fusion", {})
@@ -423,121 +697,3 @@ def save_plans_to_config() -> bool:
     except Exception as e:
         LOG.error("FusionRouter: failed to persist plans: %s", e)
         return False
-
-# ----------------------------------------------------------------------
-# v4-streaming: SSE streaming support for fusion plans
-# ----------------------------------------------------------------------
-
-def _sse_chunk(data: dict) -> str:
-    """Format a single SSE data line (OpenAI-compatible)."""
-    return f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
-
-
-async def run_plan_streaming(
-    router,
-    plan_id: str,
-    prompt: str,
-    history=None,
-    smr_request_id: str = "",
-):
-    """Async generator yielding SSE events for a fusion plan execution.
-
-    Events:
-      1. fusion_start: plan metadata
-      2. fusion_trace: each trace item as operators complete
-      3. content deltas: final answer in OpenAI streaming format
-      4. fusion_done: summary + [DONE]
-    """
-    if plan_id not in router.plans:
-        yield _sse_chunk({"error": {"message": f"unknown plan {plan_id!r}",
-                                    "type": "fusion_plan_error"}})
-        yield "data: [DONE]\n\n"
-        return
-
-    cfg = router.plans[plan_id]
-    step = FusionStep(type=cfg.get("type"), params=cfg.get("params", cfg))
-    history = history or []
-    trace = []
-    t0 = time.time()
-    rid = smr_request_id or uuid.uuid4().hex[:10]
-
-    # 1. emit plan start
-    yield _sse_chunk({
-        "id": f"fusion-{rid[:8]}",
-        "object": "chat.completion.chunk",
-        "created": int(t0),
-        "model": f"fusion:{plan_id}",
-        "choices": [{"index": 0, "delta": {"role": "assistant"}, "finish_reason": None}],
-        "fusion_event": "plan_start",
-        "plan_type": step.type,
-    })
-
-    # 2. run plan in background, poll trace for new items
-    task = asyncio.create_task(_run_operator(step, prompt, history, trace))
-    last_len = 0
-    while not task.done():
-        await asyncio.sleep(0.15)
-        while len(trace) > last_len:
-            yield _sse_chunk({
-                "id": f"fusion-{rid[:8]}",
-                "object": "chat.completion.chunk",
-                "created": int(t0),
-                "model": f"fusion:{plan_id}",
-                "choices": [{"index": 0, "delta": {}, "finish_reason": None}],
-                "fusion_event": "trace",
-                "fusion_trace_item": trace[last_len],
-            })
-            last_len += 1
-
-    # drain remaining trace
-    while len(trace) > last_len:
-        yield _sse_chunk({
-            "id": f"fusion-{rid[:8]}",
-            "object": "chat.completion.chunk",
-            "created": int(t0),
-            "model": f"fusion:{plan_id}",
-            "choices": [{"index": 0, "delta": {}, "finish_reason": None}],
-            "fusion_event": "trace",
-            "fusion_trace_item": trace[last_len],
-        })
-        last_len += 1
-
-    # 3. get answer
-    try:
-        answer = task.result()
-        success = True
-    except Exception as e:
-        LOG.exception("fusion_stream_failed plan=%s", plan_id)
-        answer = f"[fusion_run_failed] {e!r}"
-        success = False
-
-    elapsed = time.time() - t0
-    tot_in = sum(item.get("usage", {}).get("in", 0) for item in trace if isinstance(item.get("usage"), dict))
-    tot_out = sum(item.get("usage", {}).get("out", 0) for item in trace if isinstance(item.get("usage"), dict))
-
-    # 4. stream answer in chunks (word-level for compatibility)
-    words = answer.split(" ")
-    for i, w in enumerate(words):
-        delta_text = w + (" " if i < len(words) - 1 else "")
-        yield _sse_chunk({
-            "id": f"fusion-{rid[:8]}",
-            "object": "chat.completion.chunk",
-            "created": int(t0),
-            "model": f"fusion:{plan_id}",
-            "choices": [{"index": 0, "delta": {"content": delta_text}, "finish_reason": None}],
-        })
-
-    # 5. final chunk + done
-    yield _sse_chunk({
-        "id": f"fusion-{rid[:8]}",
-        "object": "chat.completion.chunk",
-        "created": int(t0),
-        "model": f"fusion:{plan_id}",
-        "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
-        "fusion_event": "plan_done",
-        "fusion_elapsed": round(elapsed, 3),
-        "fusion_tokens_in": tot_in,
-        "fusion_tokens_out": tot_out,
-        "fusion_success": success,
-    })
-    yield "data: [DONE]\n\n"
