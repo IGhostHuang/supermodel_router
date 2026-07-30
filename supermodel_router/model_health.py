@@ -402,6 +402,34 @@ class ModelHealthManager:
                 return True
             return False
 
+    def health_tier(self, path: str) -> str:
+        """v4.3: 给 fusion/n1_fusion 用, 把 (state, rolling_success_rate) 折算成三档.
+
+        green  = HEALTHY + rolling success >= 90%  (默认路由, 无需 fallback)
+        yellow = HEALTHY 70-90% / DEGRADED / HALF_OPEN (主 + fallback 并行)
+        red    = SKIP / rolling success < 70%        (直接走 fallback)
+        unknown/无记录 => 'green' (允许试用, 不阻断)
+
+        用于 n1_fusion._invoke_with_fallback 健康感知的预检.
+        """
+        with self._lock:
+            mh = self._health.get(path)
+            if not mh:
+                return "green"
+            if mh.state == HealthState.SKIP.value:
+                return "red"
+            if mh.state in (HealthState.DEGRADED.value, HealthState.HALF_OPEN.value):
+                return "yellow"
+            try:
+                rate = mh.rolling_success_rate()
+            except Exception:
+                return "green"
+            if rate >= 0.9:
+                return "green"
+            if rate >= 0.7:
+                return "yellow"
+            return "red"
+
     def get_penalty_multiplier(self, path: str) -> float:
         """DEGRADED 模型返回 penalty multiplier (0..1, 用于综合分乘法)
         HEALTHY=1.0 (无惩罚), DEGRADED=0.6 (降权 40%), SKIP=0.0

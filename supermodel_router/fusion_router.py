@@ -96,6 +96,8 @@ class FusionResult:
     total_tokens_in: int = 0
     total_tokens_out: int = 0
     elapsed_seconds: float = 0.0
+    success: bool = True
+    error: Optional[str] = None
 
 
 # ----------------------------------------------------------------------
@@ -633,11 +635,13 @@ class FusionRouter:
             answer = await _run_operator(step, prompt, history, trace)
             success = True
             error: Optional[str] = None
+            _fm_record_n1(plan_id, True, trace, time.time() - t0)
         except Exception as e:
             LOG.exception("fusion_run_failed plan=%s", plan_id)
             answer = f"[fusion_run_failed] {e!r}"
             success = False
             error = repr(e)
+            _fm_record_n1(plan_id, False, trace, time.time() - t0)
         elapsed = time.time() - t0
         # aggregate usage
         tot_in = 0
@@ -675,6 +679,298 @@ def get_fusion_router() -> Optional[FusionRouter]:
     return _router
 
 
+async def _invoke_leaf_stream(model_path, messages, *, timeout=180.0, max_tokens=1024):
+    """Streaming版 _invoke_leaf — returns async generator yielding text deltas (str)."""
+    from .engine import engine
+    from .engine import proxy_chat_request
+    if "/" not in model_path:
+        raise ValueError("FusionRouter: leaf must be provider/model_id")
+    chain = engine.pick_chain(requested_model=model_path, preferred_modalities=None, max_candidates=8)
+    if not chain:
+        raise RuntimeError("FusionRouter: no candidate")
+    route = chain[0].materialize(engine.registry)
+    if route is None:
+        raise RuntimeError("FusionRouter: cannot materialize")
+    body = {"model": route.model_id, "messages": messages, "stream": True, "max_tokens": max_tokens}
+    async def _gen():
+        agen = await proxy_chat_request(route=route, body=body, stream=True, timeout=timeout)
+        async for chunk in agen:
+            if isinstance(chunk, (bytes, bytearray)):
+                try: chunk = chunk.decode("utf-8", errors="replace")
+                except: pass
+            if isinstance(chunk, str):
+                for line in chunk.split("\n"):
+                    line = line.strip()
+                    if line.startswith("data: ") and line != "data: [DONE]":
+                        try:
+                            obj = json.loads(line[6:])
+                            for c in obj.get("choices", []):
+                                delta = (c.get("delta") or {}).get("content")
+                                if delta:
+                                    yield delta
+                        except Exception:
+                            pass
+    return _gen()
+
+
+async def _stream_with_fallback(primary, fallbacks, messages, *, max_retries=3, max_tokens=1024, health_filter=True):
+    chain = [m for m in [primary] + list(fallbacks or []) if m]
+    seen = set()
+    chain = [m for m in chain if not (m in seen or seen.add(m))]
+    last_err = None
+    for idx, model_path in enumerate(chain):
+        if idx >= max_retries:
+            break
+        if health_filter and idx > 0:
+            tier = _quick_health_tier(model_path)
+            if tier == "red":
+                LOG.warning("fusion_stream_fallback_skip model=%s tier=red", model_path)
+                continue
+        try:
+            gen = await _invoke_leaf_stream(model_path, messages, max_tokens=max_tokens)
+            async for delta in gen:
+                yield delta, model_path
+            return
+        except Exception as e:
+            LOG.warning("fusion_stream_leaf_fail model=%s err=%s", model_path, repr(e)[:200])
+            last_err = repr(e)
+    raise RuntimeError(f"all_fallbacks_exhausted: {last_err}")
+
+
+async def op_n1_fusion_stream(step, prompt, history, trace):
+    p = step.params
+    primary = p.get("primary")
+    primary_fb = list(p.get("primary_fallbacks") or [])
+    fanout = list(p.get("fanout") or [])
+    fanout_fb = dict(p.get("fanout_fallbacks") or {})
+    refiner = p.get("refiner") or primary
+    refiner_fb = list(p.get("refiner_fallbacks") or primary_fb)
+    fanout_count = int(p.get("fanout_count", len(fanout) or 3))
+    min_success = int(p.get("min_success_count", 2))
+    max_retries = int(p.get("max_retries_per_leaf", 3))
+    ctx_policy = p.get("context_policy") or {}
+    stream_policy = p.get("stream_policy") or {}
+    late_merge = bool(stream_policy.get("late_merge", False))
+    max_answer_chars = int(ctx_policy.get("min_context_floor", 65536)) * 4 // 10
+
+    task_brief = prompt
+    if primary:
+        yield ("event: stage.start\ndata: " + json.dumps({"stage": "refine_task", "model": primary}) + "\n\n", "_meta")
+        try:
+            buf = []
+            async for delta, used_model in _stream_with_fallback(
+                primary, primary_fb,
+                [{"role": "system", "content": _TASK_REFINE_SYSTEM}, {"role": "user", "content": prompt}],
+                max_retries=max_retries, max_tokens=512,
+            ):
+                buf.append(delta)
+                yield ("event: stage.token\ndata: " + json.dumps({"stage": "refine_task", "delta": delta}) + "\n\n", "_meta")
+            task_text = "".join(buf).strip()
+            if task_text and not _looks_low_quality(task_text):
+                task_brief = task_text
+            yield ("event: stage.done\ndata: " + json.dumps({"stage": "refine_task", "model_used": used_model}) + "\n\n", "_meta")
+        except Exception as e:
+            LOG.warning("n1_stream_stage1_fail err=%s", repr(e)[:200])
+            yield ("event: stage.done\ndata: " + json.dumps({"stage": "refine_task", "skipped": True}) + "\n\n", "_meta")
+
+    workers = fanout[:fanout_count] if fanout_count > 0 else fanout
+    if not workers:
+        yield ("event: done\ndata: " + json.dumps({"error": "no_workers"}) + "\n\n", "_meta")
+        return
+
+    queues = {w: asyncio.Queue() for w in workers}
+    candidates = []
+    t_start = time.time()
+
+    async def _fanout_one(idx, model):
+        out = {"worker": f"w{idx}", "model": model, "text": "", "elapsed_ms": 0, "ok": False}
+        t0 = time.time()
+        fb = fanout_fb.get(model)
+        used = None
+        try:
+            async for delta, used_model in _stream_with_fallback(
+                model, [fb] if fb else primary_fb,
+                history + [{"role": "user", "content": (
+                    f"Task brief:\n{task_brief}\n\n"
+                    f"Original user request:\n{prompt}\n\n"
+                    f"Provide your direct answer. Keep your response under {max_answer_chars} characters."
+                )}],
+                max_retries=max_retries, max_tokens=1500,
+            ):
+                out["text"] += delta
+                await queues[model].put(("event: fanout.partial\ndata: " + json.dumps({"worker": out["worker"], "delta": delta}) + "\n\n", out["worker"]))
+            used = used_model
+            out["ok"] = not _looks_low_quality(out["text"])
+            out["model_used"] = used
+            out["text"] = _truncate(out["text"], max_answer_chars)
+        except Exception as e:
+            LOG.warning("fanout_stream_fail worker=%s err=%s", out["worker"], repr(e)[:200])
+        out["elapsed_ms"] = int((time.time() - t0) * 1000)
+        await queues[model].put(("event: fanout.done\ndata: " + json.dumps({
+            "worker": out["worker"], "tokens": len(out["text"]), "model_used": used,
+        }) + "\n\n", out["worker"]))
+        if out["ok"] and out["text"]:
+            candidates.append({"model": used or model, "text": out["text"],
+                                "elapsed_ms": out["elapsed_ms"], "worker": out["worker"]})
+
+    tasks_ = [asyncio.create_task(_fanout_one(i, w)) for i, w in enumerate(workers)]
+    finished = 0
+    while finished < len(workers):
+        for w in workers:
+            try:
+                evt = queues[w].get_nowait()
+                yield evt
+                if evt[0].startswith("event: fanout.done"):
+                    finished += 1
+            except asyncio.QueueEmpty:
+                pass
+        finished = sum(1 for t in tasks_ if t.done())
+        await asyncio.sleep(0.02)
+    for w in workers:
+        while not queues[w].empty():
+            try:
+                yield queues[w].get_nowait()
+            except asyncio.QueueEmpty:
+                break
+    await asyncio.gather(*tasks_, return_exceptions=True)
+
+    trace.append({"stage": "fanout", "workers": len(workers),
+                  "succeeded": len(candidates), "late_merge": late_merge,
+                  "elapsed_ms": int((time.time() - t_start) * 1000)})
+
+    dedup = []
+    seen = set()
+    for c in candidates:
+        key = c["text"][:200].strip()
+        if key in seen:
+            continue
+        seen.add(key)
+        dedup.append(c)
+    dedup.sort(key=lambda c: len(c["text"]), reverse=True)
+    kept = dedup[:max(8, min_success)]
+    yield ("event: stage.done\ndata: " + json.dumps({
+        "stage": "refine_answers", "input": len(candidates),
+        "after_dedup": len(dedup), "kept_for_fuse": len(kept),
+    }) + "\n\n", "_meta")
+
+    if len(kept) < min_success:
+        if not candidates:
+            yield ("event: done\ndata: " + json.dumps({"error": "fanout insufficient"}) + "\n\n", "_meta")
+            return
+        salvage = sorted(candidates, key=lambda c: len(c.get("text", "")), reverse=True)
+        out_text = salvage[0]["text"]
+        yield ("event: fuse.start\ndata: " + json.dumps({"stage": "final_fuse", "degraded": True}) + "\n\n", "_meta")
+        for i in range(0, len(out_text), 50):
+            yield ("event: fuse.token\ndata: " + json.dumps({"stage": "final_fuse", "delta": out_text[i:i+50]}) + "\n\n", "_meta")
+        yield ("event: done\ndata: " + json.dumps({"mode": "best-of-failed-fanout"}) + "\n\n", "_meta")
+        return
+
+    if not refiner:
+        out_text = kept[0]["text"]
+        yield ("event: fuse.start\ndata: " + json.dumps({"stage": "final_fuse"}) + "\n\n", "_meta")
+        for i in range(0, len(out_text), 50):
+            yield ("event: fuse.token\ndata: " + json.dumps({"stage": "final_fuse", "delta": out_text[i:i+50]}) + "\n\n", "_meta")
+        yield ("event: done\ndata: " + json.dumps({"mode": "no-refiner"}) + "\n\n", "_meta")
+        return
+
+    bundle = "\n\n".join(f"--- Answer {i+1} (from {c['model']}) ---\n{c['text']}" for i, c in enumerate(kept))
+    fuse_prompt = (
+        f"You are a senior editor. The user asked:\n{prompt}\n\n"
+        f"Here is the structured task brief you should keep in mind:\n{task_brief}\n\n"
+        f"Below are {len(kept)} candidate answers from independent models. "
+        "Synthesize them into ONE final answer that is accurate, complete, well-structured, "
+        "and free of redundancy. Resolve any conflicts by reasoning. Return ONLY the final answer.\n\n"
+        f"{bundle}"
+    )
+    yield ("event: fuse.start\ndata: " + json.dumps({"stage": "final_fuse", "refiner": refiner}) + "\n\n", "_meta")
+    fuse_buf = []
+    used_model = refiner
+    try:
+        async for delta, um in _stream_with_fallback(
+            refiner, refiner_fb, [{"role": "user", "content": fuse_prompt}],
+            max_retries=max_retries, max_tokens=1500,
+        ):
+            fuse_buf.append(delta)
+            used_model = um
+            yield ("event: fuse.token\ndata: " + json.dumps({"stage": "final_fuse", "delta": delta}) + "\n\n", "_meta")
+    except Exception as e:
+        LOG.warning("n1_stream_fuse_fail err=%s", repr(e)[:200])
+
+    fused_text = "".join(fuse_buf).strip()
+    if fused_text and not _looks_low_quality(fused_text):
+        yield ("event: fuse.done\ndata: " + json.dumps({"stage": "final_fuse", "model_used": used_model}) + "\n\n", "_meta")
+        yield ("event: done\ndata: " + json.dumps({"total_tokens": len(fused_text)}) + "\n\n", "_meta")
+    else:
+        out_text = sorted(kept, key=lambda c: -len(c["text"]))[0]["text"]
+        for i in range(0, len(out_text), 50):
+            yield ("event: fuse.token\ndata: " + json.dumps({"stage": "final_fuse", "delta": out_text[i:i+50], "degraded": True}) + "\n\n", "_meta")
+        yield ("event: done\ndata: " + json.dumps({"mode": "best-of-candidates"}) + "\n\n", "_meta")
+
+
+async def run_plan_streaming(fr, plan_id, prompt, history=None, smr_request_id=""):
+    history = history or []
+    if plan_id not in fr.plans:
+        raise KeyError(f"unknown fusion plan '{plan_id}'")
+    cfg = fr.plans[plan_id]
+    ptype = cfg.get("type", "expert")
+    trace = []
+    t0 = time.time()
+    yield "event: plan.start\ndata: " + json.dumps({"plan_id": plan_id, "type": ptype, "smr_id": smr_request_id}) + "\n\n"
+    try:
+        if ptype == "n1_fusion":
+            step = FusionStep(type="n1_fusion", params=cfg.get("params", cfg))
+            async for evt_pair in op_n1_fusion_stream(step, prompt, history, trace):
+                yield evt_pair[0]
+        else:
+            result = await fr.run_plan(plan_id, prompt, history)
+            ans = result.answer
+            for i in range(0, len(ans), 50):
+                yield ("event: fuse.token\ndata: " + json.dumps({"stage": "final", "delta": ans[i:i+50]}) + "\n\n")
+            yield ("event: done\ndata: " + json.dumps({"mode": "non-stream-fallback"}) + "\n\n")
+        elapsed = time.time() - t0
+        LOG.info("fusion_stream_done plan=%s elapsed=%.2fs", plan_id, elapsed)
+    except Exception as e:
+        LOG.exception("run_plan_streaming_failed plan=%s", plan_id)
+        yield ("event: done\ndata: " + json.dumps({"error": repr(e)}) + "\n\n")
+def _fm_record_n1(plan_id, success, trace, elapsed):
+    """Fire-and-forget metrics recorder for n1_fusion. Called from FusionRouter.run_plan."""
+    try:
+        from .fusion_metrics import fusion_metrics as _fm
+        stage_latencies = {}
+        fallback_uses = 0
+        fanout_used_fb = 0
+        refiner_used_fb = 0
+        tokens_in = 0
+        tokens_out = 0
+        for item in trace:
+            if not isinstance(item, dict):
+                continue
+            u = item.get("usage")
+            if isinstance(u, dict):
+                tokens_in += int(u.get("in", 0))
+                tokens_out += int(u.get("out", 0))
+            stage = item.get("stage")
+            if stage == "fanout":
+                stage_latencies["fanout"] = int(item.get("elapsed_ms", 0))
+            elif stage == "refine_task":
+                stage_latencies["refine_task"] = int(item.get("elapsed_ms", 0))
+            elif stage == "final_fuse":
+                stage_latencies["final_fuse"] = int(item.get("elapsed_ms", 0))
+            if item.get("used_fallback"):
+                fallback_uses += 1
+                if stage in (None, "fanout"):
+                    fanout_used_fb += 1
+                if stage == "final_fuse":
+                    refiner_used_fb += 1
+        _fm.record(plan_id, success=success,
+                   tokens_in=tokens_in, tokens_out=tokens_out,
+                   fallback_uses=fallback_uses,
+                   fanout_used_fallback=fanout_used_fb,
+                   refiner_used_fallback=refiner_used_fb,
+                   stage_latencies=stage_latencies,
+                   trace_summary={"elapsed_ms": int(elapsed * 1000), "trace_steps": len(trace)})
+    except Exception as e:
+        LOG.debug("_fm_record_n1 failed (non-fatal): %s", e)
 def save_plans_to_config() -> bool:
     """Persist current fusion plans to config.yaml (server.aliases.fusion.plans).
 

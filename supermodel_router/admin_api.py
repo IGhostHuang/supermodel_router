@@ -2696,6 +2696,19 @@ async def admin_fusion_plans_delete(plan_id: str):
 
 @router.post("/v1/admin/fusion/run")
 
+@router.get("/v1/admin/fusion/n1/metrics")
+async def admin_fusion_n1_metrics():
+    """Aggregated per-plan metrics for n1_fusion."""
+    from .fusion_metrics import fusion_metrics
+    return JSONResponse(fusion_metrics.snapshot())
+
+
+@router.post("/v1/admin/fusion/n1/metrics/reset")
+async def admin_fusion_n1_metrics_reset():
+    """Clear in-memory fusion metrics."""
+    from .fusion_metrics import fusion_metrics
+    fusion_metrics.reset()
+    return JSONResponse({"ok": True})
 async def admin_fusion_run(payload: dict):
 
     """Ad-hoc run a fusion plan for testing.
