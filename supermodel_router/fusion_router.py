@@ -154,7 +154,7 @@ async def _invoke_with_fallback(
     messages: List[Dict[str, str]],
     *,
     max_retries: int = 3,
-    timeout: float = 60.0,
+    timeout: float = 90.0,
     max_tokens: int = 1024,
     health_filter: bool = True,
 ) -> Dict[str, Any]:
@@ -403,7 +403,7 @@ async def op_n1_fusion(step: FusionStep, prompt: str, history: List[Dict[str, st
         ]
         out = await _invoke_with_fallback(
             primary, primary_fb, refine_msg,
-            max_retries=max_retries, max_tokens=512,
+            max_retries=max_retries, max_tokens=512, timeout=90.0,
         )
         refined = _extract_text(out) if not out.get("error") else ""
         if refined and not _looks_low_quality(refined):
@@ -717,7 +717,7 @@ async def _invoke_leaf_stream(model_path, messages, *, timeout=180.0, max_tokens
     return _gen()
 
 
-async def _stream_with_fallback(primary, fallbacks, messages, *, max_retries=3, max_tokens=1024, health_filter=True):
+async def _stream_with_fallback(primary, fallbacks, messages, *, max_retries=4, max_tokens=1024, health_filter=True):
     chain = [m for m in [primary] + list(fallbacks or []) if m]
     seen = set()
     chain = [m for m in chain if not (m in seen or seen.add(m))]
@@ -778,7 +778,7 @@ async def op_n1_fusion_stream(step, prompt, history, trace):
             async for delta, used_model in _stream_with_fallback(
                 primary, primary_fb,
                 [{"role": "system", "content": _TASK_REFINE_SYSTEM}, {"role": "user", "content": prompt}],
-                max_retries=max_retries, max_tokens=512,
+                max_retries=max_retries, max_tokens=512, timeout=90.0,
             ):
                 buf.append(delta)
                 yield ("event: stage.token\ndata: " + json.dumps({"stage": "refine_task", "delta": delta}) + "\n\n", "_meta")
