@@ -50,7 +50,11 @@ DEFAULT_BASELINE_MAX_TOKENS = 2048
 # Error markers that indicate fusion failure
 _ERROR_MARKERS = [
     "[fusion_error", "[fusion_timeout", "[fusion_failed",
+    "[fusion_run_failed",  # critical: full chain exhausted
     "[unknown plan", "fusion_plan_timeout",
+    "all_fallbacks_exhausted",
+    "RuntimeError(",
+    "Traceback (most recent call last)",
 ]
 
 # Truncation indicators: response ends without proper closure
@@ -491,6 +495,59 @@ class QualityGate:
         )
         return result
 
+    async def _invoke_direct(
+        self,
+        model_path: str,
+        messages,
+        *,
+        timeout: float = 60.0,
+        max_tokens: int = 2048,
+    ):
+        """Bypass engine.pick_chain: call exactly the model_path we want."""
+        if "/" not in model_path:
+            return {"error": f"bad_model_path: {model_path}"}
+        provider_name, model_id = model_path.split("/", 1)
+        try:
+            from .engine import get_global_engine, RouteResult, proxy_chat_request
+        except Exception as e:
+            return {"error": f"engine_import_failed: {e!r}"}
+        engine = get_global_engine()
+        if engine is None:
+            return {"error": "engine_not_initialized"}
+        registry = engine.registry
+        ps = registry._providers.get(provider_name) if hasattr(registry, "_providers") else None
+        if not ps or not getattr(ps, "api_keys", None):
+            return {"error": f"provider_not_found: {provider_name}"}
+        api_key = ps.api_keys[0]
+        base_url = getattr(ps, "base_url", "")
+        if not base_url:
+            return {"error": f"provider_no_base_url: {provider_name}"}
+        route = RouteResult(
+            provider_name=provider_name,
+            base_url=base_url,
+            api_key=api_key,
+            model_id=model_id,
+            full_model_path=model_path,
+            score=100.0,
+            modality="text",
+            context_window=0,
+        )
+        body = {
+            "model": model_id,
+            "messages": messages,
+            "stream": False,
+            "max_tokens": max_tokens,
+        }
+        try:
+            out = await proxy_chat_request(
+                route=route, body=body, stream=False, timeout=timeout
+            )
+            if not isinstance(out, dict):
+                return {"error": f"non_dict_response: {out!r}"}
+            return out
+        except Exception as e:
+            return {"error": f"direct_call_failed: {e!r}"}
+
     # -- Layer 3: baseline fallback --
 
     async def _invoke_baseline(
@@ -508,19 +565,33 @@ class QualityGate:
             from .fusion_router import _invoke_leaf
 
             LOG.info("quality_gate: invoking baseline model %s", self.baseline_model)
-            # _invoke_leaf only accepts (model_path, messages, *, timeout, max_tokens).
-            # It already does internal retries (see _invoke_with_fallback).
-            out = await _invoke_leaf(
+            # Direct provider call (bypass engine.pick_chain).  We construct
+            # a RouteResult from the registry so the call goes to exactly
+            # the model we chose; the previous _invoke_leaf() went through
+            # pick_chain which silently fell back to garbage models.
+            out = await self._invoke_direct(
                 self.baseline_model,
                 history + [{"role": "user", "content": prompt}],
                 timeout=self.baseline_timeout,
                 max_tokens=self.baseline_max_tokens,
             )
+            LOG.info("quality_gate: baseline raw response keys=%s model=%s error=%s",
+                     list(out.keys()) if isinstance(out, dict) else None,
+                     out.get("model") if isinstance(out, dict) else None,
+                     out.get("error") if isinstance(out, dict) else None)
+            if isinstance(out, dict) and "choices" in out:
+                ch = out.get("choices") or []
+                if ch:
+                    msg = (ch[0] or {}).get("message") or {}
+                    LOG.info("quality_gate: baseline content=%r finish=%s",
+                             (msg.get("content") or "")[:100],
+                             (ch[0] or {}).get("finish_reason"))
 
             # Extract text
             from .fusion_router import _extract_text
             answer = _extract_text(out)
             if not answer:
+                LOG.warning("quality_gate: baseline returned no text, raw=%r", str(out)[:500])
                 return None, None
 
             self.stats.total_baseline_calls += 1
