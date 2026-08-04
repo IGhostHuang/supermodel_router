@@ -603,6 +603,10 @@ class FusionRouter:
 
     def __init__(self, plans: Optional[Dict[str, Dict[str, Any]]] = None):
         self.plans: Dict[str, Dict[str, Any]] = plans or {}
+        # v4: Auto-composer and quality gate
+        self._composer = None
+        self._quality_gate = None
+        self._enable_quality_gate = False
         LOG.info("FusionRouter: registered %d plan(s)", len(self.plans))
 
     def register(self, plan_id: str, plan_cfg: Dict[str, Any]) -> None:
@@ -619,6 +623,30 @@ class FusionRouter:
 
     def get_plan(self, plan_id: str) -> Optional[Dict[str, Any]]:
         return self.plans.get(plan_id)
+
+    # -- v4: composer & quality gate management --
+
+    def set_composer(self, composer) -> None:
+        self._composer = composer
+        LOG.info("FusionRouter: composer %s", "attached" if composer else "detached")
+
+    def set_quality_gate(self, gate) -> None:
+        self._quality_gate = gate
+        self._enable_quality_gate = gate is not None
+        LOG.info("FusionRouter: quality_gate %s", "attached" if gate else "detached")
+
+    def enable_quality_gate(self, enabled: bool = True) -> None:
+        self._enable_quality_gate = enabled and self._quality_gate is not None
+
+    def composer_stats(self) -> Dict[str, Any]:
+        if self._composer:
+            return self._composer.get_stats()
+        return {"enabled": False}
+
+    def quality_stats(self) -> Dict[str, Any]:
+        if self._quality_gate:
+            return self._quality_gate.get_stats()
+        return {"enabled": False}
 
     async def run_plan(
         self,
@@ -653,6 +681,128 @@ class FusionRouter:
             if isinstance(u, dict):
                 tot_in += int(u.get("in", 0))
                 tot_out += int(u.get("out", 0))
+        # v4: Quality gate — validate output quality
+        if self._enable_quality_gate and self._quality_gate:
+            try:
+                final_answer, q_result = await self._quality_gate.ensure_quality(
+                    prompt, answer, trace, history,
+                )
+                if final_answer != answer:
+                    LOG.info("fusion quality_gate: answer replaced (score=%.3f)", q_result.score)
+                    answer = final_answer
+                    if q_result.passed and not success:
+                        success = True
+                        error = None
+                    trace.append({
+                        "op": "quality_gate",
+                        "status": "fallback" if q_result.fallback_used else "passed",
+                        "duration_ms": round(q_result.elapsed_ms, 1),
+                        "usage": {"in": 0, "out": 0},
+                        "score": q_result.score,
+                        "reason": q_result.reason,
+                    })
+            except Exception as qe:
+                LOG.warning("fusion quality_gate error: %s", qe)
+
+        return FusionResult(
+            answer=answer,
+            trace=trace,
+            total_tokens_in=tot_in,
+            total_tokens_out=tot_out,
+            elapsed_seconds=elapsed,
+            success=success,
+            error=error,
+        )
+
+
+    # -- v4: auto-composition entry point --
+
+    async def run_auto(
+        self,
+        prompt: str,
+        history: Optional[List[Dict[str, str]]] = None,
+    ) -> FusionResult:
+        """Auto-compose and execute a fusion plan with quality gate.
+
+        v4: Analyzes prompt, selects operator+models, builds plan,
+        executes, and validates output quality. No pre-defined plan needed.
+        """
+        if not self._composer:
+            return FusionResult(
+                answer="[fusion_error: auto-composer not attached]",
+                success=False,
+                error="no composer configured",
+            )
+        history = history or []
+        trace: List[Dict[str, Any]] = []
+        t0 = time.time()
+
+        # 1. Compose the plan
+        try:
+            composed = await self._composer.compose(prompt, history)
+        except Exception as e:
+            LOG.exception("fusion_auto compose failed")
+            return FusionResult(
+                answer=f"[fusion_error: compose failed: {e!r}]",
+                success=False,
+                error=f"compose failed: {e!r}",
+            )
+
+        trace.append({
+            "op": "auto_compose",
+            "status": "ok",
+            "plan_id": composed.plan_id,
+            "operator": composed.operator,
+            "analysis": composed.analysis.to_dict(),
+            "selected_models": composed.selected_models,
+            "estimated_cost": composed.estimated_cost,
+        })
+
+        # 2. Execute the composed plan
+        cfg = composed.config
+        step = FusionStep(type=cfg.get("type"), params=cfg.get("params", cfg))
+        try:
+            answer = await _run_operator(step, prompt, history, trace)
+            success = True
+            error: Optional[str] = None
+        except Exception as e:
+            LOG.exception("fusion_auto_failed plan=%s", composed.plan_id)
+            answer = f"[fusion_failed] {e!r}"
+            success = False
+            error = repr(e)
+
+        elapsed = time.time() - t0
+        tot_in = sum(
+            int(item.get("usage", {}).get("in", 0))
+            for item in trace
+            if isinstance(item.get("usage"), dict)
+        )
+        tot_out = sum(
+            int(item.get("usage", {}).get("out", 0))
+            for item in trace
+            if isinstance(item.get("usage"), dict)
+        )
+
+        # 3. Quality gate
+        if self._enable_quality_gate and self._quality_gate:
+            try:
+                final_answer, q_result = await self._quality_gate.ensure_quality(
+                    prompt, answer, trace, history,
+                )
+                if final_answer != answer:
+                    LOG.info("fusion_auto quality_gate: score=%.3f", q_result.score)
+                    answer = final_answer
+                    if q_result.passed and not success:
+                        success = True
+                        error = None
+                    trace.append({
+                        "op": "quality_gate",
+                        "status": "fallback" if q_result.fallback_used else "passed",
+                        "score": q_result.score,
+                    })
+            except Exception as qe:
+                LOG.warning("fusion_auto quality_gate error: %s", qe)
+
         return FusionResult(
             answer=answer,
             trace=trace,
@@ -671,6 +821,17 @@ def init_fusion_router(plans: Optional[Dict[str, Dict[str, Any]]] = None) -> Fus
     global _router
     if _router is None:
         _router = FusionRouter(plans=plans or {})
+        # v4: Auto-attach composer and quality gate
+        try:
+            from .fusion_composer import init_fusion_composer
+            _router.set_composer(init_fusion_composer())
+        except ImportError:
+            LOG.warning("fusion_composer not available")
+        try:
+            from .quality_gate import init_quality_gate
+            _router.set_quality_gate(init_quality_gate())
+        except ImportError:
+            LOG.warning("quality_gate not available")
     else:
         for pid, cfg in (plans or {}).items():
             _router.register(pid, cfg)
