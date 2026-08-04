@@ -305,7 +305,79 @@ async def lifespan(app: FastAPI):
     engine.fusion_router = fusion_router
     LOG.info("FusionRouter: %d plan(s) registered (%s)", fusion_router.list_plans().__len__(),
              ", ".join(fusion_router.list_plans()) or "(none)")
-    # === end Step 20 ===
+
+    # === v4: Mount AutoFusionComposer + QualityGate into FusionRouter ===
+    # Without this step, the auto-composer and quality gate are dead code in
+    # the production path: their attach() methods are only called from unit
+    # tests.  We now:
+    #   1. Pick a stable baseline (preferring non-:free paid models).
+    #   2. Wire the composer so it can score models against the engine registry.
+    #   3. Enable the quality gate so all fusion calls get baseline fallback.
+    try:
+        from .fusion_composer import init_fusion_composer
+        from .quality_gate import init_quality_gate
+
+        # --- 1. Build the composer (engine + registry in config) ---
+        composer = init_fusion_composer({
+            "engine": engine,
+            "registry": registry,
+            "default_timeout": 90.0,
+            "default_max_tokens": 2048,
+            "min_score_for_baseline_fallback": 0.55,
+        })
+        fusion_router.set_composer(composer)
+        LOG.info("FusionRouter: AutoFusionComposer attached (engine + registry wired)")
+
+        # --- 2. Pick a stable baseline model (prefer non-:free) ---
+        def _pick_baseline() -> str:
+            try:
+                all_ids = list(registry.get_model_ids()) if hasattr(registry, "get_model_ids") else []
+                # Prefer non-:free models
+                paid = [m for m in all_ids
+                        if not str(m).endswith(":free")
+                        and not str(m).lower().startswith(("qwen3-embedding", "text-embedding", "bge-", "gte-"))]
+                # Tier 1: openrouter paid (most stable in this deployment)
+                openrouter_paid = [m for m in paid if str(m).startswith("openrouter/")]
+                if openrouter_paid:
+                    # Prefer a known good coder/reasoning model
+                    preferred = [m for m in openrouter_paid
+                                 if any(k in m.lower() for k in
+                                        ("qwen-2.5-72b", "qwen-2.5-coder", "claude-3.5",
+                                         "gpt-4o", "deepseek-chat", "llama-3.1-70b"))]
+                    if preferred:
+                        return preferred[0]
+                    return openrouter_paid[0]
+                if paid:
+                    return paid[0]
+            except Exception as e:
+                LOG.warning("baseline pick failed: %s", e)
+            # Hard fallback
+            return "openrouter/qwen/qwen-2.5-72b-instruct"
+
+        baseline_model = _pick_baseline()
+
+        # --- 3. Build the quality gate ---
+        # The gate uses _invoke_leaf internally (which goes through the
+        # global engine), so we just configure the baseline model.
+        gate = init_quality_gate({
+            "baseline_model": baseline_model,
+            "baseline_timeout": 60.0,
+            "baseline_max_tokens": 2048,
+            "min_score": 0.55,
+        })
+        fusion_router.set_quality_gate(gate)
+        fusion_router.enable_quality_gate(True)
+        LOG.info("FusionRouter: QualityGate attached (baseline=%s)", baseline_model)
+
+        # Expose for admin API / health checks
+        engine.fusion_composer = composer
+        engine.fusion_quality_gate = gate
+        app.state.fusion_composer = composer
+        app.state.fusion_quality_gate = gate
+
+    except Exception as e:
+        LOG.exception("v4 composer/quality_gate mount failed: %s", e)
+    # === end v4 mount ===
 
     # === end Step 19 ===
 

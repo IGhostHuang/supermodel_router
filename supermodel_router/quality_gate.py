@@ -40,7 +40,7 @@ LOG = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # defaults
 # ---------------------------------------------------------------------------
-DEFAULT_BASELINE_MODEL = "deepseek/deepseek-chat"  # v4-flash equivalent
+DEFAULT_BASELINE_MODEL = "openrouter/qwen/qwen-2.5-72b-instruct"  # empirically stable; produces real content via OpenRouter free routing
 DEFAULT_MIN_SCORE = 0.55          # minimum quality score to pass
 DEFAULT_MIN_LENGTH = 30           # minimum answer length in chars
 DEFAULT_MAX_REPETITION_RATIO = 0.35  # max ratio of repeated n-grams
@@ -508,13 +508,13 @@ class QualityGate:
             from .fusion_router import _invoke_leaf
 
             LOG.info("quality_gate: invoking baseline model %s", self.baseline_model)
+            # _invoke_leaf only accepts (model_path, messages, *, timeout, max_tokens).
+            # It already does internal retries (see _invoke_with_fallback).
             out = await _invoke_leaf(
                 self.baseline_model,
                 history + [{"role": "user", "content": prompt}],
                 timeout=self.baseline_timeout,
                 max_tokens=self.baseline_max_tokens,
-                max_retries=2,
-                use_cache=True,
             )
 
             # Extract text

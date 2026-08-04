@@ -256,16 +256,41 @@ def _looks_low_quality(text: str) -> bool:
 # operators
 # ----------------------------------------------------------------------
 async def op_expert(step: FusionStep, prompt: str, history: List[Dict[str, str]], trace: List[Dict[str, Any]]) -> str:
+    """Expert operator with v4 fallback chain (primary -> default -> any expert).
+
+    Without fallback, a single leaf failure takes down the whole plan.
+    """
     experts: Dict[str, str] = step.params.get("experts", {})
     if not experts:
         raise ValueError("expert.step requires params.experts = {tag: model_id}")
-    # mini router: classify prompt by keyword into a tag, then pick that expert
-    # For first version we use a stable hash tag router so it's deterministic and
-    # zero-cost; future improvement: use a cheap classifier model.
     tag = _classify_intent(prompt)
-    model = experts.get(tag) or experts.get("default") or next(iter(experts.values()))
-    out = await _invoke_leaf(model, history + [{"role": "user", "content": prompt}])
-    trace.append({"op": "expert", "tag": tag, "model": model, "usage": _usage(out)})
+    primary = experts.get(tag) or experts.get("default") or next(iter(experts.values()))
+    # Build fallback list: all other experts, deduped, excluding primary
+    fallbacks: List[str] = []
+    seen = {primary}
+    for m in [experts.get("default"), experts.get(tag)] + list(experts.values()):
+        if m and m not in seen:
+            fallbacks.append(m)
+            seen.add(m)
+    max_tokens = int(step.params.get("max_tokens", 2048))
+    out = await _invoke_with_fallback(
+        primary=primary,
+        fallbacks=fallbacks,
+        messages=history + [{"role": "user", "content": prompt}],
+        max_retries=len(fallbacks) + 1,
+        timeout=float(step.params.get("timeout", 90.0)),
+        max_tokens=max_tokens,
+        health_filter=True,
+    )
+    trace.append({
+        "op": "expert",
+        "tag": tag,
+        "model": out.get("model") or primary,
+        "usage": _usage(out),
+        "fallback_used": out.get("model_attempts", 1) > 1,
+    })
+    if out.get("error"):
+        raise RuntimeError(f"expert: all {len(fallbacks) + 1} candidates failed: {out['error']}")
     return _extract_text(out)
 
 
