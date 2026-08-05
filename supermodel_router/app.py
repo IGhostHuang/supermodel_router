@@ -328,34 +328,32 @@ async def lifespan(app: FastAPI):
         fusion_router.set_composer(composer)
         LOG.info("FusionRouter: AutoFusionComposer attached (engine + registry wired)")
 
-        # --- 2. Pick a stable baseline model (local first, then non-:free) ---
+        # --- 2. Pick a stable baseline model (openrouter/free primary, local 2nd tier) ---
         def _pick_baseline() -> str:
-            # NOTE: registry.get_model_ids() returns BARE ids (e.g. "qwythos-9b"),
-            # not "local/qwythos-9b".  We must construct the full path from
-            # the provider name.  We use registry._providers to get the
-            # provider -> model_ids mapping.
+            # Priority (based on speed + cost + quality benchmarks above):
+            #   1. openrouter/free    — 54s, free, has occasional 429
+            #   2. local/qwythos-9b   — 162s, always available (local GPU), no rate limit
+            #
+            # openrouter/free is 3x faster than the local 9B.  We expose a
+            # SECONDARY baseline so the quality gate can retry on transient
+            # failures (e.g. OR 429 free-tier limit).
             try:
                 providers = getattr(registry, "_providers", {}) or {}
-                # 1. local provider with qwythos-9b
+                or_ps = providers.get("openrouter")
+                if or_ps and getattr(or_ps, "model_ids", None):
+                    free_models = [m for m in or_ps.model_ids if m.endswith(":free")]
+                    if free_models:
+                        # Prefer known-good code/reasoning :free models
+                        preferred = [m for m in free_models if any(k in m.lower() for k in
+                                    ("qwen", "deepseek", "llama", "mistral"))]
+                        chosen = preferred[0] if preferred else free_models[0]
+                        return f"openrouter/{chosen}"
+                # 2. local
                 local_ps = providers.get("local")
                 if local_ps and getattr(local_ps, "model_ids", None):
                     if "qwythos-9b" in local_ps.model_ids:
                         return "local/qwythos-9b"
-                    # Otherwise take the first model in the local provider
                     return f"local/{local_ps.model_ids[0]}"
-                # 2. openrouter non-:free
-                or_ps = providers.get("openrouter")
-                if or_ps and getattr(or_ps, "model_ids", None):
-                    paid = [m for m in or_ps.model_ids
-                            if not m.endswith(":free")
-                            and not m.lower().startswith(("qwen3-embedding", "text-embedding"))]
-                    if paid:
-                        preferred = [m for m in paid
-                                     if any(k in m.lower() for k in
-                                            ("qwen-2.5-72b", "qwen-2.5-coder", "claude-3.5",
-                                             "gpt-4o", "deepseek-chat", "llama-3.1-70b"))]
-                        chosen = preferred[0] if preferred else paid[0]
-                        return f"openrouter/{chosen}"
                 # 3. any non-:free from any provider
                 for pname, ps in providers.items():
                     ids = getattr(ps, "model_ids", None) or []
@@ -366,7 +364,7 @@ async def lifespan(app: FastAPI):
             except Exception as e:
                 LOG.warning("baseline pick failed: %s", e)
             # Hard fallback
-            return "local/qwythos-9b"
+            return "openrouter/free"
 
         baseline_model = _pick_baseline()
 
@@ -381,12 +379,27 @@ async def lifespan(app: FastAPI):
         # IMPORTANT: import the class directly and construct a new instance
         # so we don't pick up the stale singleton from init_fusion_router()
         # (which used the default baseline=openrouter).
+        # Pick SECONDARY baseline: the OTHER of (openrouter/free, local/qwythos-9b).
+        # QualityGate tries primary first; if it errors out, it auto-falls
+        # back to secondary, so we get both speed (when OR works) and
+        # reliability (local is always up).
+        if baseline_model.startswith("local/"):
+            _secondary_baseline = "openrouter/free"
+            _secondary_timeout = 60.0
+            _secondary_max_tokens = 2048
+        else:
+            _secondary_baseline = "local/qwythos-9b"
+            _secondary_timeout = 300.0
+            _secondary_max_tokens = 4096
         from .quality_gate import QualityGate as _QG, reset_quality_gate
         reset_quality_gate()  # wipe the stale singleton
         gate = _QG({
             "baseline_model": baseline_model,
             "baseline_timeout": _b_timeout,
             "baseline_max_tokens": _b_max_tokens,
+            "secondary_baseline_model": _secondary_baseline,
+            "secondary_timeout": _secondary_timeout,
+            "secondary_max_tokens": _secondary_max_tokens,
             "min_score": 0.55,
         })
         # Also re-attach via the global so get_quality_gate() returns ours.
@@ -394,7 +407,8 @@ async def lifespan(app: FastAPI):
         _qg_mod._quality_gate = gate
         fusion_router.set_quality_gate(gate)
         fusion_router.enable_quality_gate(True)
-        LOG.info("FusionRouter: QualityGate attached (baseline=%s)", baseline_model)
+        LOG.info("FusionRouter: QualityGate attached (primary=%s, secondary=%s)",
+                 baseline_model, _secondary_baseline)
 
         # Expose for admin API / health checks
         engine.fusion_composer = composer

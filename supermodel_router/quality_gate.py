@@ -392,6 +392,16 @@ class QualityGate:
         self.baseline_max_tokens: int = int(
             config.get("baseline_max_tokens", DEFAULT_BASELINE_MAX_TOKENS)
         )
+        # Secondary baseline: if primary baseline fails (e.g. 429), we try
+        # this one.  Common setup: primary=openrouter/free (fast), secondary=
+        # local/qwythos-9b (slower but always-available, no rate limit).
+        self.secondary_baseline_model: str = config.get("secondary_baseline_model", "")
+        self.secondary_timeout: float = float(
+            config.get("secondary_timeout", 300.0)
+        )
+        self.secondary_max_tokens: int = int(
+            config.get("secondary_max_tokens", 4096)
+        )
         self.stats = QualityStats()
 
     # -- Layer 1 + 2: assessment --
@@ -570,8 +580,17 @@ class QualityGate:
                 choices = out.get("choices") or []
                 if choices:
                     msg = choices[0].get("message") or {}
-                    rc = msg.get("reasoning_content") or ""
                     real = msg.get("content") or ""
+                    # Gather reasoning text from all known places:
+                    rc_parts = []
+                    if msg.get("reasoning_content"):
+                        rc_parts.append(msg["reasoning_content"])
+                    if msg.get("reasoning"):
+                        rc_parts.append(msg["reasoning"])
+                    for rd in (msg.get("reasoning_details") or []):
+                        if isinstance(rd, dict) and rd.get("text"):
+                            rc_parts.append(rd["text"])
+                    rc = "\n\n".join(p for p in rc_parts if p).strip()
                     if rc and not real:
                         # Strip the raw reasoning down to the actual answer.
                         # Many reasoning models put the answer AFTER the thinking;
@@ -613,6 +632,25 @@ class QualityGate:
                 timeout=self.baseline_timeout,
                 max_tokens=self.baseline_max_tokens,
             )
+            # If primary baseline failed and we have a secondary, try it.
+            if (isinstance(out, dict) and out.get("error")) and self.secondary_baseline_model:
+                LOG.warning(
+                    "quality_gate: primary baseline failed (%s), trying secondary %s",
+                    str(out.get("error", ""))[:200],
+                    self.secondary_baseline_model,
+                )
+                out2 = await self._invoke_direct(
+                    self.secondary_baseline_model,
+                    history + [{"role": "user", "content": prompt}],
+                    timeout=self.secondary_timeout,
+                    max_tokens=self.secondary_max_tokens,
+                )
+                if isinstance(out2, dict) and not out2.get("error"):
+                    out = out2
+                    LOG.info("quality_gate: secondary baseline succeeded")
+                else:
+                    LOG.warning("quality_gate: secondary baseline also failed: %s",
+                                str(out2.get("error", ""))[:200] if isinstance(out2, dict) else "non-dict")
 
             # Extract text
             from .fusion_router import _extract_text
