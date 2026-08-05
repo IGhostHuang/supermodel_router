@@ -1,0 +1,36 @@
+# Example config.  Copy to config.yaml and fill in your own API keys.
+server:
+  host: 0.0.0.0
+  port: 6473
+  api_key: ''
+  aliases:
+    fusion:
+      plans:
+        # ... your fusion plans ...
+providers:
+  # OpenRouter (paid tier; needs credits on the account)
+  openrouter:
+    enabled: true
+    base_url: https://openrouter.ai/api/v1
+    api_keys:
+    - ${OPENROUTER_API_KEY}
+    model_rules:
+      mode: pattern
+      pattern: ^(?!.*(?:laguna-xs|nemotron-3-ultra-550b|hy3)).*free
+    max_concurrent: 2
+    health_check_interval: 300
+
+  # Local model (e.g. qwythos-9b on your own GPU box)
+  # IMPORTANT: this is a STABLE, NO-RATE-LIMIT fallback for the quality gate.
+  # Put it FIRST in the priority order so the quality gate baseline uses it.
+  local:
+    enabled: true
+    base_url: http://192.168.1.32:9812/v1
+    api_keys:
+    - ${LOCAL_LM_KEY}
+    model_rules:
+      mode: pattern
+      pattern: ^(?!text-embedding|nomic-embed).*
+    max_concurrent: 1
+    health_check_interval: 600
+  # ... other providers ...
