@@ -328,43 +328,70 @@ async def lifespan(app: FastAPI):
         fusion_router.set_composer(composer)
         LOG.info("FusionRouter: AutoFusionComposer attached (engine + registry wired)")
 
-        # --- 2. Pick a stable baseline model (prefer non-:free) ---
+        # --- 2. Pick a stable baseline model (local first, then non-:free) ---
         def _pick_baseline() -> str:
+            # NOTE: registry.get_model_ids() returns BARE ids (e.g. "qwythos-9b"),
+            # not "local/qwythos-9b".  We must construct the full path from
+            # the provider name.  We use registry._providers to get the
+            # provider -> model_ids mapping.
             try:
-                all_ids = list(registry.get_model_ids()) if hasattr(registry, "get_model_ids") else []
-                # Prefer non-:free models
-                paid = [m for m in all_ids
-                        if not str(m).endswith(":free")
-                        and not str(m).lower().startswith(("qwen3-embedding", "text-embedding", "bge-", "gte-"))]
-                # Tier 1: openrouter paid (most stable in this deployment)
-                openrouter_paid = [m for m in paid if str(m).startswith("openrouter/")]
-                if openrouter_paid:
-                    # Prefer a known good coder/reasoning model
-                    preferred = [m for m in openrouter_paid
-                                 if any(k in m.lower() for k in
-                                        ("qwen-2.5-72b", "qwen-2.5-coder", "claude-3.5",
-                                         "gpt-4o", "deepseek-chat", "llama-3.1-70b"))]
-                    if preferred:
-                        return preferred[0]
-                    return openrouter_paid[0]
-                if paid:
-                    return paid[0]
+                providers = getattr(registry, "_providers", {}) or {}
+                # 1. local provider with qwythos-9b
+                local_ps = providers.get("local")
+                if local_ps and getattr(local_ps, "model_ids", None):
+                    if "qwythos-9b" in local_ps.model_ids:
+                        return "local/qwythos-9b"
+                    # Otherwise take the first model in the local provider
+                    return f"local/{local_ps.model_ids[0]}"
+                # 2. openrouter non-:free
+                or_ps = providers.get("openrouter")
+                if or_ps and getattr(or_ps, "model_ids", None):
+                    paid = [m for m in or_ps.model_ids
+                            if not m.endswith(":free")
+                            and not m.lower().startswith(("qwen3-embedding", "text-embedding"))]
+                    if paid:
+                        preferred = [m for m in paid
+                                     if any(k in m.lower() for k in
+                                            ("qwen-2.5-72b", "qwen-2.5-coder", "claude-3.5",
+                                             "gpt-4o", "deepseek-chat", "llama-3.1-70b"))]
+                        chosen = preferred[0] if preferred else paid[0]
+                        return f"openrouter/{chosen}"
+                # 3. any non-:free from any provider
+                for pname, ps in providers.items():
+                    ids = getattr(ps, "model_ids", None) or []
+                    for mid in ids:
+                        if not mid.endswith(":free") and not mid.lower().startswith(
+                                ("qwen3-embedding", "text-embedding", "bge-", "gte-")):
+                            return f"{pname}/{mid}"
             except Exception as e:
                 LOG.warning("baseline pick failed: %s", e)
             # Hard fallback
-            return "openrouter/qwen/qwen-2.5-72b-instruct"
+            return "local/qwythos-9b"
 
         baseline_model = _pick_baseline()
 
         # --- 3. Build the quality gate ---
         # The gate uses _invoke_leaf internally (which goes through the
         # global engine), so we just configure the baseline model.
-        gate = init_quality_gate({
+        # local model is slow: first call may need 60-300s for warmup + reasoning.
+        # We give it 300s as the absolute ceiling.
+        _is_local = baseline_model.startswith("local/")
+        _b_timeout = 300.0 if _is_local else 60.0
+        _b_max_tokens = 4096 if _is_local else 2048  # reasoning models need more
+        # IMPORTANT: import the class directly and construct a new instance
+        # so we don't pick up the stale singleton from init_fusion_router()
+        # (which used the default baseline=openrouter).
+        from .quality_gate import QualityGate as _QG, reset_quality_gate
+        reset_quality_gate()  # wipe the stale singleton
+        gate = _QG({
             "baseline_model": baseline_model,
-            "baseline_timeout": 60.0,
-            "baseline_max_tokens": 2048,
+            "baseline_timeout": _b_timeout,
+            "baseline_max_tokens": _b_max_tokens,
             "min_score": 0.55,
         })
+        # Also re-attach via the global so get_quality_gate() returns ours.
+        from . import quality_gate as _qg_mod
+        _qg_mod._quality_gate = gate
         fusion_router.set_quality_gate(gate)
         fusion_router.enable_quality_gate(True)
         LOG.info("FusionRouter: QualityGate attached (baseline=%s)", baseline_model)

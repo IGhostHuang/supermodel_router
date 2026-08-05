@@ -495,6 +495,24 @@ class QualityGate:
         )
         return result
 
+
+    @staticmethod
+    def _extract_final_from_reasoning(reasoning_text: str) -> str:
+        """Extract the final answer from a reasoning model's thinking trace."""
+        if not reasoning_text:
+            return ""
+        text = reasoning_text.strip()
+        for marker in ["Final Answer:", "Final answer:", "Answer:", "So the answer is:", "Therefore, the answer is"]:
+            idx = text.rfind(marker)
+            if idx >= 0:
+                tail = text[idx + len(marker):].strip()
+                if tail:
+                    return tail[:8000]
+        paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
+        if paragraphs:
+            return paragraphs[-1][:8000]
+        return text[-2000:]
+
     async def _invoke_direct(
         self,
         model_path: str,
@@ -544,6 +562,26 @@ class QualityGate:
             )
             if not isinstance(out, dict):
                 return {"error": f"non_dict_response: {out!r}"}
+            # Merge reasoning_content into content for thinking models.
+            # qwythos-9b / qwen-reasoning style: content="" + reasoning_content="..."
+            # Without this merge, _extract_text returns "" and the quality
+            # gate marks the response as critical fail.
+            try:
+                choices = out.get("choices") or []
+                if choices:
+                    msg = choices[0].get("message") or {}
+                    rc = msg.get("reasoning_content") or ""
+                    real = msg.get("content") or ""
+                    if rc and not real:
+                        # Strip the raw reasoning down to the actual answer.
+                        # Many reasoning models put the answer AFTER the thinking;
+                        # some put "Final Answer: X" near the end.
+                        final = self._extract_final_from_reasoning(rc)
+                        if final:
+                            msg["content"] = final
+                            out["choices"][0]["message"] = msg
+            except Exception:
+                pass
             return out
         except Exception as e:
             return {"error": f"direct_call_failed: {e!r}"}
@@ -575,17 +613,6 @@ class QualityGate:
                 timeout=self.baseline_timeout,
                 max_tokens=self.baseline_max_tokens,
             )
-            LOG.info("quality_gate: baseline raw response keys=%s model=%s error=%s",
-                     list(out.keys()) if isinstance(out, dict) else None,
-                     out.get("model") if isinstance(out, dict) else None,
-                     out.get("error") if isinstance(out, dict) else None)
-            if isinstance(out, dict) and "choices" in out:
-                ch = out.get("choices") or []
-                if ch:
-                    msg = (ch[0] or {}).get("message") or {}
-                    LOG.info("quality_gate: baseline content=%r finish=%s",
-                             (msg.get("content") or "")[:100],
-                             (ch[0] or {}).get("finish_reason"))
 
             # Extract text
             from .fusion_router import _extract_text
