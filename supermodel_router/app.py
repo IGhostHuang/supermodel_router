@@ -328,33 +328,45 @@ async def lifespan(app: FastAPI):
         fusion_router.set_composer(composer)
         LOG.info("FusionRouter: AutoFusionComposer attached (engine + registry wired)")
 
-        # --- 2. Pick a stable baseline model (openrouter/free primary, local 2nd tier) ---
+        # --- 2. Pick a stable baseline model (multi-tier with freellmapi) ---
         def _pick_baseline() -> str:
-            # Priority (based on speed + cost + quality benchmarks above):
-            #   1. openrouter/free    — 54s, free, has occasional 429
-            #   2. local/qwythos-9b   — 162s, always available (local GPU), no rate limit
+            # Priority (best balance of speed + cost + availability):
+            #   1. freellmapi  — 12s, 180 free models via aggregator, very high availability
+            #   2. openrouter/free — 54s, but per-model daily limit
+            #   3. local/qwythos-9b — 162s, always works (local GPU)
             #
-            # openrouter/free is 3x faster than the local 9B.  We expose a
-            # SECONDARY baseline so the quality gate can retry on transient
-            # failures (e.g. OR 429 free-tier limit).
+            # freellmapi beats openrouter/free on speed AND on 429 resilience
+            # (because the aggregator spreads traffic across 28 providers).
             try:
                 providers = getattr(registry, "_providers", {}) or {}
+                # 1. freellmapi (a "fusion" provider in SMR config)
+                fr_ps = providers.get("fusion")
+                if fr_ps and getattr(fr_ps, "model_ids", None):
+                    ids = fr_ps.model_ids
+                    # Prefer known-good fast reasoning/coding models
+                    preferred = [m for m in ids if any(k in m.lower() for k in
+                                ("deepseek-v4-flash", "qwen3.6-35b", "qwen3.6-27b",
+                                 "gemini-3.6-flash", "kimi-k2.7", "deepseek-v3.2",
+                                 "gpt-oss-120b", "qwen3.5-397b"))]
+                    if preferred:
+                        return f"fusion/{preferred[0]}"
+                    return f"fusion/{ids[0]}"
+                # 2. openrouter :free
                 or_ps = providers.get("openrouter")
                 if or_ps and getattr(or_ps, "model_ids", None):
                     free_models = [m for m in or_ps.model_ids if m.endswith(":free")]
                     if free_models:
-                        # Prefer known-good code/reasoning :free models
                         preferred = [m for m in free_models if any(k in m.lower() for k in
                                     ("qwen", "deepseek", "llama", "mistral"))]
                         chosen = preferred[0] if preferred else free_models[0]
                         return f"openrouter/{chosen}"
-                # 2. local
+                # 3. local
                 local_ps = providers.get("local")
                 if local_ps and getattr(local_ps, "model_ids", None):
                     if "qwythos-9b" in local_ps.model_ids:
                         return "local/qwythos-9b"
                     return f"local/{local_ps.model_ids[0]}"
-                # 3. any non-:free from any provider
+                # 4. any non-:free from any provider
                 for pname, ps in providers.items():
                     ids = getattr(ps, "model_ids", None) or []
                     for mid in ids:
@@ -364,7 +376,7 @@ async def lifespan(app: FastAPI):
             except Exception as e:
                 LOG.warning("baseline pick failed: %s", e)
             # Hard fallback
-            return "openrouter/free"
+            return "fusion/deepseek-v4-flash"
 
         baseline_model = _pick_baseline()
 
