@@ -964,11 +964,56 @@ async def list_models(provider: str | None = None, modality: str | None = None):
     except Exception:
         pass
 
+    # v0.5.3: Register agent:* modes so OpenAI clients (ChatBox etc.) can
+    # validate them via GET /v1/models/{model_id} before sending chat requests.
+    import time as _t2
+    _now = int(_t2.time())
+    _agent_modes = [
+        ("agent:moa", "MOA 多模型投票（无工具）"),
+        ("agent:auto", "ReAct 完整 agent + 工具调用（单 LLM 决策）"),
+        ("agent:hybrid", "MOA 计划 + ReAct 执行 + MOA 综合（最优质量）"),
+    ]
+    for _mid, _desc in _agent_modes:
+        if any(d["id"] == _mid for d in data_list):
+            continue
+        data_list.append({
+            "id": _mid,
+            "object": "model",
+            "created": _now,
+            "owned_by": "agent",
+            "provider": "agent",
+            "modality": "text-only",
+            "modality_display": "🤖 Agent",
+            "capability_score": 88,
+            "description": _desc,
+        })
+
     return JSONResponse({"object": "list", "data": data_list})
 
 
 @router.get("/v1/models/{model_id:path}")
 async def get_model(model_id: str):
+    # v0.5.3: Handle agent:* mode lookups
+    if model_id.startswith("agent:"):
+        import time as _t3
+        _now = int(_t3.time())
+        _desc_map = {
+            "agent:moa": "MOA 多模型投票（无工具）",
+            "agent:auto": "ReAct 完整 agent + 工具调用（单 LLM 决策）",
+            "agent:hybrid": "MOA 计划 + ReAct 执行 + MOA 综合（最优质量）",
+        }
+        _desc = _desc_map.get(model_id, f"Agent mode: {model_id}")
+        return JSONResponse({
+            "id": model_id,
+            "object": "model",
+            "created": _now,
+            "owned_by": "agent",
+            "provider": "agent",
+            "modality": "text-only",
+            "modality_display": "🤖 Agent",
+            "capability_score": 88,
+            "description": _desc,
+        })
     models = registry.get_models()
     for m in models:
         if m.id == model_id:
