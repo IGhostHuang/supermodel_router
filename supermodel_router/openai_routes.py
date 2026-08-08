@@ -377,6 +377,54 @@ async def chat_completions(request: Request):
                 answer = final_answer
                 usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
 
+            elif agent_mode == "fast":
+                # v0.5.4: agent:fast = single call via SMR engine (uses _bare
+                # model id "deepseek-v4-flash" which auto-falls-back to local
+                # qwythos-9b when freellmapi is rate-limited).
+                # Designed for connectivity tests: 5-15s response.
+                import httpx as _httpx
+                fast_messages = []
+                for m in (body.get("messages") or []):
+                    role = m.get("role")
+                    c_text = m.get("content", "")
+                    if role in ("user", "system", "assistant"):
+                        fast_messages.append({"role": role, "content": c_text})
+                if not fast_messages:
+                    fast_messages = [{"role": "user", "content": last_user}]
+                # Hit SMR's own endpoint (engine has local key configured)
+                fast_url = "http://127.0.0.1:6473/v1/chat/completions"
+                LOG.info("agent:fast smr_request_id=%s msgs=%d", smr_request_id, len(fast_messages))
+                fast_payload = {
+                    "model": "deepseek-v4-flash",  # auto-fallback to local qwythos-9b
+                    "messages": fast_messages,
+                    "max_tokens": 4000, "stream": False,
+                }
+                headers = {"Content-Type": "application/json"}
+                # Local self-call: no auth needed (loopback)
+                async with _httpx.AsyncClient(timeout=60) as client:
+                    try:
+                        r = await client.post(fast_url, json=fast_payload, headers=headers)
+                        if r.status_code >= 400:
+                            raise RuntimeError(f"smr {r.status_code}: {r.text[:200]}")
+                        d = r.json()
+                        c = (d.get("choices") or [{}])[0].get("message", {})
+                        answer = (c.get("content") or c.get("reasoning_content") or "").strip()
+                        if not answer:
+                            raise RuntimeError("empty content")
+                        usage = d.get("usage", {}) or {}
+                        agent_trace = [{
+                            "mode": "fast",
+                            "model": d.get("model", "auto"),
+                            "duration_ms": int((_time.time() - _t0) * 1000),
+                            "usage": usage,
+                            "elapsed_s": _time.time() - _t0,
+                            "request_model": "deepseek-v4-flash",
+                        }]
+                    except Exception as e:
+                        LOG.error("agent:fast failed: %s", e)
+                        answer = ("[agent:fast fallback] " + str(e)[:200])
+                        agent_trace = [{"mode": "fast", "error": str(e)[:200]}]
+
             else:
                 # agent:auto -> full ReAct loop with tools
                 result = await loop.run(last_user, history)
@@ -969,6 +1017,7 @@ async def list_models(provider: str | None = None, modality: str | None = None):
     import time as _t2
     _now = int(_t2.time())
     _agent_modes = [
+        ("agent:fast", "⚡ 单次 local qwythos-9b（5-15 秒，无工具）"),
         ("agent:moa", "MOA 多模型投票（无工具）"),
         ("agent:auto", "ReAct 完整 agent + 工具调用（单 LLM 决策）"),
         ("agent:hybrid", "MOA 计划 + ReAct 执行 + MOA 综合（最优质量）"),
@@ -998,6 +1047,7 @@ async def get_model(model_id: str):
         import time as _t3
         _now = int(_t3.time())
         _desc_map = {
+            "agent:fast": "⚡ 单次 local qwythos-9b（5-15 秒，无工具）",
             "agent:moa": "MOA 多模型投票（无工具）",
             "agent:auto": "ReAct 完整 agent + 工具调用（单 LLM 决策）",
             "agent:hybrid": "MOA 计划 + ReAct 执行 + MOA 综合（最优质量）",
