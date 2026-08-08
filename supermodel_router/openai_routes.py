@@ -386,7 +386,12 @@ async def chat_completions(request: Request):
 
             LOG.info("span_end=agent smr_request_id=%s elapsed=%.2fs steps=%d",
                      smr_request_id, _time.time() - _t0, len(agent_trace))
-            return _JSONResp2({
+
+            # v0.5.2: SSE streaming support for agent:* modes (ChatBox / OpenAI
+            # clients default to stream=true). Wrap answer as one SSE chunk.
+            import json as _json
+            from starlette.responses import StreamingResponse as _SSE
+            resp_body = {
                 "id": f"agent-{smr_request_id[:8]}",
                 "object": "chat.completion",
                 "created": int(_time.time()),
@@ -394,7 +399,22 @@ async def chat_completions(request: Request):
                 "choices": [{"index": 0, "message": {"role": "assistant", "content": answer}, "finish_reason": "stop"}],
                 "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
                 "agent_trace": agent_trace,
-            })
+            }
+            if stream:
+                # SSE format: data: <json>\n\n + final [DONE]
+                chunk = {
+                    "id": resp_body["id"],
+                    "object": "chat.completion.chunk",
+                    "created": resp_body["created"],
+                    "model": requested_model,
+                    "choices": [{"index": 0, "delta": {"role": "assistant", "content": answer},
+                                 "finish_reason": "stop"}],
+                }
+                async def _sse_gen():
+                    yield f"data: {_json.dumps(chunk, ensure_ascii=False)}\n\n"
+                    yield "data: [DONE]\n\n"
+                return _SSE(_sse_gen(), media_type="text/event-stream")
+            return _JSONResp2(resp_body)
         except Exception as e:
             from starlette.responses import JSONResponse as _JSONResp2
             LOG.exception("agent_dispatch_failed")
