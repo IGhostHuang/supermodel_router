@@ -169,6 +169,110 @@ async def chat_completions(request: Request):
             return _JSONResp({"error": {"message": f"fusion failed: {e!r}", "type": "fusion_error"}}, status_code=500)
 
 
+    # v0.5.0: agent dispatch. body.model starts with "agent:<plan_id>" -> use AgentLoop
+    if isinstance(requested_model, str) and requested_model.startswith("agent:"):
+        try:
+            from starlette.responses import JSONResponse as _JSONResp2
+            from .agent_loop import get_agent_loop
+            agent_mode = requested_model.split(":", 1)[1].strip() or "auto"
+            loop = get_agent_loop()
+            if loop is None:
+                raise RuntimeError("AgentLoop not initialized")
+            msgs = body.get("messages") or []
+            last_user = next((m["content"] for m in reversed(msgs) if m.get("role") == "user"), "")
+            history_msgs = [m for m in msgs if m.get("role") in ("system", "user", "assistant")]
+            history = history_msgs[:-1] if history_msgs else []
+
+            LOG.info("span_start=agent smr_request_id=%s mode=%s chars=%d",
+                     smr_request_id, agent_mode, len(last_user))
+            import time as _time
+            _t0 = _time.time()
+            if agent_mode == "moa":
+                from .moa_selector import get_moa_selector, run_moa
+                from .quality_gate import QualityGate
+                sel = get_moa_selector()
+                cfg = sel.select(last_user, history)
+                qg = QualityGate({"min_score": 0.0})
+                async def invoke(model, messages):
+                    # Hit SMR's own /v1/chat/completions so engine.pick_chain
+                    # handles routing/fallback properly with auth headers.
+                    import logging
+                    _log = logging.getLogger("moa_invoke")
+                    _log.info("invoke: model=%s", model)
+                    import httpx as _httpx
+                    # Pick an available auth header (try Bearer with known keys)
+                    auth = None
+                    try:
+                        from .config import CONFIG
+                        srv_keys = CONFIG.get("server", {}).get("api_keys", [])
+                        if srv_keys:
+                            auth = f"Bearer {srv_keys[0]}"
+                    except Exception:
+                        pass
+                    headers = {"Content-Type": "application/json"}
+                    if auth:
+                        headers["Authorization"] = auth
+                    async with _httpx.AsyncClient(timeout=180) as client:
+                        try:
+                            r = await client.post(
+                                "http://127.0.0.1:6473/v1/chat/completions",
+                                headers=headers,
+                                json={"model": model, "messages": messages,
+                                      "max_tokens": 4000, "stream": False},
+                            )
+                            _log.info("invoke: status=%d", r.status_code)
+                            try:
+                                d = r.json()
+                                if r.status_code >= 400:
+                                    return {"error": d.get("error", {}).get("message", str(d)[:200])}
+                                # Extract OpenAI-format response into MOA format
+                                choice = (d.get("choices") or [{}])[0]
+                                msg = choice.get("message", {})
+                                content = msg.get("content") or ""
+                                reasoning = msg.get("reasoning_content") or ""
+                                return {
+                                    "content": content,
+                                    "reasoning_content": reasoning,
+                                    "model": d.get("model", model),
+                                    "usage": d.get("usage", {}),
+                                }
+                            except Exception:
+                                return {"error": f"non_json: {r.text[:200]}"}
+                        except Exception as e:
+                            _log.exception("invoke: error")
+                            return {"error": f"http_failed: {e!r}"}
+                async def scorer(prompt, content, model):
+                    res = await qg.assess(prompt, content, [])
+                    return res.score
+                moa_res = await run_moa(cfg, last_user, history, invoke, scorer)
+                answer = moa_res.best_answer
+                agent_trace = [{"mode": "moa", "complexity": moa_res.complexity,
+                                "strategy": moa_res.strategy, "best_model": moa_res.best_model,
+                                "best_score": moa_res.best_score,
+                                "all_outputs": [(m, s) for m, _, s in moa_res.all_outputs],
+                                "duration_ms": moa_res.duration_ms}]
+            else:
+                result = await loop.run(last_user, history)
+                answer = result.answer
+                agent_trace = result.trace
+
+            LOG.info("span_end=agent smr_request_id=%s elapsed=%.2fs steps=%d",
+                     smr_request_id, _time.time() - _t0, len(agent_trace))
+            return _JSONResp2({
+                "id": f"agent-{smr_request_id[:8]}",
+                "object": "chat.completion",
+                "created": int(_time.time()),
+                "model": requested_model,
+                "choices": [{"index": 0, "message": {"role": "assistant", "content": answer}, "finish_reason": "stop"}],
+                "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+                "agent_trace": agent_trace,
+            })
+        except Exception as e:
+            from starlette.responses import JSONResponse as _JSONResp2
+            LOG.exception("agent_dispatch_failed")
+            return _JSONResp2({"error": {"message": f"agent failed: {e!r}", "type": "agent_error"}}, status_code=500)
+
+
     # v3.32.0 九字真言'行' span 追踪 (跨模块 grep 目标: span_start=api_entry / span_end=api_entry)
     LOG.info("span_start=api_entry smr_request_id=%s chain=%s model=%s stream=%s",
              smr_request_id, chain_id, str(requested_model)[:40], stream)

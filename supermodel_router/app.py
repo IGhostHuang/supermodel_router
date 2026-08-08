@@ -428,6 +428,71 @@ async def lifespan(app: FastAPI):
         app.state.fusion_composer = composer
         app.state.fusion_quality_gate = gate
 
+        # v0.5.0: AgentLoop wiring (ReAct + MOA + persistent state)
+        try:
+            from .tool_registry import ToolRegistry
+            from .agent_state import AgentStateStore
+            from .agent_loop import init_agent_loop
+            from .moa_selector import get_moa_selector
+
+            # Build tool registry with builtins
+            tool_reg = ToolRegistry.with_builtin_tools()
+            state_store = AgentStateStore()
+            get_moa_selector()  # init singleton
+
+            async def agent_llm_call(prompt, max_tokens=800, temperature=0.2):
+                # Use SMR's HTTP endpoint so engine.pick_chain handles fallback
+                # automatically (baseline_model may be 429 if freellmapi exhausted).
+                import httpx as _httpx
+                llm_messages = [{"role": "user", "content": prompt}]
+                headers = {"Content-Type": "application/json"}
+                # Try server api_key if available
+                try:
+                    from .config import CONFIG
+                    srv_keys = CONFIG.get("server", {}).get("api_keys", [])
+                    if srv_keys:
+                        headers["Authorization"] = f"Bearer {srv_keys[0]}"
+                except Exception:
+                    pass
+                # Use bare "deepseek-v4-flash" so engine picks the best available
+                try:
+                    async with _httpx.AsyncClient(timeout=180) as client:
+                        r = await client.post(
+                            "http://127.0.0.1:6473/v1/chat/completions",
+                            headers=headers,
+                            json={"model": "deepseek-v4-flash",
+                                  "messages": llm_messages,
+                                  "max_tokens": max_tokens, "stream": False},
+                        )
+                        if r.status_code >= 400:
+                            LOG.warning("agent_llm_call: HTTP %d, trying qwythos", r.status_code)
+                            # Try local qwythos-9b as backup
+                            r2 = await client.post(
+                                "http://127.0.0.1:6473/v1/chat/completions",
+                                headers=headers,
+                                json={"model": "qwythos-9b",
+                                      "messages": llm_messages,
+                                      "max_tokens": max_tokens, "stream": False},
+                            )
+                            r = r2
+                        d = r.json()
+                        c = (d.get("choices") or [{}])[0].get("message", {})
+                        return (c.get("content") or c.get("reasoning_content") or "").strip()
+                except Exception as e:
+                    LOG.warning("agent_llm_call failed: %s", e)
+                    return ""
+
+            agent_loop = init_agent_loop(agent_llm_call, tool_reg, state_store)
+            app.state.agent_loop = agent_loop
+            app.state.tool_registry = tool_reg
+            app.state.agent_state = state_store
+            LOG.info("AgentLoop: attached (model=%s, tools=%d, state_db=%s)",
+                     baseline_model, len(tool_reg.list()),
+                     getattr(state_store, "_db_path", "data/agent_state.db"))
+        except Exception as e:
+            LOG.exception("AgentLoop: wiring failed (agent: routes will error)")
+            app.state.agent_loop = None
+
     except Exception as e:
         LOG.exception("v4 composer/quality_gate mount failed: %s", e)
     # === end v4 mount ===
