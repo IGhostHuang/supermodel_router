@@ -99,6 +99,23 @@ v3.23.0 (2026.06.25 老大拍 "smr quota recover/status 走 Admin UI 不写 CLI"
   * quota-type 5 类 chip 颜色: monthly=红 / weekly=橙 / daily=黄 / token_plan=蓝 / balance=紫
 - 设计: 配额耗尽 = 长 SKIP (避免每次 cooldown 到期后 429 反复重试), admin UI 续费后一键清
 
+v0.5.6 (2026-08-09 老大拍 "SMR agent 模式补齐 + Trae IDE 集成修复"):
+- agent:hybrid 模式 (v0.5.1): MOA 多模型投票 + 完整 ReAct + 工具调用
+  * Phase 1: Plan via MOA (单 fast model, 5-10s)
+  * Phase 2: Execute via AgentLoop (tool use, persistent state)
+  * Phase 3: Synthesize via MOA (单 fast model, 5-10s)
+  * 总耗时 15-30s (vs 之前 30-200s)
+- agent:fast 模式 (v0.5.4): 单次 _bare/deepseek-v4-flash 调用
+  * 5-15s 响应, 无工具, 适合连通性测试 + 简单对话
+- agent:moa 模式: 多模型投票 (无工具)
+- agent:auto 模式: 单 LLM 决策 + 工具调用
+- bare 'agent' 模型 (v0.5.5-v0.5.6):
+  * 自动 dispatch 基于 query 特征 (工具动词/长度/质量关键词)
+  * normalize 到 'agent:auto' 走 dispatcher
+- /v1/models 注册 (v0.5.3): agent / agent:fast / agent:moa / agent:auto / agent:hybrid
+- SSE streaming 支持 (v0.5.2): agent:* 模式 stream=true 返回 text/event-stream
+- 错误修复: ChatBox/Trae IDE 的 "Empty response data" / "Unknown stream error"
+
 v3.19.0 (2026.06.25 老大拍 "admin UI 配额卡片修复 + Bug fix"):
 - admin_ui.py 修 bug: refresh() destructuring 漏 q → 加 `,q` (10th api call /v1/admin/quota/status)
 - processModelHealth 加 renderQuotaCard() 调用 (保证 quota card 跟 health 同步刷新, 避免 toolbar 渲染时序问题)
@@ -313,8 +330,8 @@ from typing import Optional
 LOG = logging.getLogger("version")
 
 # 当前版本 (跟随 release tag)
-VERSION = "3.32.1"
-BUILD_DATE = "2026-07-17"
+VERSION = "0.5.6"
+BUILD_DATE = "2026-08-09"
 
 GITHUB_REPO = "IGhostHuang/supermodel_router"  # 默认值, 可被 config.version_check.repo 覆盖
 RELEASE_CHECK_INTERVAL = 3600  # 1 小时检查一次
