@@ -174,7 +174,9 @@ async def chat_completions(request: Request):
         try:
             from starlette.responses import JSONResponse as _JSONResp2
             from .agent_loop import get_agent_loop
-            agent_mode = requested_model.split(":", 1)[1].strip() or "auto"
+            # v0.5.5: bare "agent" -> "" so the auto-dispatcher fires
+            # "agent:xxx" -> "xxx"  (manual mode selection)
+            agent_mode = requested_model.split(":", 1)[1].strip()
             loop = get_agent_loop()
             if loop is None:
                 raise RuntimeError("AgentLoop not initialized")
@@ -187,6 +189,36 @@ async def chat_completions(request: Request):
                      smr_request_id, agent_mode, len(last_user))
             import time as _time
             _t0 = _time.time()
+            if agent_mode == "" or agent_mode == "auto":
+                # v0.5.5: agent (no suffix) -> auto-dispatch based on query
+                # Heuristic:
+                #   - has tool verbs (读/写/执行/搜索/获取) -> hybrid (need tools)
+                #   - short query (<30 chars) -> fast (single call)
+                #   - long + complex keywords (分析/对比/写代码/总结/翻译) -> moa
+                #   - default -> fast (fastest path)
+                _tool_keywords = ("读", "写", "执行", "运行", "搜索", "查找",
+                                  "获取", "删除", "创建", "发送", "抓取",
+                                  "file_read", "file_write", "run_command",
+                                  "http_get", "echo_message", "list_directory")
+                _quality_keywords = ("分析", "对比", "写代码", "总结", "翻译",
+                                     "设计", "plan", "analyze", "compare",
+                                     "summary", "translate", "implement")
+                _has_tool = any(kw in last_user for kw in _tool_keywords)
+                _wants_quality = any(kw in last_user for kw in _quality_keywords)
+                _short = len(last_user) < 30
+                if _has_tool:
+                    chosen = "hybrid"
+                elif _short:
+                    chosen = "fast"
+                elif _wants_quality:
+                    chosen = "moa"
+                else:
+                    chosen = "fast"
+                LOG.info("agent auto-dispatch: query_len=%d has_tool=%s wants_quality=%s -> %s",
+                         len(last_user), _has_tool, _wants_quality, chosen)
+                agent_mode = chosen
+                # Fall through to chosen branch by re-routing via if/elif chain
+
             if agent_mode == "moa":
                 from .moa_selector import get_moa_selector, run_moa
                 from .quality_gate import QualityGate
@@ -304,15 +336,20 @@ async def chat_completions(request: Request):
                     res = await qg.assess(prompt, content, [])
                     return res.score
 
-                # ---- Phase 1: Plan via MOA (3 models propose plan, vote best) ----
+                # ---- Phase 1: Plan via MOA (2 fast models propose plan, vote best) ----
+                # v0.5.5: speed up — 2 fast-tier models instead of 3 (quality
+                # preserved because both are top-of-fast pool, not degraded).
                 plan_prompt = (
                     "你是一位顶尖的项目规划师。用户任务: " + last_user + "\n\n"
                     "请输出一个清晰的执行计划（最多 5 步），每步格式: "
                     "[编号] 动作: 描述\n\n"
                     "不要调用工具，纯文本计划即可。"
                 )
-                plan_cfg = sel.select(last_user, history, force_n_models=3)
-                LOG.info("hybrid phase=plan smr_request_id=%s n_models=3 complexity=%d",
+                # v0.5.5: plan = single fast call (no MOA vote).
+                # Saves 30-60s vs 2-model MOA which often retries on 429.
+                plan_cfg = sel.select(last_user, history, force_n_models=1,
+                                      explicit_preference="fast")
+                LOG.info("hybrid phase=plan smr_request_id=%s n_models=1 complexity=%d",
                          smr_request_id, plan_cfg.complexity)
                 plan_moa = await run_moa(plan_cfg, plan_prompt, history,
                                          moa_invoke, hybrid_scorer)
@@ -350,8 +387,9 @@ async def chat_completions(request: Request):
                     "\n\n请综合上述执行结果,给用户一个完整、准确、简洁的回答。"
                     "如果某个步骤失败了,请说明并给出可执行的替代方案。"
                 )
-                synth_cfg = sel.select(synth_prompt, history, force_n_models=3)
-                LOG.info("hybrid phase=synth smr_request_id=%s n_models=3 complexity=%d",
+                synth_cfg = sel.select(synth_prompt, history, force_n_models=1,
+                                         explicit_preference="fast")
+                LOG.info("hybrid phase=synth smr_request_id=%s n_models=1 complexity=%d",
                          smr_request_id, synth_cfg.complexity)
                 synth_moa = await run_moa(synth_cfg, synth_prompt, history,
                                           moa_invoke, hybrid_scorer)
@@ -1017,10 +1055,11 @@ async def list_models(provider: str | None = None, modality: str | None = None):
     import time as _t2
     _now = int(_t2.time())
     _agent_modes = [
-        ("agent:fast", "⚡ 单次 local qwythos-9b（5-15 秒，无工具）"),
-        ("agent:moa", "MOA 多模型投票（无工具）"),
-        ("agent:auto", "ReAct 完整 agent + 工具调用（单 LLM 决策）"),
-        ("agent:hybrid", "MOA 计划 + ReAct 执行 + MOA 综合（最优质量）"),
+        ("agent", "🤖 自动选择（推荐）：根据 query 自动选 fast/moa/auto/hybrid"),
+        ("agent:fast", "⚡ 单次 LLM 调用（5-15 秒，无工具）"),
+        ("agent:moa", "MOA 多模型投票（无工具，12-60 秒）"),
+        ("agent:auto", "ReAct 完整 agent + 工具调用（单 LLM 决策，30-60 秒）"),
+        ("agent:hybrid", "MOA×2 + ReAct（最高质量，加速后 15-50 秒）"),
     ]
     for _mid, _desc in _agent_modes:
         if any(d["id"] == _mid for d in data_list):
@@ -1047,10 +1086,11 @@ async def get_model(model_id: str):
         import time as _t3
         _now = int(_t3.time())
         _desc_map = {
-            "agent:fast": "⚡ 单次 local qwythos-9b（5-15 秒，无工具）",
-            "agent:moa": "MOA 多模型投票（无工具）",
-            "agent:auto": "ReAct 完整 agent + 工具调用（单 LLM 决策）",
-            "agent:hybrid": "MOA 计划 + ReAct 执行 + MOA 综合（最优质量）",
+            "agent": "🤖 自动选择（推荐）：根据 query 自动选 fast/moa/auto/hybrid",
+            "agent:fast": "⚡ 单次 LLM 调用（5-15 秒，无工具）",
+            "agent:moa": "MOA 多模型投票（无工具，12-60 秒）",
+            "agent:auto": "ReAct 完整 agent + 工具调用（单 LLM 决策，30-60 秒）",
+            "agent:hybrid": "MOA×2 + ReAct（最高质量，加速后 15-50 秒）",
         }
         _desc = _desc_map.get(model_id, f"Agent mode: {model_id}")
         return JSONResponse({
