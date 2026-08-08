@@ -251,9 +251,137 @@ async def chat_completions(request: Request):
                                 "best_score": moa_res.best_score,
                                 "all_outputs": [(m, s) for m, _, s in moa_res.all_outputs],
                                 "duration_ms": moa_res.duration_ms}]
+            elif agent_mode == "hybrid":
+                # agent:hybrid = MOA 多模型投票 + 完整 ReAct + 工具调用
+                # 每一步 LLM 决策用 MOA (3 模型投票), 工具调用走 agent_loop
+                from .moa_selector import get_moa_selector, run_moa
+                from .quality_gate import QualityGate
+
+                sel = get_moa_selector()
+                qg = QualityGate({"min_score": 0.0})
+
+                # Build hybrid moa_invoke — hits SMR engine.pick_chain
+                # (auto-fallback to qwythos-9b if freellmapi exhausted).
+                async def moa_invoke(model_full_id, messages):
+                    import logging
+                    _log = logging.getLogger("hybrid_invoke")
+                    _log.info("hybrid invoke: model=%s", model_full_id)
+                    import httpx as _httpx
+                    headers = {"Content-Type": "application/json"}
+                    try:
+                        from .config import CONFIG
+                        srv_keys = CONFIG.get("server", {}).get("api_keys", [])
+                        if srv_keys:
+                            headers["Authorization"] = f"Bearer {srv_keys[0]}"
+                    except Exception:
+                        pass
+                    async with _httpx.AsyncClient(timeout=180) as client:
+                        try:
+                            r = await client.post(
+                                "http://127.0.0.1:6473/v1/chat/completions",
+                                headers=headers,
+                                json={"model": model_full_id,
+                                      "messages": messages,
+                                      "max_tokens": 4000, "stream": False},
+                            )
+                            d = r.json()
+                            if r.status_code >= 400:
+                                return {"error": d.get("error", {}).get("message", str(d)[:200])}
+                            choice = (d.get("choices") or [{}])[0]
+                            msg = choice.get("message", {})
+                            content = msg.get("content") or ""
+                            reasoning = msg.get("reasoning_content") or ""
+                            return {
+                                "content": content,
+                                "reasoning_content": reasoning,
+                                "model": d.get("model", model_full_id),
+                                "usage": d.get("usage", {}),
+                            }
+                        except Exception as e:
+                            return {"error": f"http_failed: {e!r}"}
+
+                async def hybrid_scorer(prompt, content, model):
+                    res = await qg.assess(prompt, content, [])
+                    return res.score
+
+                # ---- Phase 1: Plan via MOA (3 models propose plan, vote best) ----
+                plan_prompt = (
+                    "你是一位顶尖的项目规划师。用户任务: " + last_user + "\n\n"
+                    "请输出一个清晰的执行计划（最多 5 步），每步格式: "
+                    "[编号] 动作: 描述\n\n"
+                    "不要调用工具，纯文本计划即可。"
+                )
+                plan_cfg = sel.select(last_user, history, force_n_models=3)
+                LOG.info("hybrid phase=plan smr_request_id=%s n_models=3 complexity=%d",
+                         smr_request_id, plan_cfg.complexity)
+                plan_moa = await run_moa(plan_cfg, plan_prompt, history,
+                                         moa_invoke, hybrid_scorer)
+                plan_text = plan_moa.best_answer
+                LOG.info("hybrid plan_best_model=%s score=%.3f duration=%dms",
+                         plan_moa.best_model, plan_moa.best_score, plan_moa.duration_ms)
+
+                # ---- Phase 2: Execute plan via agent_loop (tool use) ----
+                enriched_msg = (
+                    last_user + "\n\n"
+                    "[MOA-generated plan, best_model=" + plan_moa.best_model +
+                    " score=" + f"{plan_moa.best_score:.2f}]\n" + plan_text
+                )
+                result = await loop.run(enriched_msg, history)
+                exec_answer = result.answer
+                exec_trace = result.trace
+
+                # ---- Phase 3: Final answer synthesis via MOA ----
+                obs_lines = []
+                for t in exec_trace[:8]:
+                    if isinstance(t, dict):
+                        desc = t.get("description", "")
+                        action = t.get("action")
+                        tr = t.get("tool_result")
+                        obs = ""
+                        if isinstance(tr, dict):
+                            obs = (tr.get("output_preview") or "")[:200]
+                        obs_lines.append(
+                            f"- step: {desc}; action: {action}; result_preview: {obs}"
+                        )
+                synth_prompt = (
+                    "用户任务: " + last_user + "\n\n"
+                    "执行轨迹 (共 " + str(len(exec_trace)) + " 步):\n"
+                    + "\n".join(obs_lines) +
+                    "\n\n请综合上述执行结果,给用户一个完整、准确、简洁的回答。"
+                    "如果某个步骤失败了,请说明并给出可执行的替代方案。"
+                )
+                synth_cfg = sel.select(synth_prompt, history, force_n_models=3)
+                LOG.info("hybrid phase=synth smr_request_id=%s n_models=3 complexity=%d",
+                         smr_request_id, synth_cfg.complexity)
+                synth_moa = await run_moa(synth_cfg, synth_prompt, history,
+                                          moa_invoke, hybrid_scorer)
+                final_answer = synth_moa.best_answer or exec_answer
+
+                # ---- Aggregate trace for transparency ----
+                agent_trace = [
+                    {"phase": "plan_moa",
+                     "complexity": plan_moa.complexity,
+                     "best_model": plan_moa.best_model,
+                     "best_score": plan_moa.best_score,
+                     "duration_ms": plan_moa.duration_ms,
+                     "plan_text": plan_text,
+                     "all_outputs": [(m, s) for m, _, s in plan_moa.all_outputs]},
+                ] + exec_trace + [
+                    {"phase": "synth_moa",
+                     "complexity": synth_moa.complexity,
+                     "best_model": synth_moa.best_model,
+                     "best_score": synth_moa.best_score,
+                     "duration_ms": synth_moa.duration_ms,
+                     "all_outputs": [(m, s) for m, _, s in synth_moa.all_outputs]},
+                ]
+                answer = final_answer
+                usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+
             else:
+                # agent:auto -> full ReAct loop with tools
                 result = await loop.run(last_user, history)
                 answer = result.answer
+                usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
                 agent_trace = result.trace
 
             LOG.info("span_end=agent smr_request_id=%s elapsed=%.2fs steps=%d",

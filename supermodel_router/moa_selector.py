@@ -212,13 +212,22 @@ class MOASelector:
         user_msg: str,
         history: Optional[List[Dict[str, str]]] = None,
         explicit_preference: Optional[str] = None,  # "fast" / "smart" / "deep"
+        force_n_models: Optional[int] = None,  # v0.5.1: explicit override for hybrid mode
     ) -> MOAConfig:
         score = score_complexity(user_msg, history)
         label = complexity_label(score)
         tier = explicit_preference or self._tier_for(score)
 
         # Decide strategy
-        if score < 25:
+        if force_n_models is not None and force_n_models > 0:
+            # v0.5.1: explicit override (used by agent:hybrid)
+            n_models = min(force_n_models, 4)  # cap at 4
+            if n_models == 1:
+                strategy = "single"; parallel = False; require_critic = False
+            else:
+                strategy = "parallel+best"; parallel = True
+                require_critic = (n_models >= 3)
+        elif score < 25:
             strategy = "single"
             parallel = False
             require_critic = False
