@@ -110,6 +110,14 @@ async def chat_completions(request: Request):
     chain_id = body.get("_smr_chain_id") or smr_request_id
     request_start_time = time.time()
 
+    # v0.5.6: bare "agent" or "agent:auto" should reach the agent branch.
+    # Normalize: if requested_model == "agent", rewrite to "agent:auto" so the
+    # agent dispatcher sees agent_mode="auto" and re-routes via fast/moa/hybrid.
+    # (Otherwise SMR engine.pick_chain routes it to a generic provider and fails.)
+    if isinstance(requested_model, str) and requested_model == "agent":
+        requested_model = "agent:auto"
+        LOG.info("agent_normalize: bare 'agent' -> 'agent:auto'")
+
     # Step 20: fusion dispatch. body.model starts with "fusion:<plan_id>" -> use FusionRouter
     if isinstance(requested_model, str) and requested_model.startswith("fusion:"):
         plan_id = requested_model.split(":", 1)[1].strip()
