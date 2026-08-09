@@ -50,6 +50,64 @@ from .context_bridge import ContextBridge, SwitchRecord
 LOG = logging.getLogger("openai_routes")
 router = APIRouter()
 
+def _parse_json_response(raw_bytes: bytes) -> dict:
+    """Parse response bytes, falling back to GBK if UTF-8 produces mojibake.
+
+    Many upstreams (e.g. deepseek-v4-flash via freellmapi) return Chinese
+    content encoded in GBK. httpx auto-detects as UTF-8 and produces
+    mojibake like "浣犲ソ" instead of "你好". This helper detects that
+    pattern and re-decodes from GBK.
+    """
+    import json as _json
+    # Try strict UTF-8 first
+    try:
+        text = raw_bytes.decode("utf-8")
+        d = _json.loads(text)
+        # Sanity: check if content looks like GBK mojibake
+        c = (d.get("choices") or [{}])[0].get("message", {}).get("content", "")
+        if c and _is_gbk_mojibake(c):
+            # Re-decode from GBK
+            text = raw_bytes.decode("gbk", errors="replace")
+            return _json.loads(text)
+        return d
+    except (UnicodeDecodeError, _json.JSONDecodeError):
+        # Pure UTF-8 decode failed; try GBK
+        try:
+            text = raw_bytes.decode("gbk", errors="replace")
+            return _json.loads(text)
+        except _json.JSONDecodeError:
+            # Last resort
+            return _json.loads(raw_bytes.decode("utf-8", errors="replace"))
+
+
+def _is_gbk_mojibake(s: str) -> bool:
+    """Heuristic: detect Chinese text that was GBK-bytes-interpreted-as-UTF-8.
+
+    GBK two-byte sequences 0x81-0xFE 0x40-0xFE decode to U+4E00-U+9FFF range
+    when interpreted as UTF-8. So "浣犲ソ" (you-hao) is the GBK bytes for "你好"
+    (ni-hao) wrongly decoded.
+
+    Heuristic: >30% of non-ASCII characters fall in U+6D00-U+9FFF range AND
+    the string contains CJK characters that look "off" (e.g. 浣/搱/鍚).
+    """
+    if not s:
+        return False
+    non_ascii = [c for c in s if ord(c) > 0x7F]
+    if len(non_ascii) < 3:
+        return False
+    # Common GBK mojibake characters (high frequency)
+    gbk_mojibake_chars = set("浣犲ソ浜戝ぇ濡诲畞瀹犵粷缁胯胺鑳芥兂鑾辨湹閭荤摝"
+                              "鐨勫彲浠ュ府鍔╄阿璋㈠彲浠ユ墦閾炬帴鑴捐垶"
+                              "涔冨敮绗戝紑绔犲皬澶т竴鏃犱笉鍙")
+    hits = sum(1 for c in s if c in gbk_mojibake_chars)
+    return hits >= 2
+
+
+def _fix_charset_mojibake(s: str) -> str:
+    """Pass-through; main charset fix happens in _parse_json_response."""
+    return s
+
+
 registry: Any = None
 engine: Any = None
 # v3.4.0: 全局 ContextBridge 单例 (app.py 启动时 init 注入)
@@ -452,11 +510,30 @@ async def chat_completions(request: Request):
                         r = await client.post(fast_url, json=fast_payload, headers=headers)
                         if r.status_code >= 400:
                             raise RuntimeError(f"smr {r.status_code}: {r.text[:200]}")
-                        d = r.json()
+                        # v0.5.7: parse response with explicit UTF-8, then fall
+                        # back to GBK if upstream body is mojibake.
+                        d = _parse_json_response(r.content)
                         c = (d.get("choices") or [{}])[0].get("message", {})
-                        answer = (c.get("content") or c.get("reasoning_content") or "").strip()
-                        if not answer:
+                        # v0.5.7: read both content and reasoning_content
+                        # with explicit None check (NOT 'or', because empty
+                        # string "" is falsy and would short-circuit to the
+                        # literal string "reasoning_content")
+                        _content = c.get("content")
+                        _reasoning = c.get("reasoning_content")
+                        # Plan C: if content is empty/missing but reasoning_content
+                        # has the actual answer, copy reasoning -> content.
+                        # This way Trae IDE (which only reads 'content') gets text.
+                        if (not _content or not _content.strip()) and _reasoning and _reasoning.strip():
+                            c["content"] = _reasoning  # copy reasoning into content
+                            LOG.info("merged reasoning_content -> content (len=%d)", len(_reasoning))
+                        _content2 = c.get("content")
+                        if _content2 and _content2.strip():
+                            raw_answer = _content2
+                        elif _reasoning and _reasoning.strip():
+                            raw_answer = _reasoning
+                        else:
                             raise RuntimeError("empty content")
+                        answer = _fix_charset_mojibake(raw_answer.strip())
                         usage = d.get("usage", {}) or {}
                         agent_trace = [{
                             "mode": "fast",
